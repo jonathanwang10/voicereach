@@ -59,8 +59,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     try {
       setIsLoading(true);
       const response = await api.getCategories();
-      console.log('📋 Manual Entry - Fetched categories:', response);
-      console.log('📋 Manual Entry - Categories count:', response?.length || 0);
       
       // Sort categories with essential categories first in specific order
       const sortedCategories = (response || []).sort((a, b) => {
@@ -88,7 +86,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       });
       
       setCategories(sortedCategories);
-      console.log('📋 Manual Entry - Sorted categories:', sortedCategories?.map(c => c.name) || []);
       
       // Initialize form data with empty values for all categories
       const initialData: Record<string, any> = {};
@@ -96,7 +93,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         initialData[cat.name] = '';
       });
       setFormData(initialData);
-      console.log('📋 Manual Entry - Initial form data keys:', Object.keys(initialData));
       
     } catch (error) {
       console.error('Failed to fetch categories:', error);
@@ -137,18 +133,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
 
   const validateField = (category: Category, value: any): string => {
     const label = prettyLabel(category.name);
-    
-    // Debug logging for name field specifically
-    if (category.name.toLowerCase() === 'name') {
-      console.log(`📋 Manual Entry - Validating Name field:`, {
-        categoryName: category.name,
-        isRequired: category.is_required,
-        value: value,
-        valueType: typeof value,
-        valueLength: value?.length,
-        isEmpty: (value === undefined || value === null || value === '')
-      });
-    }
     
     // Required check based on category config
     if (category.is_required && (value === undefined || value === null || value === '')) {
@@ -211,21 +195,13 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     if (isSaving) return;
     
     console.log('📋 Manual Entry - Starting save process...');
-    console.log('📋 Manual Entry - Current form data:', formData);
     
     const validationResult = validateForm();
-    console.log('📋 Manual Entry - Validation result:', validationResult);
-    console.log('📋 Manual Entry - Current errors:', errors);
     
     if (validationResult) {
       setIsSaving(true);
       
       try {
-        console.log('📋 Manual Entry - Form data before cleaning:', formData);
-        console.log('📋 Manual Entry - Form data keys:', Object.keys(formData));
-        console.log('📋 Manual Entry - Name value in formData:', JSON.stringify(formData.Name));
-        console.log('📋 Manual Entry - Name type:', typeof formData.Name);
-        console.log('📋 Manual Entry - Name length:', formData.Name?.length);
         
         // Name field debug confirmed working - formData.Name contains the correct value
         
@@ -242,7 +218,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           return acc;
         }, {} as Record<string, any>);
         
-        console.log('📋 Manual Entry - Clean data after processing:', cleanData);
 
         // Convert height to inches (number) for backend validation
         const heightKey = Object.keys(cleanData).find(k => k.trim().toLowerCase() === 'height');
@@ -262,19 +237,11 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           };
         }
 
-        console.log('📋 Manual Entry - Final clean data being sent to API:', cleanData);
-        console.log('📋 Manual Entry - Data keys:', Object.keys(cleanData));
-        console.log('📋 Manual Entry - Name field value:', cleanData.Name || cleanData.name);
-        console.log('📋 Manual Entry - Location data:', cleanData.location);
 
         // Check for potential duplicates using sophisticated matching
         console.log('📋 Manual Entry - Checking for duplicates...');
         const potentialMatches = await api.checkDuplicates(cleanData);
-        console.log('📋 Manual Entry - Found', potentialMatches.length, 'potential matches');
         
-        if (potentialMatches.length > 0) {
-          console.log('📋 Manual Entry - Matches:', potentialMatches.map(m => `${m.name} (${m.confidence}%)`));
-        }
         
         // Filter out invalid/mock IDs from potential matches
         const validMatches = potentialMatches.filter(match => {
@@ -291,7 +258,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
             current.confidence > best.confidence ? current : best
           );
           
-          console.log('📋 Manual Entry - Showing merge UI for:', bestMatch.name, `(${bestMatch.confidence}%)`);
           setSelectedMatch(bestMatch);
           const { location: _location, ...fieldsOnly } = cleanData;
           setPendingData(fieldsOnly);
@@ -303,7 +269,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         // No meaningful match, save as new
         console.log('📋 Manual Entry - No duplicates detected, saving individual...');
         const saveResult = await api.saveIndividual(cleanData);
-        console.log('📋 Manual Entry - Save result:', saveResult);
         Toast.show({
           type: 'success',
           text1: 'Success',

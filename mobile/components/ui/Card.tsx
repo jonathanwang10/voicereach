@@ -4,13 +4,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   ViewStyle,
+  StyleProp,
   TouchableOpacityProps,
 } from 'react-native';
 import { theme } from '../../theme';
 
 interface CardProps extends Omit<TouchableOpacityProps, 'style'> {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   variant?: 'elevated' | 'outlined' | 'filled';
   padding?: 'none' | 'small' | 'medium' | 'large';

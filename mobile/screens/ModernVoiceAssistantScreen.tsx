@@ -19,7 +19,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
 import { api, getAuthToken } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { AudioProcessor, RECORDING_CONFIG, configureAudioRecording } from '../utils/audioProcessor';
+import { AudioProcessor, configureAudioRecording } from '../utils/audioProcessor';
 import { API_CONFIG } from '../config/api';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -462,7 +462,6 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       default:
         console.log('🔍 Unhandled event type:', event.type);
-        console.log('🔍 Full event data:', JSON.stringify(event, null, 2));
     }
   };
 

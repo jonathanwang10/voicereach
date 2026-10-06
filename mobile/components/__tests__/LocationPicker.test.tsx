@@ -22,7 +22,7 @@ jest.mock('expo-location', () => ({
 // Mock react-native-maps
 jest.mock('react-native-maps', () => {
   const { View } = require('react-native');
-  const MapView = (props) => <View {...props} />;
+  const MapView = (props: any) => <View {...props} />;
   return { __esModule: true, default: MapView, MapView, Marker: View };
 });
 

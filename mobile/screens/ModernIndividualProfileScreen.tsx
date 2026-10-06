@@ -21,7 +21,6 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { theme } from '../theme';
-import FieldDisplay from '../components/FieldDisplay';
 import InteractionHistoryItem from '../components/InteractionHistoryItem';
 import UrgencyScore from '../components/UrgencyScore';
 import InteractionDetailModal from '../components/InteractionDetailModal';

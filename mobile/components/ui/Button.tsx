@@ -16,7 +16,7 @@ type ButtonSize = 'small' | 'medium' | 'large';
 interface ButtonProps extends TouchableOpacityProps {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   loading?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   iconPosition?: 'left' | 'right';
