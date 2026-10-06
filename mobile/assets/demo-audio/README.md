@@ -5,7 +5,7 @@
 These are sample recordings for testing `/api/transcribe` manually, for example by playing one near the simulator mic. The three demo scripts to record:
 
 ### 1. john-market-street.m4a
-**Script:** "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Light skin. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication."
+**Script:** "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication."
 
 **Expected Categorization:**
 - name: "John"
@@ -17,7 +17,7 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 - location: "Market Street"
 
 ### 2. sarah-library.m4a
-**Script:** "Sarah by the library, approximately 35, 5 foot 4, 120 pounds, dark skin. Says she's in recovery, looking for shelter. Has two children staying with relatives."
+**Script:** "Sarah by the library, approximately 35, 5 foot 4, 120 pounds. Says she's in recovery, looking for shelter. Has two children staying with relatives."
 
 **Expected Categorization:**
 - name: "Sarah"
@@ -29,7 +29,7 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 - family_info: "Two children staying with relatives"
 
 ### 3. robert-golden-gate.m4a
-**Script:** "Robert at Golden Gate Park. 55 years old, 5 foot 10, 200 pounds, medium skin tone. Veteran, mild substance issues. Applied for housing last week."
+**Script:** "Robert at Golden Gate Park. 55 years old, 5 foot 10, 200 pounds. Veteran, mild substance issues. Applied for housing last week."
 
 **Expected Categorization:**
 - name: "Robert"
@@ -55,12 +55,15 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 
 3. **File Requirements:**
    - Format: M4A with AAC codec
-   - Duration: 10-30 seconds each
+   - Duration: each script reads in roughly 10-20 seconds, comfortably inside
+     the recorder's limits (5 s minimum, 2 min maximum)
    - Quality: Clear, understandable speech
 
-## Integration Testing
+## Manual Testing
 
-These audio files will be used to test:
+These clips are for testing by hand, for example by playing one near the
+simulator's microphone while recording, or by posting it to `/api/transcribe`.
+They exercise:
 - Audio upload functionality
 - Transcription accuracy
 - AI categorization
@@ -73,4 +76,4 @@ These audio files will be used to test:
 Place the generated .m4a files in:
 `mobile/assets/demo-audio/`
 
-The app will reference these files for demo purposes.
+The app does not load these files; nothing in the code references them.

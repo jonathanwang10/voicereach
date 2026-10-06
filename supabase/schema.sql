@@ -1,6 +1,6 @@
 -- ============================================================================
 -- VoiceReach database schema. Run once in the Supabase SQL Editor on a new
--- project; it creates every table, enables RLS with open demo policies, and
+-- project; it creates every table, enables RLS with signed-in-only policies, and
 -- seeds categories and six demo individuals. There is no migration chain.
 -- After running it, create the demo user (Authentication -> Add user,
 -- demo@sfgov.org / demo123456, Auto Confirm).
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS categories (
     auto_trigger   BOOLEAN DEFAULT FALSE,
     is_required    BOOLEAN DEFAULT FALSE,
     is_preset      BOOLEAN DEFAULT FALSE,
-    is_active      BOOLEAN DEFAULT TRUE,   -- voice_assistant.py filters on this
+    is_active      BOOLEAN DEFAULT TRUE,   -- reserved; not currently filtered on
     created_at     TIMESTAMPTZ DEFAULT NOW(),
     updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
@@ -112,7 +112,8 @@ VALUES
    '[{"label":"Critical","value":1},{"label":"High","value":0.7},
      {"label":"Medium","value":0.4},{"label":"Low","value":0.1}]'::jsonb),
 
-  -- auto_trigger: any value here pins the urgency score to 100
+  -- auto_trigger: pins the urgency score to 100 only when the chosen option's
+  -- value is > 0, so "None" does not trigger
   ('behavior', 'Behavior', 'single_select', FALSE, FALSE, 'high', 40, TRUE,
    '[{"label":"None","value":0},{"label":"Verbal Only","value":0.3},
      {"label":"Physical","value":1}]'::jsonb),

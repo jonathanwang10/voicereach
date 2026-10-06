@@ -151,9 +151,6 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `SUPABASE_SERVICE_KEY` | All server-side database access (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
 
-`.env.example` also lists `DEMO_EMAIL`, `DEMO_PASSWORD` and `PORT`; the backend
-reads none of them.
-
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
 
 ### 3. Mobile

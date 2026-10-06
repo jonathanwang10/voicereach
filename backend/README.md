@@ -32,9 +32,6 @@ Environment variables (`backend/.env`):
 | `SUPABASE_ANON_KEY` | Only `api/auth.py`, to verify users' access tokens |
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
 
-`.env.example` also lists `DEMO_EMAIL`, `DEMO_PASSWORD` and `PORT`; nothing in
-the backend reads them.
-
 Then: API at `http://localhost:8001`, interactive docs at `/docs`, health check
 at `/health`.
 
