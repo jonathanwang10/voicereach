@@ -293,7 +293,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           
           console.log('📋 Manual Entry - Showing merge UI for:', bestMatch.name, `(${bestMatch.confidence}%)`);
           setSelectedMatch(bestMatch);
-          setPendingData(cleanData);
+          const { location: _location, ...fieldsOnly } = cleanData;
+          setPendingData(fieldsOnly);
           setShowMergeUI(true);
           setIsSaving(false);
           return;
