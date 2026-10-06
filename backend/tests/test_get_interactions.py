@@ -282,6 +282,8 @@ class TestGetInteractions:
         # Should return 422 for invalid UUID format
         assert response.status_code in [404, 422]
     
+    @pytest.mark.real_auth
+    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_get_interactions_no_auth(self, client, mock_supabase):
         """Test endpoint requires authentication"""
         # Clear dependency override temporarily

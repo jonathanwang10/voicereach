@@ -7,9 +7,9 @@ import httpx
 import json
 import os
 from datetime import datetime
-from tests.test_api_integration import TEST_AUDIO_FILES
+from tests.integration.test_api_integration import TEST_AUDIO_FILES
 
-BASE_URL = "http://10.18.111.71:8001"
+from tests.integration.conftest import API_URL
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"
 
 class Colors:
@@ -39,11 +39,11 @@ def print_info(message):
     print(f"ℹ️  {message}")
 
 async def test_task_2_comprehensive():
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as client:
+    async with httpx.AsyncClient(base_url=API_URL, timeout=30.0) as client:
         headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
         
         print_section("TASK 2.0 COMPREHENSIVE TEST SUITE")
-        print(f"Testing against: {BASE_URL}")
+        print(f"Testing against: {API_URL}")
         print(f"Timestamp: {datetime.now().isoformat()}")
         
         # Track overall results
@@ -391,6 +391,3 @@ async def test_task_2_comprehensive():
         print_info("All required fields extracted successfully")
         print_info("Optional fields (substance abuse) extracted when mentioned")
         print_info("Duplicate detection logic implemented (needs data to test fully)")
-
-if __name__ == "__main__":
-    asyncio.run(test_task_2_comprehensive())

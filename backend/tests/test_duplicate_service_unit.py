@@ -183,10 +183,11 @@ class TestDuplicateDetectionService:
             "height": 72
         }
 
+        id1, id2, id3 = (str(uuid.uuid4()) for _ in range(3))
         candidates = [
-            {"id": "id1", "name": "John Doe", "data": {}},
-            {"id": "id2", "name": "John Smith", "data": {}},
-            {"id": "id3", "name": "Johnny Brown", "data": {}}
+            {"id": id1, "name": "John Doe", "data": {}},
+            {"id": id2, "name": "John Smith", "data": {}},
+            {"id": id3, "name": "Johnny Brown", "data": {}}
         ]
 
         # Mock database returns multiple candidates
@@ -198,9 +199,9 @@ class TestDuplicateDetectionService:
 
         # Mock OpenAI returns different confidences
         mock_openai_service.compare_individuals.return_value = {
-            "id1": 95,
-            "id2": 75,
-            "id3": 65
+            id1: 95,
+            id2: 75,
+            id3: 65
         }
 
         # Act
@@ -208,7 +209,7 @@ class TestDuplicateDetectionService:
 
         # Assert - per PRD 4.8: only top match for MVP
         assert len(matches) == 1
-        assert matches[0]["id"] == "id1"
+        assert matches[0]["id"] == id1
         assert matches[0]["confidence"] == 95
 
     @pytest.mark.asyncio

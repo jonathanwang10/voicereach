@@ -262,7 +262,7 @@ class TestIndividualService:
     async def test_search_individuals_with_term(self, service, mock_supabase):
         """Test search functionality with search term"""
         # Mock search results
-        mock_supabase.table.return_value.select.return_value.or_.return_value.execute.return_value.data = [
+        mock_supabase.table.return_value.select.return_value.ilike.return_value.execute.return_value.data = [
             {
                 "id": str(uuid4()),
                 "name": "John Smith",
@@ -272,6 +272,9 @@ class TestIndividualService:
             }
         ]
         
+        # Service also scans all individuals for JSONB matches
+        mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
+
         # Mock last interaction
         mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [{
             "created_at": datetime.utcnow().isoformat(),
@@ -320,7 +323,7 @@ class TestIndividualService:
         individual_id = uuid4()
         
         # Mock individual
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
             "id": str(individual_id),
             "name": "Test Person",
             "urgency_score": 60,
@@ -354,7 +357,7 @@ class TestIndividualService:
     async def test_get_individual_not_found(self, service, mock_supabase):
         """Test getting non-existent individual"""
         # Mock not found
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = None
         
         result = await service.get_individual_by_id(uuid4())
         assert result is None

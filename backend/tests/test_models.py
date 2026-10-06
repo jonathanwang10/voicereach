@@ -8,7 +8,7 @@ from datetime import datetime
 from db.models import (
     LocationData,
     SaveIndividualRequest,
-    DangerOverrideRequest,
+    UrgencyOverrideRequest,
     IndividualSummary,
     IndividualResponse,
     InteractionSummary,
@@ -16,7 +16,7 @@ from db.models import (
     SaveIndividualResponse,
     SearchIndividualsResponse,
     IndividualDetailResponse,
-    DangerOverrideResponse,
+    UrgencyOverrideResponse,
     InteractionsResponse
 )
 
@@ -135,13 +135,12 @@ class TestSaveIndividualRequest:
             SaveIndividualRequest(
                 data={
                     "name": "John Doe"
-                    # Missing height, weight, age
+                    # Missing height, weight
                 }
             )
         assert "Missing required fields:" in str(exc_info.value)
         assert "height" in str(exc_info.value)
         assert "weight" in str(exc_info.value)
-        assert "age" in str(exc_info.value)
     
     def test_null_required_field(self):
         """Test validation fails when required field is null"""
@@ -157,30 +156,30 @@ class TestSaveIndividualRequest:
         assert "Missing required fields: ['height']" in str(exc_info.value)
 
 
-class TestDangerOverrideRequest:
+class TestUrgencyOverrideRequest:
     """Test danger override request validation"""
     
     def test_valid_override(self):
         """Test valid danger override values"""
         # Valid values
         for value in [0, 50, 100]:
-            request = DangerOverrideRequest(urgency_override=value)
+            request = UrgencyOverrideRequest(urgency_override=value)
             assert request.urgency_override == value
     
     def test_null_override(self):
         """Test null override (remove override)"""
-        request = DangerOverrideRequest(urgency_override=None)
+        request = UrgencyOverrideRequest(urgency_override=None)
         assert request.urgency_override is None
     
     def test_invalid_override_too_high(self):
         """Test danger override > 100 fails"""
         with pytest.raises(ValueError):
-            DangerOverrideRequest(urgency_override=101)
+            UrgencyOverrideRequest(urgency_override=101)
     
     def test_invalid_override_negative(self):
         """Test negative danger override fails"""
         with pytest.raises(ValueError):
-            DangerOverrideRequest(urgency_override=-1)
+            UrgencyOverrideRequest(urgency_override=-1)
 
 
 class TestResponseModels:
@@ -232,6 +231,7 @@ class TestResponseModels:
                 "age": "Medium",
                 "veteran_status": "Unknown"
             },
+            last_location=None,
             created_at=datetime.now(),
             updated_at=datetime.now()
         )
@@ -276,8 +276,8 @@ class TestResponseModels:
         assert detail.location["address"].startswith("123 Main Library")
     
     def test_urgency_override_response(self):
-        """Test DangerOverrideResponse model"""
-        response = DangerOverrideResponse(
+        """Test UrgencyOverrideResponse model"""
+        response = UrgencyOverrideResponse(
             urgency_score=75,
             urgency_override=90,
             display_score=90  # Should be override value
@@ -285,7 +285,7 @@ class TestResponseModels:
         assert response.display_score == response.urgency_override
         
         # Test without override
-        response2 = DangerOverrideResponse(
+        response2 = UrgencyOverrideResponse(
             urgency_score=75,
             urgency_override=None,
             display_score=75  # Should be urgency_score
@@ -326,6 +326,7 @@ class TestResponseModels:
             urgency_override=None,
             display_score=60,
             data={"name": "Detail Test", "height": 70, "weight": 160, "age": "Light"},
+            last_location=None,
             created_at=datetime.now(),
             updated_at=datetime.now()
         )

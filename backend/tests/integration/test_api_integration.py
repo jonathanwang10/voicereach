@@ -14,10 +14,8 @@ load_dotenv()
 # Import centralized IP configuration
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'config'))
-from ip_config import API_URL
+from tests.integration.conftest import API_URL
 
-BASE_URL = API_URL
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"
 
 # TODO: Replace these with your actual Supabase Storage URLs after uploading
@@ -61,7 +59,7 @@ TEST_AUDIO_FILES = {
 @pytest.fixture
 async def client():
     """Create HTTP client"""
-    async with httpx.AsyncClient(base_url=BASE_URL) as client:
+    async with httpx.AsyncClient(base_url=API_URL) as client:
         yield client
 
 
@@ -249,28 +247,3 @@ async def test_error_scenarios(client, auth_headers):
 # 2. Update the TEST_AUDIO_FILES URLs above
 # 3. Start the server: python3 -m uvicorn main:app --reload --port 8001
 # 4. Run tests: python3 -m pytest tests/test_api_integration.py -v
-
-if __name__ == "__main__":
-    # For quick testing without pytest
-    async def run_tests():
-        async with httpx.AsyncClient(base_url=BASE_URL) as client:
-            headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
-            
-            # Test categories
-            print("Testing categories endpoint...")
-            response = await client.get("/api/categories", headers=headers)
-            print(f"Categories: {response.status_code}")
-            
-            # Test transcription (if URLs configured)
-            if "YOUR-PROJECT" not in TEST_AUDIO_FILES["john"]["url"]:
-                print("\nTesting transcription...")
-                response = await client.post(
-                    "/api/transcribe",
-                    json={"audio_url": TEST_AUDIO_FILES["john"]["url"]},
-                    headers=headers
-                )
-                print(f"Transcription: {response.status_code}")
-                if response.status_code == 200:
-                    print(f"Result: {response.json()}")
-    
-    asyncio.run(run_tests())

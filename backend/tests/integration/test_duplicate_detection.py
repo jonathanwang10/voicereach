@@ -6,19 +6,17 @@ import asyncio
 import httpx
 import json
 import time
-from tests.test_api_integration import TEST_AUDIO_FILES
+from tests.integration.test_api_integration import TEST_AUDIO_FILES
 
 # Import centralized IP configuration
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'config'))
-from ip_config import API_URL
+from tests.integration.conftest import API_URL
 
-BASE_URL = API_URL
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"
 
 async def test_duplicate_detection():
-    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30.0) as client:
+    async with httpx.AsyncClient(base_url=API_URL, timeout=30.0) as client:
         headers = {"Authorization": f"Bearer {TEST_TOKEN}"}
         
         print("="*60)
@@ -95,6 +93,3 @@ async def test_duplicate_detection():
         print("In production, the flow would be:")
         print("1. Transcribe → 2. Check duplicates → 3. Save/Merge → 4. Return result")
         print("="*60)
-
-if __name__ == "__main__":
-    asyncio.run(test_duplicate_detection())

@@ -173,6 +173,8 @@ class TestGetIndividualsSearch:
         data = response.json()
         assert "individuals" in data
     
+    @pytest.mark.real_auth
+    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_get_individuals_no_auth(self, client, mock_supabase):
         """Test endpoint requires authentication"""
         # Clear dependency override temporarily

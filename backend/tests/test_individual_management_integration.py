@@ -10,6 +10,7 @@ from datetime import datetime, timezone, timedelta
 import time
 
 from main import app
+from tests.helpers import save_response
 from api.auth import get_current_user
 
 
@@ -62,7 +63,7 @@ class TestIndividualManagementIntegration:
         
         # Mock individual creation
         mock_service = MagicMock()
-        mock_service.save_individual = AsyncMock(return_value={
+        mock_service.save_individual = AsyncMock(return_value=save_response({
             "individual": {
                 "id": individual_id,
                 "name": "John Doe",
@@ -76,6 +77,7 @@ class TestIndividualManagementIntegration:
                     "age": "Light",
                     "veteran_status": "Yes"
                 },
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
@@ -87,7 +89,7 @@ class TestIndividualManagementIntegration:
                 "location": {"latitude": 37.7749, "longitude": -122.4194, "address": "Market St"},
                 "has_transcription": True
             }
-        })
+        }))
         
         with patch('api.individuals.IndividualService', return_value=mock_service):
             create_response = client.post(
@@ -157,6 +159,7 @@ class TestIndividualManagementIntegration:
                     "age": "Light",
                     "veteran_status": "Yes"
                 },
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
@@ -190,7 +193,7 @@ class TestIndividualManagementIntegration:
         }]
         
         override_response = client.put(
-            f"/api/individuals/{individual_id}/danger-override",
+            f"/api/individuals/{individual_id}/urgency-override",
             json={"urgency_override": 85},
             headers={"Authorization": "Bearer test-token"}
         )
@@ -201,7 +204,7 @@ class TestIndividualManagementIntegration:
         assert override_data["display_score"] == 85
         
         # Step 5: Merge with new data
-        mock_service.save_individual = AsyncMock(return_value={
+        mock_service.save_individual = AsyncMock(return_value=save_response({
             "individual": {
                 "id": individual_id,
                 "name": "John Doe",
@@ -216,6 +219,7 @@ class TestIndividualManagementIntegration:
                     "veteran_status": "Yes",
                     "substance_abuse_history": ["Moderate"]  # New field
                 },
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
@@ -227,7 +231,7 @@ class TestIndividualManagementIntegration:
                 "location": None,
                 "has_transcription": False
             }
-        })
+        }))
         
         with patch('api.individuals.IndividualService', return_value=mock_service):
             merge_response = client.post(
@@ -384,7 +388,7 @@ class TestIndividualManagementIntegration:
         
         # Test 3: Invalid danger override value
         response = client.put(
-            f"/api/individuals/{uuid4()}/danger-override",
+            f"/api/individuals/{uuid4()}/urgency-override",
             json={"urgency_override": 150},  # > 100
             headers={"Authorization": "Bearer test-token"}
         )
@@ -418,7 +422,7 @@ class TestIndividualManagementIntegration:
         }
         
         mock_service = MagicMock()
-        mock_service.save_individual = AsyncMock(return_value={
+        mock_service.save_individual = AsyncMock(return_value=save_response({
             "individual": {
                 "id": individual_id,
                 "name": "Jane Smith",
@@ -426,6 +430,7 @@ class TestIndividualManagementIntegration:
                 "urgency_override": None,
                 "display_score": 30,
                 "data": initial_data,
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
@@ -437,7 +442,7 @@ class TestIndividualManagementIntegration:
                 "location": None,
                 "has_transcription": False
             }
-        })
+        }))
         
         # Mock categories for validation
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = [
@@ -470,13 +475,14 @@ class TestIndividualManagementIntegration:
                 "urgency_override": None,
                 "display_score": 30,
                 "data": initial_data,
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
             "recent_interactions": []
         })
         
-        mock_service.save_individual = AsyncMock(return_value={
+        mock_service.save_individual = AsyncMock(return_value=save_response({
             "individual": {
                 "id": individual_id,
                 "name": "Jane Smith",
@@ -484,6 +490,7 @@ class TestIndividualManagementIntegration:
                 "urgency_override": None,
                 "display_score": 32,
                 "data": updated_data,
+                "last_location": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "updated_at": datetime.now(timezone.utc).isoformat()
             },
@@ -495,7 +502,7 @@ class TestIndividualManagementIntegration:
                 "location": None,
                 "has_transcription": False
             }
-        })
+        }))
         
         with patch('api.individuals.IndividualService', return_value=mock_service):
             merge_response = client.post(
@@ -532,7 +539,7 @@ class TestIndividualManagementIntegration:
         }]
         
         response1 = client.put(
-            f"/api/individuals/{individual_id}/danger-override",
+            f"/api/individuals/{individual_id}/urgency-override",
             json={"urgency_override": 60},
             headers={"Authorization": "Bearer test-token"}
         )
@@ -545,7 +552,7 @@ class TestIndividualManagementIntegration:
         }]
         
         response2 = client.put(
-            f"/api/individuals/{individual_id}/danger-override",
+            f"/api/individuals/{individual_id}/urgency-override",
             json={"urgency_override": 80},
             headers={"Authorization": "Bearer test-token"}
         )

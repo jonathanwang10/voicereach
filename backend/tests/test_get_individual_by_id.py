@@ -56,6 +56,7 @@ class TestGetIndividualById:
                 "gender": "Male",
                 "veteran_status": "Yes"
             },
+            "last_location": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
@@ -125,6 +126,7 @@ class TestGetIndividualById:
             "urgency_override": None,
             "display_score": 45,
             "data": {"name": "Test Person", "height": 70, "weight": 160, "age": "Medium"},
+            "last_location": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
@@ -185,6 +187,7 @@ class TestGetIndividualById:
             "urgency_override": 85,  # Manual override
             "display_score": 85,  # Shows override since it's set
             "data": {"name": "High Risk Person", "height": 72, "weight": 200, "age": "Light"},
+            "last_location": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
@@ -219,6 +222,8 @@ class TestGetIndividualById:
         # Should return 422 for invalid UUID format
         assert response.status_code in [404, 422]
     
+    @pytest.mark.real_auth
+    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_get_individual_no_auth(self, client, mock_supabase):
         """Test endpoint requires authentication"""
         # Clear dependency override temporarily

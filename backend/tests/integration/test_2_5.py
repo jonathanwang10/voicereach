@@ -15,16 +15,13 @@ print("Starting Task 2.5 test...")
 load_dotenv()
 
 # Add backend to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Test data
 # Import centralized IP configuration
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'config'))
-from ip_config import API_URL
+from tests.integration.conftest import API_URL
 
-BASE_URL = API_URL
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"
 
 # Test cases
@@ -76,14 +73,14 @@ async def test_transcribe_endpoint():
     print("\nChecking if server is running...")
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BASE_URL}/health")
+            response = await client.get(f"{API_URL}/health")
             if response.status_code == 200:
                 print("✅ Server is running")
             else:
                 print("❌ Server returned unexpected status:", response.status_code)
                 return
     except Exception as e:
-        print(f"❌ Server not running at {BASE_URL}")
+        print(f"❌ Server not running at {API_URL}")
         print("Please start the server with: uvicorn main:app --reload --port 8001")
         return
     
@@ -93,7 +90,7 @@ async def test_transcribe_endpoint():
         async with httpx.AsyncClient() as client:
             # Test without auth header
             response = await client.post(
-                f"{BASE_URL}/api/transcribe",
+                f"{API_URL}/api/transcribe",
                 json={"audio_url": "test"}
             )
             if response.status_code == 422:
@@ -113,7 +110,7 @@ async def test_transcribe_endpoint():
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{BASE_URL}/api/transcribe",
+                    f"{API_URL}/api/transcribe",
                     json=test["request"],
                     headers=headers,
                     timeout=30.0
@@ -166,11 +163,3 @@ async def test_transcribe_endpoint():
     print("- Returns transcription, categorized data, missing fields, and matches")
     print("- Actual transcription requires real M4A files and API keys")
     print("- Full integration test will be in Task 2.7")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(test_transcribe_endpoint())
-    except Exception as e:
-        print(f"Test failed with error: {e}")
-    finally:
-        os._exit(0)

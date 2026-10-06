@@ -13,7 +13,6 @@ print("Starting Task 2.2 test...")
 load_dotenv()
 
 # Add backend to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from services.openai_service import OpenAIService
 
@@ -158,11 +157,3 @@ async def test_categorization():
     print("- Skin color mapping (pale->Light, etc)")
     print("- Validation against available options")
     print("- Conservative extraction as per PRD")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(test_categorization())
-    except Exception as e:
-        print(f"Test failed with error: {e}")
-    finally:
-        os._exit(0)

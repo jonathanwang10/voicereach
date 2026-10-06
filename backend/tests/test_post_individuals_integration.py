@@ -137,7 +137,7 @@ class TestPostIndividuals:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
         
         # Mock existing individual for merge check - use side_effect for multiple calls
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.side_effect = [
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.side_effect = [
             MagicMock(data={
                 "id": merge_id,
                 "name": "John Doe",
@@ -219,7 +219,7 @@ class TestPostIndividuals:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
         
         # Mock individual not found - empty data
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = None
         
         # Mock empty interactions
         mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []

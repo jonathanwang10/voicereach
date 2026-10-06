@@ -14,7 +14,6 @@ load_dotenv()
 print("Environment loaded")
 
 # Add backend to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from services.openai_service import OpenAIService
 
@@ -70,11 +69,3 @@ async def test_transcription():
     print("- Proper error handling for all cases")
     print("\nActual audio transcription will be tested with real M4A files")
     print("created by the frontend team in Task 3.0")
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(test_transcription())
-    except Exception as e:
-        print(f"Test failed with error: {e}")
-    finally:
-        os._exit(0)

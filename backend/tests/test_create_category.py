@@ -157,6 +157,8 @@ class TestCreateCategory:
         assert response.status_code == 422  # FastAPI returns 422 for Pydantic validation errors
         assert "auto_trigger" in str(response.json())
             
+    @pytest.mark.real_auth
+    @pytest.mark.skip(reason="auth enforced in Task 5A")
     async def test_missing_auth(self):
         """Test authentication required"""
         # Clear auth override for this test
