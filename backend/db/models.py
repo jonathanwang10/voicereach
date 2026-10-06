@@ -119,10 +119,10 @@ class CreateCategoryRequest(BaseModel):
     """Request to create a new custom category"""
     name: str  # Required, will be capitalized
     type: str = Field(..., pattern="^(text|number|single_select|multi_select|date|location)$")
-    priority: Optional[str] = Field("medium", pattern="^(high|medium|low)$")
-    urgency_weight: Optional[int] = Field(0, ge=0, le=100)
-    auto_trigger: Optional[bool] = False
-    is_required: Optional[bool] = False
+    priority: str = Field("medium", pattern="^(high|medium|low)$")
+    urgency_weight: int = Field(0, ge=0, le=100)
+    auto_trigger: bool = False
+    is_required: bool = False
     options: Optional[List[Any]] = None  # List[Dict] for single_select, List[str] for multi_select
     
     @field_validator('name')
@@ -142,6 +142,8 @@ class CreateCategoryRequest(BaseModel):
                     for opt in v
                 ):
                     raise ValueError("Single-select options must be list of objects with 'label' and 'value'")
+                if not all(isinstance(opt['value'], (int, float)) and not isinstance(opt['value'], bool) for opt in v):
+                    raise ValueError("Single-select option values must be numbers")
             elif field_type == 'multi_select' and v is not None:
                 # Must be list of strings
                 if not isinstance(v, list) or not all(isinstance(opt, str) for opt in v):

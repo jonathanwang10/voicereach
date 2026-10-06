@@ -58,7 +58,7 @@ class DuplicateDetectionService:
         name = categorized_data.get("name") or categorized_data.get("Name")
 
         # If no name or name too short, return empty matches
-        if not name or len(name.strip()) < 2:
+        if not isinstance(name, str) or len(name.strip()) < 2:
             return []
 
         # Step 2: Search for candidates using smart strategy
@@ -70,6 +70,11 @@ class DuplicateDetectionService:
             return matches
 
         return []
+
+    @staticmethod
+    def _escape_ilike(value: str) -> str:
+        """Escape PostgREST/LIKE wildcards so user text matches literally."""
+        return value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_").replace("*", r"\*")
 
     async def _find_candidates(self, name: str, limit: int = 50) -> List[Dict]:
         """
@@ -91,12 +96,13 @@ class DuplicateDetectionService:
 
         candidates = []
         seen_ids = set()
+        safe = self._escape_ilike(name.strip())
 
         try:
             # Step 1: Exact name match (case-insensitive)
             exact_response = self.supabase.table("individuals") \
                 .select("*") \
-                .ilike("name", name) \
+                .ilike("name", safe) \
                 .limit(10) \
                 .execute()
 
@@ -111,7 +117,8 @@ class DuplicateDetectionService:
                 # Search for partial matches
                 fuzzy_response = self.supabase.table("individuals") \
                     .select("*") \
-                    .ilike("name", f"%{name}%") \
+                    .ilike("name", f"%{safe}%") \
+                    .order("updated_at", desc=True) \
                     .limit(limit - len(candidates)) \
                     .execute()
 
@@ -127,6 +134,7 @@ class DuplicateDetectionService:
                 # Get more individuals to search through their data field
                 all_response = self.supabase.table("individuals") \
                     .select("*") \
+                    .order("updated_at", desc=True) \
                     .limit(200) \
                     .execute()
 

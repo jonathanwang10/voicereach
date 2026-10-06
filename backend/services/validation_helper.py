@@ -1,6 +1,7 @@
 """
 Validation helper for categorized data
 """
+import math
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
@@ -52,6 +53,9 @@ def validate_categorized_data(data: dict, categories: list) -> ValidationResult:
             # Validate number fields
             try:
                 num_value = float(value)
+                if not math.isfinite(num_value):
+                    validation_errors.append({"field": field_name, "message": f"Invalid number: {value}"})
+                    continue
                 
                 # Special validation for height and weight (0-300 range)
                 if field_name in ['height', 'weight']:

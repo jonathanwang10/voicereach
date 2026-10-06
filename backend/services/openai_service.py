@@ -249,8 +249,8 @@ Return JSON only."""
                             value = [value] if value else []
                         # Validate against available options
                         if cat.get('options'):
-                            valid_options = cat['options']
-                            value = [v for v in value if v in valid_options]
+                            canonical = {str(o).lower(): o for o in cat['options']}
+                            value = [canonical[str(v).lower()] for v in value if str(v).lower() in canonical]
                             
                 processed_data[field_name] = value
                 
@@ -266,20 +266,15 @@ Return JSON only."""
             
         # Handle "X feet Y inches" or "X'Y"""
         
-        # Try "X feet Y inches" pattern
-        match = re.search(r'(\d+)\s*(?:feet|foot|ft)(?:\s+(\d+)\s*(?:inches|inch|in))?', height_str, re.I)
+        match = re.search(
+            r"(\d+)\s*(?:feet|foot|ft|')\s*(?:(\d+)\s*(?:inches|inch|in|\")?)?",
+            height_str, re.I,
+        )
         if match:
             feet = int(match.group(1))
             inches = int(match.group(2)) if match.group(2) else 0
             return feet * 12 + inches
-            
-        # Try "X'Y"" pattern
-        match = re.search(r"(\d+)'(\d+)", height_str)
-        if match:
-            feet = int(match.group(1))
-            inches = int(match.group(2))
-            return feet * 12 + inches
-            
+
         # Try just inches
         match = re.search(r'(\d+)\s*(?:inches|inch|in)', height_str, re.I)
         if match:

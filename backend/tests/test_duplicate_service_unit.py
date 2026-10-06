@@ -125,12 +125,11 @@ class TestDuplicateDetectionService:
         all_mock.data = []
 
         # Configure mock to return different results for different calls
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.side_effect = [
-            exact_mock,  # First call: exact match returns empty
-            fuzzy_mock,  # Second call: fuzzy match returns fuzzy_individual
-        ]
-
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value = all_mock
+        table = mock_supabase.table.return_value.select.return_value
+        # Exact match: ilike().limit(); fuzzy: ilike().order().limit() (most recent first)
+        table.ilike.return_value.limit.return_value.execute.return_value = exact_mock
+        table.ilike.return_value.order.return_value.limit.return_value.execute.return_value = fuzzy_mock
+        table.order.return_value.limit.return_value.execute.return_value = all_mock
 
         # Mock OpenAI returns medium confidence for fuzzy match
         mock_openai_service.compare_individuals.return_value = {

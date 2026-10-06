@@ -219,7 +219,7 @@ class IndividualService:
             name=individual["name"],
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual.get("urgency_override") or individual["urgency_score"],
+            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"],
             data=individual["data"],
             created_at=individual["created_at"],
             updated_at=individual["updated_at"],
@@ -343,7 +343,7 @@ class IndividualService:
             results = []
             for ind in paginated:
                 # Calculate display score
-                display_score = ind.get("urgency_override") or ind["urgency_score"]
+                display_score = ind["urgency_override"] if ind.get("urgency_override") is not None else ind["urgency_score"]
                 
                 # Get last location with abbreviated address
                 last_location = ind.get("_last_location")
@@ -421,7 +421,7 @@ class IndividualService:
             name=individual["name"],
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual.get("urgency_override") or individual["urgency_score"],
+            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"],
             data=individual["data"],
             created_at=individual["created_at"],
             updated_at=individual["updated_at"],
@@ -476,7 +476,7 @@ class IndividualService:
         return UrgencyOverrideResponse(
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual.get("urgency_override") or individual["urgency_score"]
+            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"]
         )
     
     async def get_interactions(

@@ -164,7 +164,7 @@ class ContextService:
                     # Log individual names found
                     for individual in response.data:
                         individual_name = individual.get("name", "Unknown")
-                        urgency = individual.get("urgency_override") or individual.get("urgency_score", 0)
+                        urgency = individual["urgency_override"] if individual.get("urgency_override") is not None else individual.get("urgency_score", 0)
                         print(f"   👤 {individual_name} (Urgency: {urgency})")
                 else:
                     print(f"❌ No matches found for '{name}'")
@@ -191,7 +191,7 @@ class ContextService:
         # Sort by urgency score (highest first), then by updated_at (most recent first)
         unique_matches.sort(
             key=lambda x: (
-                x.get("urgency_override") or x.get("urgency_score", 0),
+                x["urgency_override"] if x.get("urgency_override") is not None else x.get("urgency_score", 0),
                 x.get("updated_at", "")
             ),
             reverse=True
@@ -255,7 +255,7 @@ class ContextService:
                 ('behavior', 'Behavior'),
                 ('housing_priority', 'Housing Priority'),
                 ('veteran_status', 'Veteran Status'),
-                ('approximate_age', 'Age'),
+                ('age', 'Age'),
                 ('gender', 'Gender'),
                 ('height', 'Height'),
                 ('weight', 'Weight')
