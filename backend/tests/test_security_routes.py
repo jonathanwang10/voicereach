@@ -5,8 +5,21 @@ import pytest
 from main import app
 
 
+def _all_paths(application):
+    """Flat list of every route path, including routers mounted via include_router
+    (newer FastAPI keeps them as _IncludedRouter objects instead of flattening)."""
+    out = []
+    for r in application.routes:
+        if hasattr(r, "original_router"):
+            prefix = r.include_context.prefix
+            out += [prefix + x.path for x in r.original_router.routes]
+        else:
+            out.append(getattr(r, "path", ""))
+    return out
+
+
 def _paths():
-    return {getattr(r, "path", "") for r in app.routes}
+    return set(_all_paths(app))
 
 
 def test_api_key_route_removed():

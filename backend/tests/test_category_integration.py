@@ -2,7 +2,7 @@
 Integration test for category creation and usage
 """
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch, MagicMock
 from main import app
 from api.auth import get_current_user
@@ -64,7 +64,7 @@ class TestCategoryIntegration:
             mock_table.insert.return_value = mock_insert
             mock_insert.execute.return_value.data = [new_category]
             
-            async with AsyncClient(app=app, base_url="http://test") as client:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 # Create category
                 create_response = await client.post(
                     "/api/categories",

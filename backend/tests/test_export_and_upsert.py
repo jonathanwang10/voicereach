@@ -23,7 +23,8 @@ def test_export_uses_override_zero():
 
 def test_export_route_registered_once():
     from main import app
-    paths = [r.path for r in app.routes if getattr(r, "path", None) == "/api/export"]
+    from tests.test_security_routes import _all_paths
+    paths = [p for p in _all_paths(app) if p == "/api/export"]
     assert len(paths) == 1
 
 

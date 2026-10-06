@@ -2,7 +2,7 @@
 Test cases for POST /api/categories endpoint
 """
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from unittest.mock import patch, MagicMock
 from main import app
 from datetime import datetime, timezone
@@ -59,7 +59,7 @@ class TestCreateCategory:
                 "updated_at": datetime.now(timezone.utc).isoformat()
             }]
             
-            async with AsyncClient(app=app, base_url="http://test") as client:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post(
                     "/api/categories",
                     json={
@@ -83,7 +83,7 @@ class TestCreateCategory:
     async def test_reject_invalid_urgency_weight(self):
         """Test rejection when non-numeric/single-select has urgency_weight > 0"""
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/categories",
                 json={
@@ -109,7 +109,7 @@ class TestCreateCategory:
                 {"name": "Existing category"}
             ]
             
-            async with AsyncClient(app=app, base_url="http://test") as client:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 response = await client.post(
                     "/api/categories",
                     json={
@@ -124,7 +124,7 @@ class TestCreateCategory:
     async def test_options_validation(self):
         """Test options format validation for different types"""
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             # Invalid options for single_select
             response = await client.post(
                 "/api/categories",
@@ -142,7 +142,7 @@ class TestCreateCategory:
     async def test_auto_trigger_validation(self):
         """Test auto_trigger only allowed for number/single_select"""
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/categories",
                 json={
@@ -163,7 +163,7 @@ class TestCreateCategory:
         # Clear auth override for this test
         app.dependency_overrides.clear()
         
-        async with AsyncClient(app=app, base_url="http://test") as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.post(
                 "/api/categories",
                 json={"name": "test", "type": "text"}

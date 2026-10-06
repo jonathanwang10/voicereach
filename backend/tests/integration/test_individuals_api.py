@@ -3,7 +3,7 @@ Integration tests for individuals API endpoints (Task 2.15.3+)
 Tests API endpoint functionality
 """
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
 from uuid import uuid4
 import os
 import sys
@@ -18,7 +18,7 @@ from main import app
 @pytest.fixture
 def client():
     # sync fixture: async-generator fixtures break on pytest-asyncio 0.21.1 + pytest 8
-    return AsyncClient(app=app, base_url="http://test")
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 @pytest.mark.asyncio

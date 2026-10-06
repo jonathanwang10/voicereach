@@ -388,7 +388,8 @@ class IndividualService:
             # Execute the query
             individual_response = individual_query.execute()
             
-            if not individual_response.data:
+            # supabase-py returns None (not an empty response) for zero rows
+            if individual_response is None or not individual_response.data:
                 return None
         except Exception as e:
             # Handle any database errors gracefully

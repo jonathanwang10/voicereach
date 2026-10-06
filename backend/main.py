@@ -206,7 +206,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
             "Authorization": f"Bearer {ephemeral_key}"
         }
         
-        async with websockets.connect(openai_ws_url, extra_headers=headers) as openai_ws:
+        async with websockets.connect(openai_ws_url, additional_headers=headers) as openai_ws:
             print("✅ Connected to OpenAI Realtime API")
             
             # Send session configuration to OpenAI
