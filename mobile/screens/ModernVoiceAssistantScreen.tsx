@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
-import { api } from '../services/api';
+import { api, getAuthToken } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { AudioProcessor, RECORDING_CONFIG, configureAudioRecording } from '../utils/audioProcessor';
 import { API_CONFIG } from '../config/api';
@@ -522,7 +522,15 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   const initializeVoiceAssistant = async () => {
-    wsRef.current?.close();
+    const oldWs = wsRef.current;
+    if (oldWs) {
+      // Detach handlers so a late close on the old socket can't mark the new one disconnected.
+      oldWs.onopen = null;
+      oldWs.onclose = null;
+      oldWs.onerror = null;
+      oldWs.onmessage = null;
+      oldWs.close();
+    }
     wsRef.current = null;
     try {
       setIsLoading(true);
@@ -541,7 +549,9 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       console.log('🔌 WebSocket URL:', wsUrl);
       console.log('🔌 Backend URL:', backendUrl);
 
-      const ws = new WebSocket(wsUrl);
+      const token = await getAuthToken();
+      // React Native's WebSocket accepts headers as a non-standard third argument.
+      const ws = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
 
       ws.onopen = () => {
         console.log('✅ Connected to OpenAI Realtime API');

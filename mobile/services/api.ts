@@ -1,13 +1,20 @@
-import { supabase } from './supabase';
+import { supabase, autoLogin } from './supabase';
 import { API_CONFIG, getApiUrl } from '../config/api';
 import { ErrorHandler } from '../utils/errorHandler';
 import { SearchResult, IndividualProfile } from '../types';
 
 
-// Helper function to get auth token
-const getAuthToken = async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token;
+// Every backend route and every RLS-protected table needs a signed-in session.
+export const getAuthToken = async (): Promise<string> => {
+  let { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    await autoLogin();
+    ({ data: { session } } = await supabase.auth.getSession());
+  }
+  if (!session) {
+    throw new Error('Not signed in. Check that the demo user exists in Supabase (see README setup).');
+  }
+  return session.access_token;
 };
 
 // Generic API request function with retry logic
@@ -29,7 +36,7 @@ const apiRequest = async (
   const config: RequestInit = {
     headers: {
       'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
+      Authorization: `Bearer ${token}`,
       ...options.headers,
     },
     ...options,
@@ -616,6 +623,7 @@ export const api = {
   
   // Search individuals
   searchIndividuals: async (query: string): Promise<SearchResult[]> => {
+    await getAuthToken();
     try {
       console.log('🔍 Searching individuals in database...');
       console.log('Query:', query);
@@ -770,6 +778,7 @@ export const api = {
 
   // Update urgency override
   updateUrgencyOverride: async (individualId: string, overrideValue: number | null): Promise<boolean> => {
+    await getAuthToken();
     try {
       console.log('⚠️ Updating urgency override in database...');
       console.log('Individual ID:', individualId);
@@ -801,6 +810,7 @@ export const api = {
 
   // Delete individual
   deleteIndividual: async (individualId: string): Promise<boolean> => {
+    await getAuthToken();
     try {
       console.log('🗑️ Deleting individual from database...');
       console.log('Individual ID:', individualId);
@@ -860,9 +870,9 @@ export const api = {
 
   // Export CSV
   exportCSV: async (): Promise<string> => {
-    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const token = await getAuthToken();
     const response = await fetch(getApiUrl('/api/export'), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) throw new Error(`Export failed: ${response.status}`);
     return response.text();
@@ -870,12 +880,12 @@ export const api = {
 
   // Whisper-only transcription for the voice assistant
   transcribeForAssistant: async (uri: string): Promise<string> => {
-    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const token = await getAuthToken();
     const form = new FormData();
     form.append('audio', { uri, name: 'question.m4a', type: 'audio/m4a' } as any);
     const response = await fetch(getApiUrl('/api/voice-assistant/transcribe'), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token ?? 'demo'}` },
+      headers: { Authorization: `Bearer ${token}` },
       body: form,
     });
     if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
@@ -979,6 +989,7 @@ export const api = {
 
   // Get all individuals (NEW METHOD)
   getAllIndividuals: async (): Promise<SearchResult[]> => {
+    await getAuthToken();
     try {
       console.log('📋 Fetching all individuals from database...');
       
