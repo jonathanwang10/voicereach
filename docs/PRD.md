@@ -1,3 +1,10 @@
+> **Note (2026):** This is the original hackathon spec, kept as written. The code
+> differs in places: skin color was removed as a field; the recording minimum is
+> 5 s, not 10 s; embeddings use `text-embedding-3-large` stored as JSONB, not
+> `-3-small` with pgvector; there is no ≥ 95% auto-merge (every match ≥ 60 opens
+> the merge UI); and several listed endpoints (auth, upload-audio, POST
+> interactions, PUT/DELETE individuals) were never built. See the [README](../README.md).
+
 # Comprehensive Product Requirements Document
 ## Voice Transcription App for SF Homeless Outreach
 *Version 4.0 - Complete System Architecture and Implementation Details*
