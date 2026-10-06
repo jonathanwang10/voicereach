@@ -90,7 +90,7 @@ async def generate_embedding_for_individual(
             "individual_id": request.individual_id,
             "embedding_data": embedding,
             "embedding_text": embedding_text
-        }).execute()
+        }, on_conflict="individual_id").execute()
         
         return {
             "success": True,
@@ -336,7 +336,7 @@ async def generate_embeddings_for_all_individuals(
                     "individual_id": individual['id'],
                     "embedding_data": embedding,
                     "embedding_text": embedding_text
-                }).execute()
+                }, on_conflict="individual_id").execute()
                 
                 generated_count += 1
                 

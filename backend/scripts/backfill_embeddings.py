@@ -105,7 +105,7 @@ async def setup_embeddings():
                     "individual_id": individual['id'],
                     "embedding_data": embedding,
                     "embedding_text": embedding_text
-                }).execute()
+                }, on_conflict="individual_id").execute()
                 
                 generated_count += 1
                 print(f"    ✅ Generated embedding ({len(embedding)} dimensions)")

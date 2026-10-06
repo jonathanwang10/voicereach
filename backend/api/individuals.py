@@ -88,7 +88,7 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
             "individual_id": individual_id,
             "embedding_data": embedding,
             "embedding_text": embedding_text
-        }).execute()
+        }, on_conflict="individual_id").execute()
         
         print(f"✅ Background task: Generated embedding for individual: {individual_data.get('name', 'Unknown')}")
         

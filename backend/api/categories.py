@@ -64,7 +64,8 @@ async def export_csv(user_id: str = Depends(get_current_user)):
                 medical_conditions = ", ".join(medical_conditions)
             
             # Calculate display urgency score (override or calculated)
-            urgency_score = individual.get("urgency_override") or individual.get("urgency_score", 0)
+            override = individual.get("urgency_override")
+            urgency_score = override if override is not None else individual.get("urgency_score", 0)
             
             writer.writerow([
                 individual.get("name", ""),

@@ -23,8 +23,11 @@ import pytest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def _no_background_embeddings(monkeypatch):
+def _no_background_embeddings(request, monkeypatch):
     """POST /api/individuals schedules an OpenAI embedding call; never let tests make it."""
+    if request.node.get_closest_marker("real_embedding_task"):
+        return
+
     async def _noop(*args, **kwargs):
         return None
 

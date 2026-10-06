@@ -19,7 +19,6 @@ router = APIRouter()
 class TranscribeRequest(BaseModel):
     audio_url: Optional[str] = None
     audio_data: Optional[str] = None  # Base64 encoded audio data
-    location: Optional[Dict[str, float]] = None  # {"latitude": 37.7749, "longitude": -122.4194}
 
 
 class TranscribeResponse(BaseModel):
@@ -27,6 +26,7 @@ class TranscribeResponse(BaseModel):
     categorized_data: Dict[str, Any]
     missing_required: List[str]
     potential_matches: List[Dict[str, Any]]
+    validation_errors: List[Dict[str, str]] = []
 
 
 @router.post("/api/transcribe", response_model=TranscribeResponse)
@@ -82,7 +82,7 @@ async def transcribe_audio_endpoint(
             import tempfile
             
             # Decode base64 audio data
-            audio_data = base64.b64decode(request.audio_data.split(',')[1])  # Remove data URL prefix
+            audio_data = base64.b64decode(request.audio_data.split(',', 1)[-1])  # Strip optional data URL prefix
             
             # Create temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_file:
@@ -108,11 +108,6 @@ async def transcribe_audio_endpoint(
         validation_result = validate_categorized_data(categorized_data, categories)
         missing_required = validation_result.missing_required
         
-        # Note: We could also return validation_errors in the response if needed
-        # For now, we'll just log them for debugging
-        if validation_result.validation_errors:
-            print(f"Validation errors: {validation_result.validation_errors}")
-        
         # 5. Find potential duplicates using real database search and LLM comparison
         potential_matches = []
 
@@ -134,7 +129,8 @@ async def transcribe_audio_endpoint(
             transcription=transcription,
             categorized_data=categorized_data,
             missing_required=missing_required,
-            potential_matches=potential_matches
+            potential_matches=potential_matches,
+            validation_errors=validation_result.validation_errors
         )
         
     except ValueError as e:
