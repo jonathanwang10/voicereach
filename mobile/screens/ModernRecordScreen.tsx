@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
   SafeAreaView,
-  Modal,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -34,14 +33,12 @@ export const ModernRecordScreen: React.FC = () => {
   // Recording states
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
 
   // UI states
-  const [showManualEntry, setShowManualEntry] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<{
     location: {
@@ -77,8 +74,6 @@ export const ModernRecordScreen: React.FC = () => {
       setUploadError(null);
 
       console.log('🎤 Starting real voice transcription...');
-      setUploadedUrl(uri);
-
       Toast.show({
         type: 'info',
         text1: 'Processing Audio',
@@ -133,15 +128,10 @@ export const ModernRecordScreen: React.FC = () => {
 
   const resetRecording = () => {
     setRecordingUri(null);
-    setUploadedUrl(null);
     setUploadError(null);
     setTranscriptionResult(null);
     setTranscriptionError(null);
     audioRecorderRef.current?.resetRecording();
-  };
-
-  const handleManualEntry = () => {
-    setShowManualEntry(true);
   };
 
   const handleLocationSelect = (location: any) => {
@@ -326,8 +316,7 @@ export const ModernRecordScreen: React.FC = () => {
             /* Manual Entry Tab */
             <Card style={styles.manualCard} padding="large">
               <ManualEntryForm
-                onSubmit={(data) => {
-                  console.log('Manual entry:', data);
+                onSave={() => {
                   Toast.show({
                     type: 'success',
                     text1: 'Entry Saved',
@@ -335,7 +324,8 @@ export const ModernRecordScreen: React.FC = () => {
                     position: 'top',
                   });
                 }}
-                location={selectedLocation}
+                onCancel={() => setActiveTab('record')}
+                selectedLocation={selectedLocation?.location ?? null}
               />
             </Card>
           )}
@@ -349,37 +339,6 @@ export const ModernRecordScreen: React.FC = () => {
           onCancel={() => setShowLocationPicker(false)}
         />
       )}
-
-      {/* Manual Entry Modal */}
-      <Modal
-        visible={showManualEntry}
-        animationType="slide"
-        onRequestClose={() => setShowManualEntry(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Manual Entry</Text>
-            <TouchableOpacity onPress={() => setShowManualEntry(false)}>
-              <Ionicons name="close" size={24} color={theme.colors.text.primary} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.modalContent}>
-            <ManualEntryForm
-              onSubmit={(data) => {
-                console.log('Manual entry:', data);
-                setShowManualEntry(false);
-                Toast.show({
-                  type: 'success',
-                  text1: 'Entry Saved',
-                  text2: 'Individual information has been recorded',
-                  position: 'top',
-                });
-              }}
-              location={selectedLocation}
-            />
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -503,28 +462,5 @@ const styles = StyleSheet.create({
   // Buttons
   newRecordingButton: {
     marginTop: theme.spacing.base,
-  },
-
-  // Modal
-  modalContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: theme.spacing.base,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  modalTitle: {
-    fontSize: theme.typography.fontSize.xl,
-    fontWeight: theme.typography.fontWeight.semibold,
-    color: theme.colors.text.primary,
-  },
-  modalContent: {
-    flex: 1,
-    padding: theme.spacing.base,
   },
 });

@@ -43,6 +43,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showMergeUI, setShowMergeUI] = useState(false);
+  const [pendingData, setPendingData] = useState<Record<string, any>>({});
   const [selectedMatch, setSelectedMatch] = useState<{
     id: string;
     confidence: number;
@@ -292,25 +293,12 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           
           console.log('📋 Manual Entry - Showing merge UI for:', bestMatch.name, `(${bestMatch.confidence}%)`);
           setSelectedMatch(bestMatch);
-          setShowMergeUI(true);
-          setIsSaving(false);
-          return;
-        } else {
-          console.log('📋 Manual Entry - No valid matches found, proceeding to save as new');
-          
-          // DEBUG: Force merge UI to show with configured UUID
-          console.log('📋 Manual Entry - DEBUG: Forcing merge UI to show with configured UUID');
-          const debugMatch = {
-            id: "f7f4804b-c9ca-4374-9daf-a39963f6ce51", // Configured UUID
-            name: "John",
-            confidence: 85
-          };
-          setSelectedMatch(debugMatch);
+          setPendingData(cleanData);
           setShowMergeUI(true);
           setIsSaving(false);
           return;
         }
-        
+
         // No meaningful match, save as new
         console.log('📋 Manual Entry - No duplicates detected, saving individual...');
         const saveResult = await api.saveIndividual(cleanData);
@@ -333,9 +321,21 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   };
 
 
+  const withLocation = (data: Record<string, any>) => {
+    if (data.location || !selectedLocation) return data;
+    return {
+      ...data,
+      location: {
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        address: selectedLocation.address || 'Unknown Address',
+      },
+    };
+  };
+
   const handleMerge = async (mergedData: Record<string, any>) => {
     try {
-      await api.saveIndividual(mergedData);
+      await api.saveIndividual(withLocation(mergedData));
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -355,7 +355,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      await api.saveIndividual(data);
+      await api.saveIndividual(withLocation(data));
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -472,7 +472,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   if (showMergeUI && selectedMatch) {
     return (
       <MergeUI
-        newData={formData}
+        newData={pendingData}
         potentialMatch={selectedMatch}
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}

@@ -105,16 +105,10 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
                     try {
                       const deleted = lastDeletedRef.current;
                       if (!deleted) return;
-                      const result = await api.saveIndividual({
-                        id: deleted.id,
-                        name: deleted.name,
-                        urgency_score: deleted.urgency_score,
-                        urgency_override: deleted.urgency_override,
-                        data: deleted.data,
-                      });
+                      const result = await api.saveIndividual({ ...deleted.data, name: deleted.name });
                       if (result?.success) {
                         Toast.show({ type: 'success', text1: 'Restored', text2: `${deleted.name} was restored` });
-                        navigation.navigate('SearchMain', { refreshKey: Date.now(), restoredId: deleted.id });
+                        navigation.navigate('SearchMain', { refreshKey: Date.now(), restoredId: result.id });
                         lastDeletedRef.current = null;
                       } else {
                         Toast.show({ type: 'error', text1: 'Restore failed', text2: result?.message || 'Please try again.' });

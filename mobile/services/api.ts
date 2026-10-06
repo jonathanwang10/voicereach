@@ -517,7 +517,6 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ 
           audio_data: base64Audio,
-          location: { latitude: 37.7821638619815, longitude: -122.41033921502972 } // Default SF location
         }),
       });
       
@@ -609,11 +608,7 @@ export const api = {
         errorMessage = error.detail;
       }
 
-      return {
-        id: 'error-' + Date.now(),
-        success: false,
-        message: errorMessage
-      };
+      throw new Error(errorMessage);
     }
   },
 

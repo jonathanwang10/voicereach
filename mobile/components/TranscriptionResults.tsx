@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { TranscriptionResult, api } from '../services/api';
-import { normalizeHeightToStandardString } from '../utils/height';
+import { parseHeightToInches } from '../utils/height';
 import { MergeUI } from './MergeUI';
 
 interface Category {
@@ -105,6 +105,17 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   const [isSaving, setIsSaving] = useState(false);
 
+  const toSavePayload = (fields: Record<string, any>) => {
+    const payload: Record<string, any> = { ...fields, transcription: result.transcription };
+    if (location) payload.location = location;
+    const heightKey = Object.keys(payload).find(k => k.trim().toLowerCase() === 'height');
+    if (heightKey && payload[heightKey] !== '' && payload[heightKey] != null) {
+      const inches = parseHeightToInches(payload[heightKey]);
+      if (inches !== null) payload[heightKey] = inches;
+    }
+    return payload;
+  };
+
   const handleSave = async () => {
     if (isSaving) return;
     
@@ -146,36 +157,11 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         setShowMergeUI(true);
         setIsSaving(false);
         return;
-      } else {
-        console.log('🎤 Voice Transcription - No valid matches found, proceeding to save as new');
-        
-        // DEBUG: Force merge UI to show with configured UUID
-        console.log('🎤 Voice Transcription - DEBUG: Forcing merge UI to show with configured UUID');
-        const debugMatch = {
-          id: "f7f4804b-c9ca-4374-9daf-a39963f6ce51", // Configured UUID
-          name: "John",
-          confidence: 85
-        };
-        setSelectedMatch(debugMatch);
-        setShowMergeUI(true);
-        setIsSaving(false);
-        return;
       }
-      
+
       // No meaningful match (< 60% or no matches), save as new
       console.log('🎤 Voice Transcription - No matches found, saving as new individual');
-      const saveData: Record<string, any> = { 
-        ...categorizedData,
-        ...(location && { location })
-      };
-      const heightKey = Object.keys(saveData).find(k => k.trim().toLowerCase() === 'height');
-      if (heightKey && saveData[heightKey]) {
-        // Only normalize if it's a string - if it's already a number, keep it as is
-        if (typeof saveData[heightKey] === 'string') {
-          const normalized = normalizeHeightToStandardString(saveData[heightKey]);
-          if (normalized) saveData[heightKey] = normalized;
-        }
-      }
+      const saveData = toSavePayload(categorizedData);
       await api.saveIndividual(saveData);
       Toast.show({
         type: 'success',
@@ -192,10 +178,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   const handleMerge = async (mergedData: Record<string, any>) => {
     try {
-      const saveData = {
-        ...mergedData,
-        ...(location && { location })
-      };
+      const saveData = toSavePayload(mergedData);
       await api.saveIndividual(saveData);
       Toast.show({
         type: 'success',
@@ -216,10 +199,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      const saveData = {
-        ...data,
-        ...(location && { location })
-      };
+      const saveData = toSavePayload(data);
       await api.saveIndividual(saveData);
       Toast.show({
         type: 'success',
