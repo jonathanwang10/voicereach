@@ -2,7 +2,7 @@
 
 ## Instructions for Creating Demo Audio Files
 
-Since we can't generate actual audio files in this environment, here are the three demo scripts that need to be recorded:
+These are sample recordings for testing `/api/transcribe` manually, for example by playing one near the simulator mic. The three demo scripts to record:
 
 ### 1. john-market-street.m4a
 **Script:** "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Light skin. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication."
@@ -12,7 +12,6 @@ Since we can't generate actual audio files in this environment, here are the thr
 - age: 45
 - height: 72 (6 feet = 72 inches)
 - weight: 180
-- skin_color: "Light"
 - substance_abuse_history: "Moderate"
 - medical_conditions: "Diabetes"
 - location: "Market Street"
@@ -25,7 +24,6 @@ Since we can't generate actual audio files in this environment, here are the thr
 - age: 35
 - height: 64 (5 foot 4 = 64 inches)
 - weight: 120
-- skin_color: "Dark"
 - substance_abuse_history: "In Recovery"
 - housing_status: "Looking for shelter"
 - family_info: "Two children staying with relatives"
@@ -38,7 +36,6 @@ Since we can't generate actual audio files in this environment, here are the thr
 - age: 55
 - height: 70 (5 foot 10 = 70 inches)
 - weight: 200
-- skin_color: "Medium"
 - substance_abuse_history: "Mild"
 - veteran_status: "Veteran"
 - housing_status: "Applied for housing last week"

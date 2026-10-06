@@ -1,16 +1,9 @@
 -- ============================================================================
--- VoiceReach — consolidated schema for a FRESH Supabase project
--- Branch: test_branch_3
---
--- Run this ONCE in the Supabase SQL Editor on a brand-new project.
---
--- Why this file exists: the shipped migrations in supabase/migrations/ and
--- backend/migrations/ contradict each other. 001 creates `urgency_score` but
--- `danger_weight`; 004 then tries to RENAME danger_score -> urgency_score,
--- which fails on a schema 001 just created. 001 also gives `interactions` a
--- `data` column and a UUID `user_id`, but the backend writes `changes` and
--- passes a plain string ("demo-user"). This file is what the code on
--- test_branch_3 actually reads and writes.
+-- VoiceReach database schema. Run once in the Supabase SQL Editor on a new
+-- project; it creates every table, enables RLS with open demo policies, and
+-- seeds categories and six demo individuals. There is no migration chain.
+-- After running it, create the demo user (Authentication -> Add user,
+-- demo@sfgov.org / demo123456, Auto Confirm).
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -50,7 +43,7 @@ CREATE TABLE IF NOT EXISTS individuals (
 -- ---------------------------------------------------------------------------
 -- interactions — append-only history. `changes` holds ONLY the fields that
 -- changed in that visit (the whole payload on the first interaction).
--- user_id is TEXT, not a UUID FK: the backend passes "demo-user".
+-- user_id is TEXT, not a UUID FK: the backend passes the demo user's id as text.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS interactions (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,7 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_individual     ON individual_embedding
 
 -- ---------------------------------------------------------------------------
 -- Preset categories.
--- NOTE: skin_color is deliberately absent — it was removed in migration 004
+-- NOTE: skin_color is deliberately absent — it was removed earlier in the project
 -- because it was a *scored* field with different urgency values per skin tone.
 -- Do not reintroduce it.
 -- ---------------------------------------------------------------------------
