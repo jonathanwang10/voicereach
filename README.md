@@ -1,5 +1,7 @@
 # VoiceReach
 
+![CI](https://github.com/jonathanwang10/voicereach/actions/workflows/ci.yml/badge.svg)
+
 A field-documentation app for San Francisco homeless-outreach workers.
 
 A social worker finishes a street interaction and, instead of typing notes back at
