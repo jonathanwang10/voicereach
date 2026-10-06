@@ -1,4 +1,5 @@
-import math
+from unittest.mock import MagicMock
+
 import pytest
 
 from services.urgency_calculator import calculate_urgency_score
@@ -30,7 +31,8 @@ def test_auto_trigger_number_zero_does_not_fire():
 # --- height parsing ---
 @pytest.mark.parametrize("raw,expected", [
     ("5 ft 10", 70), ("5 feet 10 inches", 70), ("5'10", 70), ("5' 10\"", 70),
-    ("6 feet", 72), ("70 inches", 70), ("70", 70),
+    ("6 feet", 72),
+    ("6 ft 180 lbs", 72), ("5 foot 150 pounds", 60), ("5'", 60), ("5 ft", 60), ("6 foot 2", 74), ("70 inches", 70), ("70", 70),
 ])
 def test_parse_height(raw, expected):
     assert OpenAIService.__new__(OpenAIService)._parse_height(raw) == expected
@@ -75,3 +77,17 @@ async def test_find_duplicates_non_string_name_returns_empty():
 
 def test_ilike_escape():
     assert DuplicateDetectionService._escape_ilike("a_b%c*") == r"a\_b\%c\*"
+
+
+# --- display score honours an override of 0 ---
+@pytest.mark.asyncio
+async def test_display_score_honours_override_of_zero():
+    from services.individual_service import IndividualService
+    row = {"id": "11111111-1111-1111-1111-111111111111", "name": "Ann", "urgency_score": 80,
+           "urgency_override": 0, "data": {}, "created_at": "2025-01-01T00:00:00",
+           "updated_at": "2025-01-01T00:00:00", "last_location": None}
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = row
+    sb.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+    result = await IndividualService(sb).get_individual_by_id(row["id"])
+    assert result.individual.display_score == 0

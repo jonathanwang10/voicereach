@@ -267,12 +267,14 @@ Return JSON only."""
         # Handle "X feet Y inches" or "X'Y"""
         
         match = re.search(
-            r"(\d+)\s*(?:feet|foot|ft|')\s*(?:(\d+)\s*(?:inches|inch|in|\")?)?",
+            r"(\d+)\s*(?:feet|foot|ft|')\s*(?:(\d{1,2})(?!\d)\s*(?:inches|inch|in|\")?)?",
             height_str, re.I,
         )
         if match:
             feet = int(match.group(1))
             inches = int(match.group(2)) if match.group(2) else 0
+            if inches > 11:
+                inches = 0
             return feet * 12 + inches
 
         # Try just inches
