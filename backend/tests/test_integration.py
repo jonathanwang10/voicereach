@@ -32,7 +32,6 @@ class TestIntegrationFlow:
         assert "SF Homeless Outreach API" in data["message"]
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_categories_endpoint_structure(self):
         """Test categories endpoint structure (may require auth)"""
         response = client.get("/api/categories")
@@ -63,7 +62,6 @@ class TestIntegrationFlow:
             assert "detail" in error_data
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_export_csv_structure(self):
         """Test CSV export functionality structure"""
         response = client.get("/api/export")
@@ -78,7 +76,6 @@ class TestIntegrationFlow:
             assert "detail" in error_data
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_transcription_flow_structure(self):
         """Test complete transcription flow structure (mock)"""
         transcription_data = {
@@ -97,7 +94,6 @@ class TestIntegrationFlow:
             assert "detail" in error_data
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_save_individual_structure(self):
         """Test saving new individual structure"""
         individual_data = {
@@ -126,7 +122,6 @@ class TestAPIStructure:
     """Test that API endpoints have correct structure"""
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_endpoints_exist(self):
         """Test that all expected endpoints exist"""
         # Test that endpoints return proper error responses (auth required)

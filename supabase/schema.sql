@@ -182,18 +182,19 @@ WHERE i.id = sub.individual_id
   AND i.last_location IS NULL;
 
 -- ---------------------------------------------------------------------------
--- RLS. These are wide-open demo policies, matching what the project shipped.
--- A real deployment needs per-agency scoping — this is medical data.
+-- RLS: only signed-in users can read or write. The backend uses the service
+-- key (bypasses RLS); the app signs in as the demo user before any query.
+-- A real deployment would scope rows per agency.
 -- ---------------------------------------------------------------------------
 ALTER TABLE categories            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE individuals           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE interactions          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE individual_embeddings ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "demo all categories"  ON categories            FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "demo all individuals" ON individuals           FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "demo all inter"       ON interactions          FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "demo all embeddings"  ON individual_embeddings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "signed-in users: categories"  ON categories            FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "signed-in users: individuals" ON individuals           FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "signed-in users: interactions" ON interactions         FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "signed-in users: embeddings"  ON individual_embeddings FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ---------------------------------------------------------------------------
 -- Verify

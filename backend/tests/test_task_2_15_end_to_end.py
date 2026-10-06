@@ -617,7 +617,6 @@ class TestTask215EndToEnd:
 
 
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_no_auth_rejected(self):
         """Requests without a token are rejected (split out of the end-to-end flow)"""
         client = TestClient(app)

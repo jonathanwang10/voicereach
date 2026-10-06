@@ -3,29 +3,20 @@ Voice Assistant API endpoints for OpenAI Realtime API integration
 """
 import os
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from api.auth import get_current_user
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 import tempfile
 from supabase import create_client, Client
 from services.openai_service import OpenAIService
 from services.context_service import get_context_service
 
 router = APIRouter(prefix="/api/voice-assistant")
-security = HTTPBearer()
 
 # Initialize Supabase client
 supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_ANON_KEY")
+supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
-
-class VoiceAssistantRequest(BaseModel):
-    message: str
-    context: Optional[Dict[str, Any]] = None
-
-class VoiceAssistantResponse(BaseModel):
-    response: str
-    suggestions: Optional[list] = None
 
 class ContextRequest(BaseModel):
     message: str
@@ -38,7 +29,7 @@ class ContextResponse(BaseModel):
 @router.post("/transcribe")
 async def transcribe_voice_audio(
     audio: UploadFile = File(...),
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    user_id: str = Depends(get_current_user)
 ):
     """
     Transcribe audio file for voice assistant
@@ -81,7 +72,7 @@ async def transcribe_voice_audio(
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 @router.get("/guidelines")
-async def get_safety_guidelines(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_safety_guidelines(user_id: str = Depends(get_current_user)):
     """
     Get safety guidelines and protocols
     """
@@ -125,7 +116,7 @@ async def get_safety_guidelines(credentials: HTTPAuthorizationCredentials = Depe
 @router.post("/context", response_model=ContextResponse)
 async def get_context_for_message(
     request: ContextRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    user_id: str = Depends(get_current_user)
 ):
     """
     Get individual context for a message containing names

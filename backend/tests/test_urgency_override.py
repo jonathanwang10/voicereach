@@ -171,12 +171,11 @@ class TestUrgencyOverride:
         assert data["display_score"] == 100
     
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     def test_urgency_override_no_auth(self, client, mock_supabase):
         """Test endpoint requires authentication"""
         # Clear dependency override temporarily
         original_override = app.dependency_overrides.get(get_current_user)
-        del app.dependency_overrides[get_current_user]
+        app.dependency_overrides.pop(get_current_user, None)
         
         try:
             individual_id = str(uuid4())

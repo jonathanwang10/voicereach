@@ -158,7 +158,6 @@ class TestCreateCategory:
         assert "auto_trigger" in str(response.json())
             
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     async def test_missing_auth(self):
         """Test authentication required"""
         # Clear auth override for this test

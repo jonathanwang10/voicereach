@@ -167,7 +167,6 @@ class TestIndividualsAPI:
     
     @pytest.mark.asyncio
     @pytest.mark.real_auth
-    @pytest.mark.skip(reason="auth enforced in Task 5A")
     async def test_post_individuals_no_auth(self, client):
         """Test endpoint requires authentication"""
         response = await client.post(

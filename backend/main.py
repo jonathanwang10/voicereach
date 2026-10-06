@@ -6,11 +6,13 @@ import json
 import asyncio
 import httpx
 import websockets
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from services.context_service import get_context_service
+from starlette.concurrency import run_in_threadpool
 from supabase import create_client, Client
+from api.auth import verify_token
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +30,7 @@ app.add_middleware(
 
 # Initialize Supabase client for context service
 supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_ANON_KEY")
+supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
 
 @app.get("/health")
@@ -118,6 +120,16 @@ async def websocket_realtime_proxy(websocket: WebSocket):
     WebSocket proxy for OpenAI Realtime API
     Handles authentication and forwards messages between client and OpenAI
     """
+    auth_header = websocket.headers.get("authorization", "")
+    token = auth_header[len("Bearer "):] if auth_header.startswith("Bearer ") else ""
+    try:
+        if not token:
+            raise HTTPException(status_code=401)
+        await run_in_threadpool(verify_token, token)
+    except HTTPException:
+        await websocket.close(code=1008)  # policy violation
+        return
+
     print("🔌 WebSocket connection attempt received - GPT Realtime version")
     await websocket.accept()
     print("✅ WebSocket connection accepted")

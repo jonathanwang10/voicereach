@@ -31,10 +31,7 @@ def _no_background_embeddings(request, monkeypatch):
     async def _noop(*args, **kwargs):
         return None
 
-    try:
-        import api.individuals as individuals_api
-    except Exception:
-        return
+    import api.individuals as individuals_api
     monkeypatch.setattr(individuals_api, "generate_embedding_background", _noop)
 
 
@@ -45,13 +42,11 @@ def _fake_auth(request):
     Several test modules also set and clear app.dependency_overrides themselves
     at import/teardown time, which made results depend on file order.
     """
+    from main import app
+    from api.auth import get_current_user
     if request.node.get_closest_marker("real_auth"):
-        yield
-        return
-    try:
-        from main import app
-        from api.auth import get_current_user
-    except Exception:
+        # Some modules install an override at import time; real_auth tests must not see it.
+        app.dependency_overrides.pop(get_current_user, None)
         yield
         return
     app.dependency_overrides[get_current_user] = lambda: "test-user-123"
