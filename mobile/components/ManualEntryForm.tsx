@@ -12,7 +12,7 @@ interface Category {
   is_required: boolean;
   options?: any;
   priority: string;
-  danger_weight: number;
+  urgency_weight: number;
   auto_trigger: boolean;
 }
 

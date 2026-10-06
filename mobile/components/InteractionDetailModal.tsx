@@ -34,9 +34,9 @@ export default function InteractionDetailModal({
     });
   };
 
-  const formatLocation = (location?: { lat: number; lng: number }) => {
+  const formatLocation = (location?: { latitude: number; longitude: number }) => {
     if (!location) return 'Location not available';
-    return `${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+    return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
   };
 
   const handleShare = () => {
@@ -95,10 +95,10 @@ export default function InteractionDetailModal({
             )}
 
             {/* Additional Data */}
-            {Object.keys(interaction.data).length > 0 && (
+            {Object.keys(interaction.data ?? {}).length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Additional Data</Text>
-                {Object.entries(interaction.data).map(([key, value]) => (
+                {Object.entries(interaction.data ?? {}).map(([key, value]) => (
                   <View key={key} style={styles.infoRow}>
                     <Text style={styles.label}>
                       {key.split('_').map(word => 

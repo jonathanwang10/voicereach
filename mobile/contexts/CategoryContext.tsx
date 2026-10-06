@@ -4,10 +4,10 @@ import { api } from '../services/api';
 interface Category {
   id: string;
   name: string;
-  type: 'text' | 'number' | 'single-select' | 'multi-select' | 'date' | 'location';
+  type: 'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location';
   is_required: boolean;
   priority: 'high' | 'medium' | 'low';
-  danger_weight?: number;
+  urgency_weight?: number;
   auto_trigger?: boolean;
   options?: string[] | Array<{label: string, value: number}>;
   active: boolean; // For UI state management
@@ -19,6 +19,7 @@ interface CategoryContextType {
   toggleCategoryActive: (categoryId: string) => void;
   getActiveCategories: () => Category[];
   refreshCategories: () => Promise<void>;
+  updateCategoryLocal: (id: string, patch: Partial<Category>) => void;
 }
 
 const CategoryContext = createContext<CategoryContextType | undefined>(undefined);
@@ -115,6 +116,9 @@ export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) 
     return categories.filter(cat => cat.active);
   };
 
+  const updateCategoryLocal = (id: string, patch: Partial<Category>) =>
+    setCategories(prev => prev.map(cat => (cat.id === id ? { ...cat, ...patch } : cat)));
+
   const refreshCategories = async () => {
     await fetchCategories();
   };
@@ -125,6 +129,7 @@ export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) 
     toggleCategoryActive,
     getActiveCategories,
     refreshCategories,
+    updateCategoryLocal,
   };
 
   return (

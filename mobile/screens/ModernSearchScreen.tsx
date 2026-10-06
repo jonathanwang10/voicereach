@@ -187,7 +187,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
                 style={styles.matchBadge}
               >
                 <Ionicons
-                  name={item.search_type === 'exact' ? 'search' : 'brain'}
+                  name={item.search_type === 'exact' ? 'search' : 'bulb-outline'}
                   size={10}
                   color={theme.colors.text.inverse}
                 />

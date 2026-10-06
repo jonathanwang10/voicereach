@@ -232,6 +232,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const audioBufferRef = useRef<string>('');
   const pendingAssistantTextRef = useRef<string>('');
   const awaitingPlaybackRef = useRef(false);
+  const isMutedRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -268,6 +269,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       if (wsRef.current) {
         wsRef.current.close();
       }
+      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
     };
   }, []);
 
@@ -330,7 +332,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         if (event.item?.type === 'message' && event.item?.role === 'assistant') {
           console.log('📝 Assistant message updated');
           const updatedText = event.item.content?.[0]?.text || '';
-          if (isMuted) {
+          if (isMutedRef.current) {
             setMessages(prev => {
               const newMessages = [...prev];
               const lastMessage = newMessages[newMessages.length - 1];
@@ -357,7 +359,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       case 'response.output_audio_transcript.delta':
         console.log('📝 Audio transcript delta:', event.delta);
-        if (isMuted) {
+        if (isMutedRef.current) {
           setMessages(prev => {
             const newMessages = [...prev];
             const lastMessage = newMessages[newMessages.length - 1];
@@ -377,7 +379,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       case 'response.output_text.delta':
         console.log('📝 Text delta:', event.delta);
-        if (isMuted) {
+        if (isMutedRef.current) {
           setMessages(prev => {
             const newMessages = [...prev];
             const lastMessage = newMessages[newMessages.length - 1];
@@ -415,7 +417,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         console.log('✅ Audio output completed');
         {
           const buffered = audioBufferRef.current || currentAudioData;
-          if (buffered && !isMuted) {
+          if (buffered && !isMutedRef.current) {
             awaitingPlaybackRef.current = true;
             playAudioData(buffered, () => {
               awaitingPlaybackRef.current = false;
@@ -511,7 +513,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   const toggleMute = async () => {
-    setIsMuted(!isMuted);
+    setIsMuted(m => { isMutedRef.current = !m; return !m; });
     if (!isMuted) {
       console.log('🔇 Muted - Audio output disabled');
     } else {
@@ -520,6 +522,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   const initializeVoiceAssistant = async () => {
+    wsRef.current?.close();
+    wsRef.current = null;
     try {
       setIsLoading(true);
       setError(null);
@@ -610,16 +614,16 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       const recordingOptions = {
         android: {
           extension: '.m4a',
-          outputFormat: Audio.RECORDING_FORMAT_MPEG_4,
-          audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
           sampleRate: 16000, // Lower sample rate for faster processing
           numberOfChannels: 1, // Mono for efficiency
           bitRate: 64000, // Lower bitrate
         },
         ios: {
           extension: '.m4a',
-          outputFormat: Audio.RECORDING_FORMAT_MPEG_4,
-          audioQuality: Audio.RECORDING_QUALITY_MEDIUM, // Medium quality for speed
+          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
+          audioQuality: Audio.IOSAudioQuality.MEDIUM, // Medium quality for speed
           sampleRate: 16000, // Optimized for Whisper
           numberOfChannels: 1, // Mono
           bitRate: 64000,
@@ -687,8 +691,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         try {
           console.log('🎤 Fast transcribing recorded audio via backend...');
           const startTime = Date.now();
-          const transcriptionResponse = await api.transcribe(uri);
-          const transcription = transcriptionResponse.transcription || '';
+          const transcription = await api.transcribeForAssistant(uri);
           const transcriptionTime = Date.now() - startTime;
           console.log(`⚡ Transcription completed in ${transcriptionTime}ms`);
 
@@ -959,20 +962,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             onChangeText={setTextInput}
             multiline
             maxLength={500}
-            rightIcon={
-              <Button
-                variant={textInput.trim() && isConnected ? 'primary' : 'ghost'}
-                size="small"
-                icon="send"
-                onPress={() => {
-                  if (textInput.trim() && isConnected) {
-                    sendTextMessage(textInput.trim());
-                    setTextInput('');
-                  }
-                }}
-                disabled={!textInput.trim() || !isConnected}
-              />
-            }
+            rightIcon="send"
+            onRightIconPress={textInput.trim() && isConnected ? () => { sendTextMessage(textInput.trim()); setTextInput(''); } : undefined}
             style={styles.textInput}
           />
         </View>

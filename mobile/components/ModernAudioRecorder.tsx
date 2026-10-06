@@ -42,6 +42,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   const [duration, setDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const durationRef = useRef(0);
 
   // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -51,6 +53,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   // Expose reset function to parent
   useImperativeHandle(ref, () => ({
     resetRecording: () => {
+      recordingRef.current = null;
       setRecording(null);
       setIsRecording(false);
       setIsPaused(false);
@@ -112,6 +115,22 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }).start();
   }, [duration]);
 
+  useEffect(() => {
+    durationRef.current = duration;
+    if (!isRecording) return;
+    if (duration === 105) {
+      Alert.alert('⏱️ Time Warning', 'Recording will stop in 15 seconds', [{ text: 'OK', style: 'default' }]);
+    }
+    if (duration >= 120) {
+      stopRecording();
+    }
+  }, [duration, isRecording]);
+
+  useEffect(() => () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+  }, []);
+
   // Start recording
   const startRecording = async () => {
     try {
@@ -159,7 +178,18 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       }
 
       // Start recording
-      const { recording } = await Audio.Recording.createAsync();
+      const { recording } = await Audio.Recording.createAsync({
+        ...Audio.RecordingOptionsPresets.LOW_QUALITY,
+        android: {
+          extension: '.m4a',
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 64000,
+        },
+      });
+      recordingRef.current = recording;
       setRecording(recording);
       setIsRecording(true);
       setIsPaused(false);
@@ -174,24 +204,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
       // Start duration timer
       intervalRef.current = setInterval(() => {
-        setDuration((prev) => {
-          const newDuration = prev + 1;
-
-          if (newDuration === 105) {
-            Alert.alert(
-              '⏱️ Time Warning',
-              'Recording will stop in 15 seconds',
-              [{ text: 'OK', style: 'default' }]
-            );
-          }
-
-          if (newDuration >= 120) {
-            stopRecording();
-            return prev;
-          }
-
-          return newDuration;
-        });
+        setDuration((prev) => prev + 1);
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording', err);
@@ -202,14 +215,15 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
   // Stop recording
   const stopRecording = async () => {
-    if (!recording) return;
+    const activeRecording = recordingRef.current;
+    if (!activeRecording) return;
 
     try {
       // Check minimum recording duration
-      if (duration < 5) {
+      if (durationRef.current < 5) {
         Alert.alert(
           '⏱️ Too Short',
-          `Please record at least 5 seconds (${5 - duration}s more)`,
+          `Please record at least 5 seconds (${5 - durationRef.current}s more)`,
           [{ text: 'Continue Recording', style: 'default' }]
         );
         return;
@@ -222,8 +236,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       }
 
       stopAnimations();
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
+      recordingRef.current = null;
+      await activeRecording.stopAndUnloadAsync();
+      const uri = activeRecording.getURI();
       setRecording(null);
       setIsRecording(false);
       setIsPaused(false);
@@ -231,7 +246,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       onRecordingStop?.();
 
       if (uri) {
-        const locationData = (recording as any).locationData;
+        const locationData = (activeRecording as any).locationData;
         onRecordingComplete(uri, locationData);
       }
     } catch (err) {
@@ -320,6 +335,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
             { backgroundColor: getButtonColor() },
             isRecording && styles.recordingButton,
           ]}
+          testID="record-button"
           onPress={isRecording ? stopRecording : startRecording}
           disabled={!isRecording && duration > 0 && duration < 5}
           activeOpacity={0.7}

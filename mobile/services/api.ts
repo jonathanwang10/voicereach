@@ -631,7 +631,7 @@ export const api = {
       // Only apply search filter if query is not empty
       if (query.trim()) {
         console.log('🔍 Applying search filter for query:', query);
-        supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,data->>'Name'.ilike.%${query}%`);
+        supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,data->>'name'.ilike.%${query}%`);
       } else {
         console.log('🔍 No search query, fetching all individuals');
       }
@@ -747,6 +747,7 @@ export const api = {
       
       // Convert to IndividualProfile format
       const individual = result.individual;
+      const interactions = await api.getInteractions(individualId).catch(() => []);
       const profile: IndividualProfile = {
         id: individual.id,
         name: individual.name,
@@ -756,8 +757,8 @@ export const api = {
         created_at: individual.created_at,
         updated_at: individual.updated_at,
         last_location: individual.last_location || null,
-        interactions: [], // TODO: Add interactions when that table is set up
-        total_interactions: 0 // TODO: Add interactions when that table is set up
+        interactions,
+        total_interactions: interactions.length
       };
 
       return profile;
@@ -859,18 +860,42 @@ export const api = {
 
   // Export CSV
   exportCSV: async (): Promise<string> => {
-    try {
-      // Always use real API - no mock data
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const response = await fetch(getApiUrl('/api/export'), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+    return response.text();
+  },
 
-      const result = await apiRequest('/api/export', {
-        method: 'GET',
-      });
-      
-      return result.url || 'export-completed';
-    } catch (error) {
-      console.error('Error exporting CSV:', error);
-      throw new Error('Failed to export CSV');
-    }
+  // Whisper-only transcription for the voice assistant
+  transcribeForAssistant: async (uri: string): Promise<string> => {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const form = new FormData();
+    form.append('audio', { uri, name: 'question.m4a', type: 'audio/m4a' } as any);
+    const response = await fetch(getApiUrl('/api/voice-assistant/transcribe'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token ?? 'demo'}` },
+      body: form,
+    });
+    if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
+    return (await response.json()).transcription ?? '';
+  },
+
+  // Interaction history for one individual (backend returns `changes`; the app's Interaction type uses `data`)
+  getInteractions: async (individualId: string) => {
+    const result = await apiRequest(`/api/individuals/${individualId}/interactions`);
+    return (result?.interactions ?? []).map((i: any) => ({
+      id: i.id,
+      individual_id: individualId,
+      user_id: '',
+      transcription: i.transcription ?? undefined,
+      data: i.changes ?? {},
+      location: i.location ?? undefined,
+      created_at: i.created_at,
+      worker_name: i.user_name,
+      abbreviated_address: i.location?.address,
+    }));
   },
 
   // Export data

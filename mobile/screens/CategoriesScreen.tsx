@@ -16,17 +16,17 @@ import { useCategories } from '../contexts/CategoryContext';
 interface Category {
   id: string;
   name: string;
-  type: 'text' | 'number' | 'single-select' | 'multi-select' | 'date' | 'location';
+  type: 'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location';
   is_required: boolean;
   priority: 'high' | 'medium' | 'low';
-  danger_weight?: number; // 0-100, only for number/single-select
-  auto_trigger?: boolean; // only for number/single-select
+  urgency_weight?: number; // 0-100, only for number/single_select
+  auto_trigger?: boolean; // only for number/single_select
   options?: string[] | Array<{label: string, value: number}>;
   active?: boolean; // For local UI state, not from API
 }
 
 export default function CategoriesScreen() {
-  const { categories, isLoading, toggleCategoryActive, refreshCategories } = useCategories();
+  const { categories, isLoading, toggleCategoryActive, refreshCategories, updateCategoryLocal } = useCategories();
 
 
 
@@ -52,7 +52,7 @@ export default function CategoriesScreen() {
 
   const [isExporting, setIsExporting] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryType, setNewCategoryType] = useState<'text' | 'number' | 'single-select' | 'multi-select' | 'date' | 'location'>('text');
+  const [newCategoryType, setNewCategoryType] = useState<'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location'>('text');
   const [newCategoryPriority, setNewCategoryPriority] = useState<'high' | 'medium' | 'low'>('medium');
   const [newCategoryDangerWeight, setNewCategoryDangerWeight] = useState(0);
   const [newCategoryAutoTrigger, setNewCategoryAutoTrigger] = useState(false);
@@ -96,60 +96,18 @@ export default function CategoriesScreen() {
     }
   };
 
-  const generateMockCSV = () => {
-    // Mock data for demonstration
-    const mockIndividuals = [
-      {
-        name: 'John Doe',
-        age: 45,
-        height: 72,
-        weight: 180,
-        veteranStatus: true,
-        medicalConditions: 'Diabetes',
-        housingPriority: 'High',
-        urgencyScore: 75,
-        lastInteraction: '2024-01-15',
-      },
-      {
-        name: 'Sarah Smith',
-        age: 35,
-        height: 64,
-        weight: 120,
-        veteranStatus: false,
-        medicalConditions: 'None',
-        housingPriority: 'Medium',
-        urgencyScore: 20,
-        lastInteraction: '2024-01-14',
-      },
-      {
-        name: 'Robert Johnson',
-        age: 55,
-        height: 70,
-        weight: 200,
-        veteranStatus: true,
-        medicalConditions: 'Substance Abuse',
-        housingPriority: 'High',
-        urgencyScore: 90,
-        lastInteraction: '2024-01-13',
-      },
-    ];
-
-    return mockIndividuals;
-  };
-
-
   const validateNewCategory = () => {
     if (!newCategoryName.trim()) {
       Alert.alert('Error', 'Category name is required');
       return false;
     }
 
-    if (newCategoryType === 'single-select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
+    if (newCategoryType === 'single_select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
       Alert.alert('Error', 'Single-select categories require options');
       return false;
     }
 
-    if (newCategoryType === 'multi-select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
+    if (newCategoryType === 'multi_select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
       Alert.alert('Error', 'Multi-select categories require options');
       return false;
     }
@@ -168,9 +126,9 @@ export default function CategoriesScreen() {
         is_required: false,
         priority: newCategoryPriority,
         // Temporarily comment out fields that might not exist in database
-        // danger_weight: (newCategoryType === 'number' || newCategoryType === 'single-select') ? newCategoryDangerWeight : 0,
-        // auto_trigger: (newCategoryType === 'number' || newCategoryType === 'single-select') ? newCategoryAutoTrigger : false,
-        options: (newCategoryType === 'single-select' || newCategoryType === 'multi-select') ? newCategoryOptions : null,
+        // urgency_weight: (newCategoryType === 'number' || newCategoryType === 'single_select') ? newCategoryDangerWeight : 0,
+        // auto_trigger: (newCategoryType === 'number' || newCategoryType === 'single_select') ? newCategoryAutoTrigger : false,
+        options: (newCategoryType === 'single_select' || newCategoryType === 'multi_select') ? newCategoryOptions : null,
       };
 
       console.log('📋 Creating new category:', categoryData);
@@ -178,19 +136,6 @@ export default function CategoriesScreen() {
       // Save to database via API
       const response = await api.createCategory(categoryData);
       console.log('📋 Category created successfully:', response);
-
-      // Create local category object with the response data
-      const newCategory: Category = {
-        id: response.id || Date.now().toString(),
-        name: response.name || newCategoryName.trim(),
-        type: response.type || newCategoryType,
-        is_required: response.is_required || false,
-        priority: response.priority || newCategoryPriority,
-        danger_weight: response.danger_weight,
-        auto_trigger: response.auto_trigger,
-        options: response.options,
-        active: true,
-      };
 
       // Refresh categories from context
       await refreshCategories();
@@ -257,13 +202,7 @@ export default function CategoriesScreen() {
       return;
     }
 
-    setCategories(prev => 
-      prev.map(cat => 
-        cat.id === editingCategoryId 
-          ? { ...cat, name: editCategoryName.trim(), priority: editCategoryPriority }
-          : cat
-      )
-    );
+    updateCategoryLocal(editingCategoryId!, { name: editCategoryName.trim(), priority: editCategoryPriority });
 
     Alert.alert('Success', 'Category updated successfully');
     cancelEditCategory();
@@ -383,8 +322,8 @@ export default function CategoriesScreen() {
                   {category.is_required && (
                     <Text style={styles.requiredBadge}>Required</Text>
                   )}
-                  {(category.type === 'number' || category.type === 'single-select') && category.danger_weight !== undefined && (
-                    <Text style={styles.dangerWeightBadge}>Weight: {category.danger_weight}</Text>
+                  {(category.type === 'number' || category.type === 'single_select') && category.urgency_weight !== undefined && (
+                    <Text style={styles.dangerWeightBadge}>Weight: {category.urgency_weight}</Text>
                   )}
                 </View>
                 <View style={styles.categoryActions}>
@@ -431,13 +370,13 @@ export default function CategoriesScreen() {
             onChangeText={setNewCategoryName}
           />
           <TouchableOpacity style={styles.typeButton} onPress={() => {
-            const types: Array<'text' | 'number' | 'single-select' | 'multi-select' | 'date' | 'location'> = 
-              ['text', 'number', 'single-select', 'multi-select', 'date', 'location'];
+            const types: Array<'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location'> = 
+              ['text', 'number', 'single_select', 'multi_select', 'date', 'location'];
             const currentIndex = types.indexOf(newCategoryType);
             const nextIndex = (currentIndex + 1) % types.length;
             setNewCategoryType(types[nextIndex]);
           }}>
-            <Text style={styles.typeButtonText}>{newCategoryType}</Text>
+            <Text style={styles.typeButtonText}>{newCategoryType.replace('_', '-')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.priorityButton} onPress={() => {
             const priorities: Array<'high' | 'medium' | 'low'> = ['high', 'medium', 'low'];
@@ -449,7 +388,7 @@ export default function CategoriesScreen() {
           </TouchableOpacity>
         </View>
         
-        {(newCategoryType === 'number' || newCategoryType === 'single-select') && (
+        {(newCategoryType === 'number' || newCategoryType === 'single_select') && (
                   <View style={styles.dangerWeightContainer}>
           <Text style={styles.dangerWeightLabel}>Danger Weight: {newCategoryDangerWeight}</Text>
             <TouchableOpacity 

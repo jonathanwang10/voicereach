@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { theme } from '../../theme';
 
-type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
+type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'secondary';
 type BadgeSize = 'small' | 'medium' | 'large';
 
 interface BadgeProps {
@@ -72,6 +72,7 @@ const styles = StyleSheet.create({
   info: {
     backgroundColor: theme.colors.primary[50],
   },
+  secondary: {},
 
   // Text colors
   text: {
@@ -95,6 +96,7 @@ const styles = StyleSheet.create({
   infoText: {
     color: theme.colors.primary[600],
   },
+  secondaryText: {},
 
   // Sizes
   smallSize: {
