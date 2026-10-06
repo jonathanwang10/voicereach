@@ -28,19 +28,6 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   // Validate that potentialMatch has a valid UUID
   const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialMatch.id);
   
-  if (!isValidUUID) {
-    console.error('❌ MergeUI received invalid ID:', potentialMatch.id);
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>
-          Invalid merge target. Please try again.
-        </Text>
-        <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
-          <Text style={styles.cancelButtonText}>Cancel</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
   const [fetchedExistingData, setFetchedExistingData] = useState<Record<string, any>>(existingData);
   const [isLoadingExistingData, setIsLoadingExistingData] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -163,7 +150,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     }
 
     // Ensure we have the merge ID
-    if (!potentialMatch.id || potentialMatch.id === 'mock-123') {
+    if (!potentialMatch.id) {
       console.error('❌ Invalid merge ID:', potentialMatch.id);
       Alert.alert('Error', 'Invalid merge target. Please try again.');
       return;
@@ -260,6 +247,20 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     [newData, fetchedExistingData]
   );
 
+  if (!isValidUUID) {
+    console.error('❌ MergeUI received invalid ID:', potentialMatch.id);
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>
+          Invalid merge target. Please try again.
+        </Text>
+        <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   // Show loading state while fetching existing data
   if (isLoadingExistingData) {
     return (
@@ -336,12 +337,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#dc3545',
-    textAlign: 'center',
-    padding: 20,
   },
   header: {
     padding: 20,

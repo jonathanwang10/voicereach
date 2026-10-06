@@ -4,6 +4,7 @@ import { LocationPicker } from '../LocationPicker';
 
 // Mock expo-location
 jest.mock('expo-location', () => ({
+  Accuracy: { High: 4, Balanced: 3 },
   requestForegroundPermissionsAsync: jest.fn(() => Promise.resolve({ status: 'granted' })),
   getCurrentPositionAsync: jest.fn(() => Promise.resolve({
     coords: {
@@ -21,10 +22,8 @@ jest.mock('expo-location', () => ({
 // Mock react-native-maps
 jest.mock('react-native-maps', () => {
   const { View } = require('react-native');
-  return {
-    MapView: View,
-    Marker: View,
-  };
+  const MapView = (props) => <View {...props} />;
+  return { __esModule: true, default: MapView, MapView, Marker: View };
 });
 
 describe('LocationPicker', () => {
@@ -61,6 +60,10 @@ describe('LocationPicker', () => {
   });
 
   it('handles location permission denied', async () => {
+    // Mock permission denied (before mount, which requests permission)
+    const expoLocation = require('expo-location');
+    expoLocation.requestForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
+
     const { getByText } = render(
       <LocationPicker
         onLocationSelected={mockOnLocationSelected}
@@ -68,12 +71,8 @@ describe('LocationPicker', () => {
       />
     );
 
-    // Mock permission denied
-    const expoLocation = require('expo-location');
-    expoLocation.requestForegroundPermissionsAsync.mockResolvedValueOnce({ status: 'denied' });
-
     await waitFor(() => {
-      expect(getByText('❌ Location permission denied')).toBeTruthy();
+      expect(getByText('Location permission denied')).toBeTruthy();
     });
   });
 

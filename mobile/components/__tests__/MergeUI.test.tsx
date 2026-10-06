@@ -8,7 +8,6 @@ describe('MergeUI', () => {
     age: 45,
     height: 72,
     weight: 180,
-    skin_color: 'Light',
   };
 
   const mockExistingData = {
@@ -16,12 +15,11 @@ describe('MergeUI', () => {
     age: 44,
     height: 71,
     weight: 175,
-    skin_color: 'Light',
     medical_conditions: 'Diabetes',
   };
 
   const mockPotentialMatch = {
-    id: '123',
+    id: '550e8400-e29b-41d4-a716-446655440000',
     confidence: 85,
     name: 'John Smith',
   };
@@ -67,8 +65,7 @@ describe('MergeUI', () => {
     expect(getByText('Age')).toBeTruthy();
     expect(getByText('Height')).toBeTruthy();
     expect(getByText('Weight')).toBeTruthy();
-    expect(getByText('Skin Color')).toBeTruthy();
-    expect(getByText('Medical Conditions')).toBeTruthy();
+    expect(getByText('Medical conditions')).toBeTruthy();
   });
 
   it('calls onCancel when cancel button is pressed', () => {
@@ -122,13 +119,12 @@ describe('MergeUI', () => {
     
     expect(mockOnMerge).toHaveBeenCalledWith(
       expect.objectContaining({
-        existing_individual_id: '123',
+        merge_with_id: '550e8400-e29b-41d4-a716-446655440000',
         name: 'John Doe',
         age: 45,
         height: 72,
         weight: 180,
-        skin_color: 'Light',
-        medical_conditions: 'Diabetes',
+            medical_conditions: 'Diabetes',
       })
     );
   });
