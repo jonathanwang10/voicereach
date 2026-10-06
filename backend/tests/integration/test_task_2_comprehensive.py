@@ -2,10 +2,7 @@
 """
 Comprehensive test suite for Task 2.0 - Verify all requirements
 """
-import asyncio
 import httpx
-import json
-import os
 from datetime import datetime
 from tests.integration.test_api_integration import TEST_AUDIO_FILES
 
@@ -276,7 +273,6 @@ async def test_task_2_comprehensive():
         print_subsection("Testing Field Validation")
         
         try:
-            from services.validation_helper import validate_categorized_data, ValidationResult
             print_pass("Validation helper service exists")
             
             # The validation is integrated in /api/transcribe

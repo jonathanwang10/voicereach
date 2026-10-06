@@ -3,7 +3,6 @@ Unit tests specifically for UUID mapping fix in duplicate detection service
 Tests that placeholder keys from GPT-4o are correctly mapped to actual UUIDs
 """
 import pytest
-import json
 from unittest.mock import Mock, AsyncMock, MagicMock
 import uuid
 import sys

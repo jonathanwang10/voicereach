@@ -2,9 +2,7 @@
 Integration tests for Task 2.0 - Complete transcription flow
 """
 import pytest
-import asyncio
 import httpx
-import os
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -12,8 +10,6 @@ load_dotenv()
 
 # Test configuration
 # Import centralized IP configuration
-import sys
-import os
 from tests.integration.conftest import API_URL
 
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"

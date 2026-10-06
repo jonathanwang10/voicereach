@@ -3,7 +3,7 @@ Test cases for POST /api/categories endpoint
 """
 import pytest
 from httpx import AsyncClient
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 from main import app
 from datetime import datetime, timezone
 from uuid import uuid4

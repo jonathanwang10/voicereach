@@ -2,15 +2,10 @@
 """
 Unit tests for individual Task 2.0 components
 """
-import pytest
-import asyncio
-from unittest.mock import Mock, patch
-import json
 
 # Import components to test
 from services.urgency_calculator import calculate_urgency_score
-from services.validation_helper import validate_categorized_data, ValidationResult
-from services.openai_service import OpenAIService
+from services.validation_helper import validate_categorized_data
 
 class TestDangerCalculator:
     """Unit tests for danger score calculation"""

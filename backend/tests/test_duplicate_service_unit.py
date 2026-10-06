@@ -3,8 +3,7 @@ Unit tests for duplicate detection service
 Following TDD approach - tests written before implementation
 """
 import pytest
-import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, MagicMock
 from datetime import datetime
 import uuid
 

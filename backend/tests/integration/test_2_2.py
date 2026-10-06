@@ -2,9 +2,7 @@
 """
 Test Task 2.2: GPT-4o Categorization
 """
-import asyncio
 import os
-import sys
 from dotenv import load_dotenv
 
 print("Starting Task 2.2 test...")

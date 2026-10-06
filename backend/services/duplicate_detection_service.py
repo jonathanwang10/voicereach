@@ -4,7 +4,7 @@ Uses smart search strategy and LLM-based comparison
 """
 import json
 import uuid
-from typing import List, Dict, Optional
+from typing import List, Dict
 from supabase import Client
 
 

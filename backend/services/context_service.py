@@ -5,7 +5,7 @@ Handles name extraction, individual lookup, and context formatting with caching
 import re
 import time
 import hashlib
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from supabase import Client
 
 from services.individual_service import IndividualService
@@ -364,3 +364,14 @@ class ContextService:
                 "error_type": type(e).__name__,
                 "processing_time": processing_time
             }
+
+
+_context_service = None
+
+
+def get_context_service(supabase):
+    """Return one shared ContextService so its cache persists across calls."""
+    global _context_service
+    if _context_service is None:
+        _context_service = ContextService(supabase)
+    return _context_service

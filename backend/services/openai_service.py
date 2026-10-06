@@ -6,7 +6,7 @@ import httpx
 import tempfile
 import json
 import re
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
@@ -40,7 +40,8 @@ class OpenAIService:
             raise ValueError("Invalid URL format")
             
         # Check if it's a Supabase URL
-        if "supabase" not in parsed.netloc:
+        host = parsed.hostname or ""
+        if not host.endswith(".supabase.co"):
             raise ValueError("URL must be from Supabase Storage")
             
         # Download audio file to temporary location
@@ -295,76 +296,6 @@ Return JSON only."""
                 
         return None
     
-    async def find_duplicates(self, new_data: dict, existing_individuals: list) -> list:
-        """
-        Find potential duplicate individuals using LLM comparison
-        
-        Args:
-            new_data: Dictionary of categorized data for the new individual
-            existing_individuals: List of existing individuals to compare against
-                                (pre-filtered by name similarity)
-                                
-        Returns:
-            List of matches sorted by confidence (highest first):
-            [{"id": "uuid", "name": "John Doe", "confidence": 95, "data": {...}}, ...]
-            
-        Note: Frontend handles auto-merge threshold (≥95%)
-        """
-        if not existing_individuals:
-            return []
-            
-        matches = []
-        
-        # Compare against each existing individual
-        for existing in existing_individuals:
-            # Build comparison prompt
-            prompt = f"""Compare these two individuals and return a confidence score (0-100) 
-that they are the same person based on all attributes:
-
-Person 1: {json.dumps(new_data, indent=2)}
-
-Person 2: {json.dumps(existing.get('data', {}), indent=2)}
-
-Consider name similarity, physical attributes, and other characteristics.
-Return only a number 0-100."""
-
-            try:
-                # Call GPT-4o for comparison
-                response = await self.client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {"role": "system", "content": "You are a data comparison assistant. Compare individuals based on their attributes and return only a confidence score as a number."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,  # Lower temperature for consistent scoring
-                    max_tokens=10  # We only need a number
-                )
-                
-                # Parse confidence score
-                result = response.choices[0].message.content.strip()
-                # Extract just the number in case there's extra text
-                confidence_match = re.search(r'\d+', result)
-                if confidence_match:
-                    confidence = int(confidence_match.group())
-                    confidence = min(max(confidence, 0), 100)  # Ensure 0-100 range
-                    
-                    matches.append({
-                        "id": existing.get('id'),
-                        "name": existing.get('name', 'Unknown'),
-                        "confidence": confidence,
-                        "data": existing.get('data', {})
-                    })
-            except Exception as e:
-                # Log error but continue with other comparisons
-                print(f"Error comparing with {existing.get('name', 'Unknown')}: {str(e)}")
-                continue
-        
-        # Sort by confidence (highest first)
-        matches.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        # Only return matches with meaningful confidence (>30%)
-        return [m for m in matches if m['confidence'] > 30]
-
     async def compare_individuals(self, comparison_prompt: str) -> Dict[str, int]:
         """
         Compare individuals using a custom prompt and return confidence scores
@@ -418,7 +349,6 @@ Return only a number 0-100."""
                 scores = {}
 
                 # Look for patterns like "id1": 85 or "uuid": 90
-                import re
                 pattern = r'"([^"]+)":\s*(\d+)'
                 matches = re.findall(pattern, result)
 

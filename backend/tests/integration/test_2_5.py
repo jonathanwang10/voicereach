@@ -2,11 +2,7 @@
 """
 Test Task 2.5: /api/transcribe Endpoint
 """
-import asyncio
-import os
-import sys
 import httpx
-import json
 from dotenv import load_dotenv
 
 print("Starting Task 2.5 test...")
@@ -18,8 +14,6 @@ load_dotenv()
 
 # Test data
 # Import centralized IP configuration
-import sys
-import os
 from tests.integration.conftest import API_URL
 
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"

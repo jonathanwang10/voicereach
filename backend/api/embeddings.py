@@ -2,8 +2,6 @@
 Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Any
-import json
 import os
 from services.embedding_service import EmbeddingService
 from api.auth import get_current_user

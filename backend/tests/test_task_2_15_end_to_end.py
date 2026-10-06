@@ -4,7 +4,7 @@ Tests all endpoints and functionality according to PRD specifications
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from uuid import uuid4
 from datetime import datetime, timezone, timedelta
 import time

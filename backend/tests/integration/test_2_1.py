@@ -2,9 +2,6 @@
 """
 Test Task 2.1: OpenAI Whisper Transcription Service
 """
-import asyncio
-import os
-import sys
 from dotenv import load_dotenv
 
 print("Starting Task 2.1 test...")

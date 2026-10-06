@@ -1,7 +1,7 @@
 """
 Urgency score calculation service
 """
-from typing import Dict, List, Any
+from typing import Any
 
 
 def _auto_trigger_fires(category: dict, value: Any) -> bool:

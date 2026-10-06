@@ -5,7 +5,7 @@ Tests service layer business logic
 import pytest
 from uuid import uuid4
 from datetime import datetime
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from services.individual_service import IndividualService
 from db.models import LocationData, SaveIndividualResponse
 

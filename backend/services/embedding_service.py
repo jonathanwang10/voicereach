@@ -2,7 +2,6 @@
 Embedding service for semantic search using OpenAI's text-embedding-3-large model
 """
 import os
-import json
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from openai import AsyncOpenAI

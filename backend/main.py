@@ -4,16 +4,12 @@ Main FastAPI application for SF Homeless Outreach Voice Transcription App
 import os
 import json
 import asyncio
-import ssl
 import httpx
 import websockets
-import base64
-import io
-import wave
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from services.context_service import ContextService
+from services.context_service import get_context_service
 from supabase import create_client, Client
 
 # Load environment variables
@@ -50,22 +46,6 @@ async def root():
         "note": "If you see Flask errors, Railway deployed the wrong project!"
     }
 
-@app.websocket("/test-ws")
-async def test_websocket(websocket: WebSocket):
-    """Test WebSocket endpoint"""
-    await websocket.accept()
-    await websocket.send_text("Hello from test WebSocket!")
-    await websocket.close()
-
-"""
-NOTE on audio input:
-The Realtime WebSocket API expects raw PCM base64 for input_audio_buffer.append.
-We do NOT convert compressed formats (e.g., M4A) to PCM here.
-Clients must send 24kHz, mono, 16-bit PCM base64 for input audio, or use the
-Whisper transcription endpoint (/api/voice-assistant/transcribe) and then send
-text via conversation.item.create.
-"""
-
 async def process_client_message_with_context(message_str: str) -> str:
     """
     Process client message and inject database context if names are detected.
@@ -92,7 +72,7 @@ async def process_client_message_with_context(message_str: str) -> str:
                     print(f"🔍 Analyzing message for names: {text}")
 
                     # Use context service to get individual context
-                    context_service = ContextService(supabase)
+                    context_service = get_context_service(supabase)
                     context_result = await context_service.get_context_for_message(text)
 
                     if context_result["context"]:
@@ -181,9 +161,8 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         
         # Create ephemeral token
         print("🔑 Creating ephemeral token with OpenAI...")
-        print("🔧 Session config:", json.dumps(session_config, indent=2))
         
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient() as client:
             token_response = await client.post(
                 "https://api.openai.com/v1/realtime/client_secrets",
                 headers={
@@ -210,17 +189,12 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         openai_ws_url = f"wss://api.openai.com/v1/realtime?model=gpt-realtime"
         print(f"🔌 Connecting to OpenAI WebSocket: {openai_ws_url}")
         
-        # Create SSL context that doesn't verify certificates (for development)
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        
         # Connect with proper headers
         headers = {
             "Authorization": f"Bearer {ephemeral_key}"
         }
         
-        async with websockets.connect(openai_ws_url, ssl=ssl_context, extra_headers=headers) as openai_ws:
+        async with websockets.connect(openai_ws_url, extra_headers=headers) as openai_ws:
             print("✅ Connected to OpenAI Realtime API")
             
             # Send session configuration to OpenAI
@@ -236,7 +210,6 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                 try:
                     while True:
                         message = await websocket.receive_text()
-                        print(f"📤 Received from client: {message[:200]}...")
 
                         # Parse the message to check if it's an audio event
                         try:
@@ -258,15 +231,11 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                             # Send context message first, then user message
                             context_msg, user_msg = processed_message.split("\n", 1)
 
-                            print(f"📤 Sending context to OpenAI: {context_msg[:100]}...")
                             await openai_ws.send(context_msg)
 
-                            print(f"📤 Sending user message to OpenAI: {user_msg[:100]}...")
                             await openai_ws.send(user_msg)
                         else:
                             # Send original message
-                            print(f"📤 Forwarding to OpenAI: {processed_message[:100]}...")
-                            print(f"📤 Full message length: {len(processed_message)} characters")
                             await openai_ws.send(processed_message)
                 except websockets.exceptions.ConnectionClosed:
                     print("🔌 OpenAI WebSocket connection closed normally")
@@ -279,7 +248,6 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                 try:
                     while True:
                         message = await openai_ws.recv()
-                        print(f"📨 Received from OpenAI: {message[:200]}...")
 
                         # Parse the message to check for errors
                         try:
@@ -300,21 +268,17 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                     print(f"❌ Error forwarding to client: {e}")
                     return
 
-            # Run both forwarding tasks concurrently and handle completion
+            tasks = [asyncio.create_task(forward_to_openai()), asyncio.create_task(forward_to_client())]
             try:
-                await asyncio.gather(
-                    forward_to_openai(),
-                    forward_to_client()
-                )
-            except Exception as e:
-                print(f"⚠️ WebSocket forwarding ended: {e}")
+                done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in pending:
+                    task.cancel()
             finally:
-                print("🔌 Cleaning up WebSocket connections")
                 try:
                     await openai_ws.close()
-                except:
+                except Exception:
                     pass
-            
+
     except Exception as e:
         print(f"❌ WebSocket proxy error: {str(e)}")
         try:

@@ -3,7 +3,6 @@ Integration tests for SF Homeless Outreach API
 Task 6.5: Run full integration test of all features together
 """
 import pytest
-import asyncio
 import sys
 import os
 
@@ -12,7 +11,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient
 from main import app
-import json
 
 client = TestClient(app)
 

@@ -13,11 +13,9 @@ from db.models import (
     IndividualResponse,
     InteractionSummary,
     InteractionDetail,
-    SaveIndividualResponse,
     SearchIndividualsResponse,
     IndividualDetailResponse,
-    UrgencyOverrideResponse,
-    InteractionsResponse
+    UrgencyOverrideResponse
 )
 
 

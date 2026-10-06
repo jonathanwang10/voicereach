@@ -3,7 +3,7 @@ Authentication middleware for JWT validation
 Simplified for hackathon per PRD 11.7
 """
 
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header
 from jose import jwt
 import logging
 

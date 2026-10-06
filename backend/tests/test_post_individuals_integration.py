@@ -4,7 +4,7 @@ Tests with mocked Supabase and auth
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from uuid import uuid4
 from datetime import datetime, timezone
 

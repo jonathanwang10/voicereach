@@ -4,9 +4,8 @@ Tests manual urgency score override functionality
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 from uuid import uuid4
-from datetime import datetime, timezone
 
 from main import app
 from api.auth import get_current_user

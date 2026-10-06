@@ -2,14 +2,10 @@
 """
 Test extraction of optional fields from audio transcriptions
 """
-import asyncio
 import httpx
-import json
 from tests.integration.test_api_integration import TEST_AUDIO_FILES
 
 # Import centralized IP configuration
-import sys
-import os
 from tests.integration.conftest import API_URL
 
 TEST_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LXVzZXItMTIzIn0.test"

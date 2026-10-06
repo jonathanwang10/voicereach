@@ -13,7 +13,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.embedding_service import EmbeddingService
 from supabase import create_client, Client
-import json
 
 def get_supabase_client() -> Client:
     """Get Supabase client instance"""

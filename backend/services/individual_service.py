@@ -1,14 +1,13 @@
 """
 Individual management service - handles business logic for individuals
 """
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 import re
 from supabase import Client
 
 from db.models import (
-    SaveIndividualRequest,
     IndividualResponse,
     InteractionSummary,
     IndividualSummary,

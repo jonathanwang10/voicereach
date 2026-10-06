@@ -14,7 +14,6 @@ from api.auth import get_current_user
 from db.models import (
     SaveIndividualRequest,
     SaveIndividualResponse,
-    LocationData,
     SearchIndividualsResponse,
     IndividualDetailResponse,
     UrgencyOverrideRequest,

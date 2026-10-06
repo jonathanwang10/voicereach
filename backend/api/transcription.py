@@ -9,7 +9,6 @@ from supabase import create_client, Client
 
 from api.auth import get_current_user
 from services.openai_service import OpenAIService
-from services.urgency_calculator import calculate_urgency_score
 from services.validation_helper import validate_categorized_data
 
 
