@@ -34,12 +34,12 @@ const apiRequest = async (
   const token = await getAuthToken();
 
   const config: RequestInit = {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(options.headers as any),
       Authorization: `Bearer ${token}`,
-      ...options.headers,
     },
-    ...options,
   };
 
   try {

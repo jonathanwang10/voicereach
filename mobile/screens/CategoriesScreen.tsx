@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { buildCategoryPayload } from '../utils/categoryPayload';
 import {
   View,
   Text,
@@ -120,16 +121,14 @@ export default function CategoriesScreen() {
 
     try {
       // Prepare category data for API
-      const categoryData = {
-        name: newCategoryName.trim(),
+      const categoryData = buildCategoryPayload({
+        name: newCategoryName,
         type: newCategoryType,
-        is_required: false,
         priority: newCategoryPriority,
-        // Temporarily comment out fields that might not exist in database
-        // urgency_weight: (newCategoryType === 'number' || newCategoryType === 'single_select') ? newCategoryDangerWeight : 0,
-        // auto_trigger: (newCategoryType === 'number' || newCategoryType === 'single_select') ? newCategoryAutoTrigger : false,
-        options: (newCategoryType === 'single_select' || newCategoryType === 'multi_select') ? newCategoryOptions : null,
-      };
+        options: newCategoryOptions,
+        dangerWeight: newCategoryDangerWeight,
+        autoTrigger: newCategoryAutoTrigger,
+      });
 
       console.log('📋 Creating new category:', categoryData);
 
@@ -322,7 +321,7 @@ export default function CategoriesScreen() {
                   {category.is_required && (
                     <Text style={styles.requiredBadge}>Required</Text>
                   )}
-                  {(category.type === 'number' || category.type === 'single_select') && category.urgency_weight !== undefined && (
+                  {(category.type === 'number' || category.type === 'single_select') && (category.urgency_weight ?? 0) > 0 && (
                     <Text style={styles.dangerWeightBadge}>Weight: {category.urgency_weight}</Text>
                   )}
                 </View>

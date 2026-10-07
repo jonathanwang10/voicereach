@@ -234,6 +234,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const awaitingPlaybackRef = useRef(false);
   const isMutedRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const isMountedRef = useRef(true);
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
@@ -264,8 +265,10 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     initializeVoiceAssistant();
     return () => {
+      isMountedRef.current = false;
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -549,6 +552,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       console.log('🔌 Backend URL:', backendUrl);
 
       const token = await getAuthToken();
+      // The screen may have unmounted during the awaits above; don't open a socket nobody will close.
+      if (!isMountedRef.current) return;
       // React Native's WebSocket accepts headers as a non-standard third argument.
       const ws = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
 
@@ -585,6 +590,10 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       };
 
       wsRef.current = ws;
+      if (!isMountedRef.current) {
+        ws.close();
+        wsRef.current = null;
+      }
 
     } catch (err) {
       console.error('Failed to initialize voice assistant:', err);

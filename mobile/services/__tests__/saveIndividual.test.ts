@@ -29,3 +29,15 @@ describe('api.saveIndividual', () => {
     expect(body.data.transcription).toBeUndefined();
   });
 });
+
+describe('apiRequest headers', () => {
+  afterEach(() => { (global as any).fetch = undefined; });
+
+  it('sends the bearer token on apiRequest-backed calls', async () => {
+    const fetchMock = jest.fn(async () => ({ ok: true, json: async () => ({ categories: [] }) }));
+    (global as any).fetch = fetchMock;
+    await api.getCategories();
+    const headers = (fetchMock.mock.calls[0] as any)[1].headers;
+    expect(headers.Authorization).toBe('Bearer test-token');
+  });
+});
