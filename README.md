@@ -111,6 +111,9 @@ You need Python 3.11, a current Node.js LTS, a Supabase project and an OpenAI AP
 3. In **Authentication → Users → Add user**, create `demo@sfgov.org` with
    password `demo123456` and tick **Auto Confirm User**. The app signs in as
    this user; without it every request fails.
+4. In **Authentication** settings, disable new user sign-ups. The demo
+   credentials are public in this repo, so anyone who has them can sign in and
+   read every row.
 
 Audio is sent to the backend inline (base64), so no Storage bucket is needed.
 
@@ -142,6 +145,8 @@ cp backend/.env.example backend/.env             # fill in the values below
 # (e.g. `from services.context_service import ...`), so backend/ must be on
 # sys.path. The root main.py shim exists for Railway, not for local dev.
 cd backend && python -m uvicorn main:app --reload --port 8001
+# On a physical phone, start with --host 0.0.0.0 so the device can reach it:
+# cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 `backend/.env`:
@@ -168,7 +173,7 @@ npx expo start
 
 | Variable | Purpose |
 |---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Defaults to `http://localhost:8001`, which works in the iOS simulator. On a physical phone use your machine's LAN address, e.g. `http://<your-LAN-IP>:8001` — `localhost` would resolve to the phone. |
+| `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Defaults to `http://localhost:8001`, which works in the iOS simulator. On a physical phone use your machine's LAN address, e.g. `http://<your-LAN-IP>:8001` — `localhost` would resolve to the phone, and uvicorn must be started with `--host 0.0.0.0`. |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL (Project Settings → API) |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
@@ -178,6 +183,11 @@ configured" error. Restart Expo after editing `.env`; the values are inlined at
 build time.
 
 The app signs in as the demo user automatically and opens on the Record tab.
+
+Expo Go from the App Store may only support the latest Expo SDK; this app uses
+SDK 53, so a physical device may need a development build
+(`npx expo run:ios --device`; the `ios/` project is checked in). The simulator
+works with `npx expo start`.
 
 ### 4. Optional: backfill embeddings
 
@@ -286,7 +296,7 @@ python -m pip install -r requirements-dev.txt
 python -m pytest              # from the repo root
 ```
 
-Expected: **154 passed, 18 skipped.** The suite runs offline; OpenAI and Supabase
+Expected: **161 passed, 18 skipped.** The suite runs offline; OpenAI and Supabase
 are mocked. The 18 skipped tests are in `backend/tests/integration/` and need a
 running backend plus a populated Supabase project. To run them:
 
@@ -295,9 +305,13 @@ VOICEREACH_INTEGRATION=1 python -m pytest backend/tests/integration
 # VOICEREACH_API_URL defaults to http://localhost:8001
 ```
 
+These integration tests are stale: they send a fixed test token, which the
+backend now rejects, and some point at audio from the deleted Supabase project.
+They would need a real access token and data to run.
+
 ```bash
 cd mobile
-npx jest          # 25 tests in 9 suites, all passing
+npx jest          # 29 tests in 10 suites, all passing
 npx tsc --noEmit  # 0 errors
 ```
 
@@ -339,7 +353,8 @@ These are still true:
   match.
 - **Undo after delete recreates the person as a new record.** Deleting cascades
   to their interactions, so the restored profile has a new id and no history
-  (`mobile/screens/ModernIndividualProfileScreen.tsx:107`).
+  (`mobile/screens/ModernIndividualProfileScreen.tsx:107`). It also drops any
+  manual urgency override.
 - **Semantic search ignores custom categories.** The text that gets embedded is
   built from a hardcoded field list (`services/embedding_service.py:50-90`).
   Embeddings are stored as JSONB and compared in Python, and list/search loads

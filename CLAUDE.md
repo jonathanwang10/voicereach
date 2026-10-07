@@ -22,7 +22,7 @@ using what the database knows. Read `README.md` first; it is the accurate overvi
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
-cd backend && python -m uvicorn main:app --reload --port 8001   # always port 8001
+cd backend && python -m uvicorn main:app --reload --port 8001   # always port 8001; add --host 0.0.0.0 for a physical phone
 python -m pytest                                # from the repo root; runs offline
 cd mobile && npx jest && npx tsc --noEmit
 ```

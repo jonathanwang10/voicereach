@@ -68,6 +68,8 @@ make one OpenAI call per individual.
 
 ```bash
 cd backend && python -m uvicorn main:app --reload --port 8001
+# On a physical phone, start with --host 0.0.0.0 so the device can reach it:
+# cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 ## API endpoints

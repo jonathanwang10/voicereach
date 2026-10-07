@@ -17,6 +17,8 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 cp backend/.env.example backend/.env    # fill in the values below
 
 cd backend && python -m uvicorn main:app --reload --port 8001
+# On a physical phone, start with --host 0.0.0.0 so the device can reach it:
+# cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 Run uvicorn from inside `backend/`: modules import each other absolutely
