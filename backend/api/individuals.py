@@ -22,6 +22,7 @@ from db.models import (
 )
 from services.individual_service import IndividualService
 from services.validation_helper import validate_categorized_data
+from services.context_service import invalidate_context_cache
 
 
 router = APIRouter()
@@ -161,6 +162,8 @@ async def save_individual(
             audio_url=request.audio_url
         )
         
+        invalidate_context_cache()
+
         # Add background task to generate embedding
         background_tasks.add_task(
             generate_embedding_background,
@@ -313,6 +316,8 @@ async def update_urgency_override(
                 detail=f"Individual not found: {individual_id}"
             )
         
+        invalidate_context_cache()
+
         # Get the updated individual data
         individual = update_result.data[0]
         

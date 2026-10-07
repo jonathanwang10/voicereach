@@ -24,6 +24,10 @@ class ContextService:
 
         print(f"🏃 ContextService initialized with {cache_ttl_seconds}s cache TTL")
 
+    def clear_cache(self):
+        """Drop every cached lookup (called after a save so the assistant sees fresh data)."""
+        self.cache.clear()
+
     def _get_cache_key(self, names: List[str]) -> str:
         """Generate cache key for names list"""
         names_str = "|".join(sorted(names))  # Sort for consistent keys
@@ -375,3 +379,9 @@ def get_context_service(supabase):
     if _context_service is None:
         _context_service = ContextService(supabase)
     return _context_service
+
+
+def invalidate_context_cache():
+    """Clear the shared ContextService cache, if one has been created."""
+    if _context_service is not None:
+        _context_service.clear_cache()

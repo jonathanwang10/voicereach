@@ -7,8 +7,10 @@ minute so normal use costs one Auth round trip per minute per session.
 import os
 import time
 
+import httpx
 from fastapi import Header, HTTPException, status
 from supabase import create_client
+from supabase_auth.errors import AuthError, AuthRetryableError
 
 _CACHE_TTL_SECONDS = 60
 _CACHE_MAX_ENTRIES = 1000
@@ -31,6 +33,10 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
+def _unavailable() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Auth service unavailable")
+
+
 def verify_token(token: str) -> str:
     """Return the Supabase user id for a valid access token; raise 401 otherwise."""
     now = time.monotonic()
@@ -38,9 +44,21 @@ def verify_token(token: str) -> str:
     if cached and cached[1] > now:
         return cached[0]
     try:
-        response = _get_auth_client().auth.get_user(token)
+        client = _get_auth_client()
+    except Exception as e:
+        print(f"Auth client could not be created (check SUPABASE_URL / SUPABASE_ANON_KEY): {type(e).__name__}: {e}")
+        raise _unavailable()
+    try:
+        response = client.auth.get_user(token)
         user = response.user if response else None
-    except Exception:
+    except (httpx.TransportError, AuthRetryableError) as e:
+        print(f"Auth service unreachable: {type(e).__name__}: {e}")
+        raise _unavailable()
+    except AuthError as e:
+        print(f"Token rejected by Supabase Auth: {type(e).__name__}: {e}")
+        user = None
+    except Exception as e:
+        print(f"Unexpected error verifying token: {type(e).__name__}: {e}")
         user = None
     if user is None:
         raise _unauthorized("Invalid or expired session")

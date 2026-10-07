@@ -33,6 +33,7 @@ def test_auto_trigger_number_zero_does_not_fire():
     ("5 ft 10", 70), ("5 feet 10 inches", 70), ("5'10", 70), ("5' 10\"", 70),
     ("6 feet", 72),
     ("6 ft 180 lbs", 72), ("5 foot 150 pounds", 60), ("5'", 60), ("5 ft", 60), ("6 foot 2", 74), ("70 inches", 70), ("70", 70),
+    ("5 feet, 10 inches", 70), ("6 ft, 2 in", 74),
 ])
 def test_parse_height(raw, expected):
     assert OpenAIService.__new__(OpenAIService)._parse_height(raw) == expected
@@ -91,3 +92,12 @@ async def test_display_score_honours_override_of_zero():
     sb.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
     result = await IndividualService(sb).get_individual_by_id(row["id"])
     assert result.individual.display_score == 0
+
+
+def test_invalidate_context_cache_empties_shared_cache():
+    from unittest.mock import MagicMock
+    from services import context_service
+    svc = context_service.get_context_service(MagicMock())
+    svc.cache["k"] = {"timestamp": 0, "data": {}}
+    context_service.invalidate_context_cache()
+    assert svc.cache == {}

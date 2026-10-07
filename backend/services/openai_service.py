@@ -268,7 +268,7 @@ Return JSON only."""
         # Handle "X feet Y inches" or "X'Y"""
         
         match = re.search(
-            r"(\d+)\s*(?:feet|foot|ft|')\s*(?:(\d{1,2})(?!\d)\s*(?:inches|inch|in|\")?)?",
+            r"(\d+)\s*(?:feet|foot|ft|')\s*,?\s*(?:(\d{1,2})(?!\d)\s*(?:inches|inch|in|\")?)?",
             height_str, re.I,
         )
         if match:

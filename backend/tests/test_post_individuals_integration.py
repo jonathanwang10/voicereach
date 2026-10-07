@@ -102,6 +102,33 @@ class TestPostIndividuals:
         assert data["individual"]["urgency_score"] >= 0
         assert data["interaction"]["has_transcription"] == False
     
+    def test_post_individuals_invalidates_context_cache(self, client, mock_supabase):
+        """A successful save must clear the assistant's cached profiles."""
+        from unittest.mock import AsyncMock
+        from db.models import SaveIndividualResponse
+        now = datetime.now(timezone.utc).isoformat()
+        iid = str(uuid4())
+        result = SaveIndividualResponse(
+            individual={"id": iid, "name": "Test Person", "urgency_score": 0, "urgency_override": None, "display_score": 0, "last_location": None,
+                        "data": {"name": "Test Person"}, "created_at": now, "updated_at": now},
+            interaction={"id": str(uuid4()), "individual_id": iid, "user_id": "test-user-123",
+                         "user_name": "Demo User", "created_at": now, "has_transcription": False, "location": None,
+                         "changes": {"name": "Test Person"}},
+        )
+        mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
+        with patch("api.individuals.IndividualService") as svc, \
+             patch("api.individuals.validate_categorized_data") as val, \
+             patch("api.individuals.invalidate_context_cache") as inval:
+            val.return_value.is_valid = True
+            svc.return_value.save_individual = AsyncMock(return_value=result)
+            response = client.post(
+                "/api/individuals",
+                json={"data": {"name": "Test Person", "height": 70, "weight": 160}},
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert response.status_code == 200, response.text
+        inval.assert_called_once()
+
     def test_post_individuals_missing_required_fields(self, client, mock_supabase):
         """Test validation for missing required fields"""
         # Mock categories for validation
