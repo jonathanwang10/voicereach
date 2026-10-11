@@ -225,7 +225,7 @@ mobile/
 │   ├── ModernSearchScreen.tsx            # Search tab
 │   ├── ModernIndividualProfileScreen.tsx # Profile, pushed from Search
 │   ├── ModernVoiceAssistantScreen.tsx    # Assistant tab
-│   ├── CategoriesScreen.tsx              # Categories tab, CSV export
+│   ├── CategoriesScreen.tsx              # Categories tab: list, create form, CSV export
 │   └── UserProfileScreen.tsx             # Profile tab (worker)
 ├── components/
 │   ├── ModernAudioRecorder.tsx  # 5 s - 2 min recorder
@@ -240,7 +240,8 @@ mobile/
 │   ├── api.ts                 # Backend client: getAuthToken, authedFetch, apiRequest, ApiError
 │   └── supabase.ts            # Supabase client and demo auto-login
 ├── contexts/                  # AuthContext, CategoryContext
-└── utils/                     # height parsing, urgency colours, error handling
+└── utils/                     # height parsing, urgency colours, error handling,
+                               # categoryPayload (create form), csvExport (share sheet)
 ```
 
 ## Implementation patterns
@@ -336,8 +337,8 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 ## Known limitations
 
 1. No offline support.
-2. Categories are effectively create-only (edits are local; weight and
-   auto-trigger aren't sent on create).
+2. Categories are create-only: no edit, delete or on/off switch in the app or
+   the API.
 3. One shared demo account. Direct table access is closed (RLS, no policies),
    but every user the backend accepts can read and write every record through
    the API; `ALLOWED_USER_EMAILS` can limit which accounts that is.

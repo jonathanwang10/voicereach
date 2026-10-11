@@ -107,10 +107,11 @@ encounter is logged as an interaction with only the fields that changed.
 
 **Actions:**
 1. **Categories tab:** show the field list with types and priorities, and the
-   add-category form.
-2. **Export CSV:** tap the export button. The app fetches the CSV from the
-   backend and confirms; it doesn't save the file on the phone, so for an actual
-   file use `GET /api/export` from a laptop.
+   add-category form. For a single-select field, type options like
+   `Calm, Agitated=0.5, Violent=1` and a weight (0–100).
+2. **Export CSV:** tap the export button. The share sheet opens with the CSV
+   (one column per category, plus Urgency Score and Last Seen); save it to Files
+   or AirDrop it to a laptop.
 
 ---
 

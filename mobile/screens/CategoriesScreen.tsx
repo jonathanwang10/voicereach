@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { buildCategoryPayload } from '../utils/categoryPayload';
+import React, { useState } from 'react';
+import {
+  buildCategoryPayload,
+  categoryLabel,
+  validateCategoryForm,
+  CategoryType,
+} from '../utils/categoryPayload';
 import {
   View,
   Text,
@@ -13,196 +18,89 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { errorMessage } from '../utils/errorHandler';
+import { shareCsvExport } from '../utils/csvExport';
 import { useCategories } from '../contexts/CategoryContext';
 
-interface Category {
-  id: string;
-  name: string;
-  type: 'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location';
-  is_required: boolean;
-  priority: 'high' | 'medium' | 'low';
-  urgency_weight?: number; // 0-100, only for number/single_select
-  auto_trigger?: boolean; // only for number/single_select
-  options?: string[] | Array<{label: string, value: number}>;
-  active?: boolean; // For local UI state, not from API
-}
-
+// Categories are create-only (PRD): there is no edit, delete or on/off switch,
+// because nothing on the server would honour it.
 export default function CategoriesScreen() {
-  const { categories, isLoading, toggleCategoryActive, refreshCategories, updateCategoryLocal } = useCategories();
+  const { categories, isLoading, refreshCategories } = useCategories();
 
-
-
-  // Helper function to format category names for display
-  const formatCategoryName = (name: string): string => {
-    return name
+  // "single_select" -> "Single Select" (for the type line)
+  const formatTypeName = (type: string): string =>
+    type
       .split('_')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
-  };
-
-  // Helper function to check if a category is essential (cannot be toggled off)
-  const isEssentialCategory = (categoryName: string): boolean => {
-    const essentialCategories = ['name', 'height', 'weight', 'age'];
-    return essentialCategories.includes(categoryName.toLowerCase());
-  };
-
-  // Helper function to check if a category can be edited
-  const isEditableCategory = (categoryName: string): boolean => {
-    const nonEditableCategories = ['name', 'height', 'weight', 'age', 'additional information'];
-    return !nonEditableCategories.includes(categoryName.toLowerCase());
-  };
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryType, setNewCategoryType] = useState<'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location'>('text');
+  const [newCategoryType, setNewCategoryType] = useState<CategoryType>('text');
   const [newCategoryPriority, setNewCategoryPriority] = useState<'high' | 'medium' | 'low'>('medium');
-  const [newCategoryDangerWeight, setNewCategoryDangerWeight] = useState(0);
+  const [newCategoryWeight, setNewCategoryWeight] = useState('');
   const [newCategoryAutoTrigger, setNewCategoryAutoTrigger] = useState(false);
-  const [newCategoryOptions, setNewCategoryOptions] = useState<string[]>([]);
-  
-  // Edit category state
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
-  const [editCategoryName, setEditCategoryName] = useState('');
-  const [editCategoryPriority, setEditCategoryPriority] = useState<'high' | 'medium' | 'low'>('medium');
+  const [newCategoryOptionsText, setNewCategoryOptionsText] = useState('');
 
+  const isSelectType = newCategoryType === 'single_select' || newCategoryType === 'multi_select';
+  const isWeightedType = newCategoryType === 'number' || newCategoryType === 'single_select';
+
+  // Writes the CSV to a cache file and opens the share sheet (R-9); the sheet is
+  // the feedback, so success needs no alert.
   const handleExportCSV = async () => {
     try {
       setIsExporting(true);
-      
-      // Use real API to export CSV
-      const csvUrl = await api.exportCSV();
-      
-      Alert.alert(
-        'Export Successful',
-        'CSV file has been generated and is ready for download.',
-        [
-          {
-            text: 'Download',
-            onPress: () => {
-              // In a real app, you would trigger a download here
-              console.log('CSV Export completed:', csvUrl);
-            }
-          },
-          {
-            text: 'OK',
-            style: 'cancel'
-          }
-        ]
-      );
-      
+      await shareCsvExport();
     } catch (error) {
-      console.error('Export error:', error);
       Alert.alert('Export Failed', errorMessage(error));
     } finally {
       setIsExporting(false);
     }
   };
 
-  const validateNewCategory = () => {
-    if (!newCategoryName.trim()) {
-      Alert.alert('Error', 'Category name is required');
-      return false;
-    }
-
-    if (newCategoryType === 'single_select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
-      Alert.alert('Error', 'Single-select categories require options');
-      return false;
-    }
-
-    if (newCategoryType === 'multi_select' && (!newCategoryOptions || newCategoryOptions.length === 0)) {
-      Alert.alert('Error', 'Multi-select categories require options');
-      return false;
-    }
-
-    return true;
-  };
-
   const addNewCategory = async () => {
-    if (!validateNewCategory()) return;
+    if (isCreating) return;
+    const form = {
+      name: newCategoryName,
+      type: newCategoryType,
+      priority: newCategoryPriority,
+      optionsText: newCategoryOptionsText,
+      weight: newCategoryWeight,
+      autoTrigger: newCategoryAutoTrigger,
+    };
+    // Same rules as the backend's CreateCategoryRequest
+    const problem = validateCategoryForm(form);
+    if (problem) {
+      Alert.alert('Error', problem);
+      return;
+    }
 
     try {
-      // Prepare category data for API
-      const categoryData = buildCategoryPayload({
-        name: newCategoryName,
-        type: newCategoryType,
-        priority: newCategoryPriority,
-        options: newCategoryOptions,
-        dangerWeight: newCategoryDangerWeight,
-        autoTrigger: newCategoryAutoTrigger,
-      });
-
-      console.log('📋 Creating new category:', categoryData);
-
-      // Save to database via API
-      const response = await api.createCategory(categoryData);
-      console.log('📋 Category created successfully:', response);
-
-      // Refresh categories from context
+      setIsCreating(true);
+      await api.createCategory(buildCategoryPayload(form));
       await refreshCategories();
-      
+
       // Reset form
       setNewCategoryName('');
       setNewCategoryType('text');
       setNewCategoryPriority('medium');
-      setNewCategoryDangerWeight(0);
+      setNewCategoryWeight('');
       setNewCategoryAutoTrigger(false);
-      setNewCategoryOptions([]);
+      setNewCategoryOptionsText('');
 
       Alert.alert('Success', 'Category created successfully!');
-      
-      // Optionally refresh the categories list to ensure consistency
-      // fetchCategories();
     } catch (error: any) {
-      console.error('❌ Failed to create category:', error);
       Alert.alert('Error', `Failed to create category: ${errorMessage(error)}`);
+    } finally {
+      setIsCreating(false);
     }
-  };
-
-  const getActiveCategoriesCount = () => {
-    return categories.filter(cat => cat.active).length;
   };
 
   const getPriorityDistribution = () => {
-    const active = categories.filter(cat => cat.active);
-    const high = active.filter(cat => cat.priority === 'high').length;
-    const medium = active.filter(cat => cat.priority === 'medium').length;
-    const low = active.filter(cat => cat.priority === 'low').length;
+    const high = categories.filter(cat => cat.priority === 'high').length;
+    const medium = categories.filter(cat => cat.priority === 'medium').length;
+    const low = categories.filter(cat => cat.priority === 'low').length;
     return { high, medium, low };
-  };
-
-  const startEditCategory = (category: Category) => {
-    setEditingCategoryId(category.id);
-    setEditCategoryName(category.name);
-    setEditCategoryPriority(category.priority);
-  };
-
-  const cancelEditCategory = () => {
-    setEditingCategoryId(null);
-    setEditCategoryName('');
-    setEditCategoryPriority('medium');
-  };
-
-  const saveEditCategory = () => {
-    if (!editCategoryName.trim()) {
-      Alert.alert('Error', 'Category name cannot be empty');
-      return;
-    }
-
-    // Check for duplicate names (excluding the current category being edited)
-    const duplicateExists = categories.some(cat => 
-      cat.id !== editingCategoryId && 
-      cat.name.toLowerCase() === editCategoryName.trim().toLowerCase()
-    );
-
-    if (duplicateExists) {
-      Alert.alert('Error', 'A category with this name already exists');
-      return;
-    }
-
-    updateCategoryLocal(editingCategoryId!, { name: editCategoryName.trim(), priority: editCategoryPriority });
-
-    Alert.alert('Success', 'Category updated successfully');
-    cancelEditCategory();
   };
 
   if (isLoading) {
@@ -215,7 +113,7 @@ export default function CategoriesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Categories</Text>
@@ -242,114 +140,43 @@ export default function CategoriesScreen() {
           </Text>
         </TouchableOpacity>
         <Text style={styles.exportInfo}>
-          Exports all individuals with {getActiveCategoriesCount()} active categories
+          Exports all individuals, one column for each of the {categories.length} categories
         </Text>
       </View>
 
       {/* Categories List */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Active Categories</Text>
+        <Text style={styles.sectionTitle}>Categories</Text>
         {(() => {
           const priorityDist = getPriorityDistribution();
           return (
             <Text style={styles.categoryCount}>
-              {getActiveCategoriesCount()} active categories (High: {priorityDist.high}, Medium: {priorityDist.medium}, Low: {priorityDist.low})
+              {categories.length} categories (High: {priorityDist.high}, Medium: {priorityDist.medium}, Low: {priorityDist.low})
             </Text>
           );
         })()}
         
         {categories.map(category => (
           <View key={category.id} style={styles.categoryItem}>
-            {editingCategoryId === category.id ? (
-              // Edit mode
-              <View style={styles.editCategoryContainer}>
-                <View style={styles.editInputRow}>
-                  <Text style={styles.editLabel}>Name:</Text>
-                  <TextInput
-                    style={styles.editInput}
-                    value={editCategoryName}
-                    onChangeText={setEditCategoryName}
-                    placeholder="Category name"
-                  />
-                </View>
-                <View style={styles.editInputRow}>
-                  <Text style={styles.editLabel}>Priority:</Text>
-                  <View style={styles.prioritySelector}>
-                    {['high', 'medium', 'low'].map((priority) => (
-                      <TouchableOpacity
-                        key={priority}
-                        style={[
-                          styles.priorityOption,
-                          editCategoryPriority === priority && styles.priorityOptionSelected
-                        ]}
-                        onPress={() => setEditCategoryPriority(priority as 'high' | 'medium' | 'low')}
-                      >
-                        <Text style={[
-                          styles.priorityOptionText,
-                          editCategoryPriority === priority && styles.priorityOptionTextSelected
-                        ]}>
-                          {priority}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-                <View style={styles.editButtonRow}>
-                  <TouchableOpacity
-                    style={styles.cancelEditButton}
-                    onPress={cancelEditCategory}
-                  >
-                    <Text style={styles.cancelEditButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.saveEditButton}
-                    onPress={saveEditCategory}
-                  >
-                    <Text style={styles.saveEditButtonText}>Save</Text>
-                  </TouchableOpacity>
+            <View style={styles.categoryInfo}>
+              <Text style={styles.categoryName}>{categoryLabel(category)}</Text>
+              <Text style={styles.categoryType}>{formatTypeName(category.type)}</Text>
+              <Text style={styles.categoryPriority}>Priority: {category.priority}</Text>
+              {category.is_required && (
+                <Text style={styles.requiredBadge}>Required</Text>
+              )}
+              {(category.type === 'number' || category.type === 'single_select') && (category.urgency_weight ?? 0) > 0 && (
+                <Text style={styles.dangerWeightBadge}>Weight: {category.urgency_weight}</Text>
+              )}
+            </View>
+            {category.is_required && (
+              <View style={styles.categoryActions}>
+                <View style={[styles.toggleButton, styles.essentialToggleButton]}>
+                  <Text style={[styles.toggleText, styles.essentialToggleText]}>
+                    ESSENTIAL
+                  </Text>
                 </View>
               </View>
-            ) : (
-              // View mode
-              <>
-                <View style={styles.categoryInfo}>
-                  <Text style={styles.categoryName}>{formatCategoryName(category.name)}</Text>
-                  <Text style={styles.categoryType}>{formatCategoryName(category.type)}</Text>
-                  <Text style={styles.categoryPriority}>Priority: {category.priority}</Text>
-                  {category.is_required && (
-                    <Text style={styles.requiredBadge}>Required</Text>
-                  )}
-                  {(category.type === 'number' || category.type === 'single_select') && (category.urgency_weight ?? 0) > 0 && (
-                    <Text style={styles.dangerWeightBadge}>Weight: {category.urgency_weight}</Text>
-                  )}
-                </View>
-                <View style={styles.categoryActions}>
-                  {isEditableCategory(category.name) && (
-                    <TouchableOpacity
-                      style={styles.editButton}
-                      onPress={() => startEditCategory(category)}
-                    >
-                      <Text style={styles.editButtonText}>Edit</Text>
-                    </TouchableOpacity>
-                  )}
-                  {isEssentialCategory(category.name) ? (
-                    <View style={[styles.toggleButton, styles.essentialToggleButton]}>
-                      <Text style={[styles.toggleText, styles.essentialToggleText]}>
-                        ESSENTIAL
-                      </Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.toggleButton, category.active && styles.toggleButtonActive]}
-                      onPress={() => toggleCategoryActive(category.id)}
-                    >
-                      <Text style={[styles.toggleText, category.active && styles.toggleTextActive]}>
-                        {category.active ? 'ON' : 'OFF'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </>
             )}
           </View>
         ))}
@@ -365,10 +192,10 @@ export default function CategoriesScreen() {
             placeholder="Category name"
             value={newCategoryName}
             onChangeText={setNewCategoryName}
+            maxLength={50}
           />
           <TouchableOpacity style={styles.typeButton} onPress={() => {
-            const types: Array<'text' | 'number' | 'single_select' | 'multi_select' | 'date' | 'location'> = 
-              ['text', 'number', 'single_select', 'multi_select', 'date', 'location'];
+            const types: CategoryType[] = ['text', 'number', 'single_select', 'multi_select', 'date', 'location'];
             const currentIndex = types.indexOf(newCategoryType);
             const nextIndex = (currentIndex + 1) % types.length;
             setNewCategoryType(types[nextIndex]);
@@ -384,10 +211,33 @@ export default function CategoriesScreen() {
             <Text style={styles.priorityButtonText}>{newCategoryPriority}</Text>
           </TouchableOpacity>
         </View>
+
+        {isSelectType && (
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.textInput}
+              placeholder={newCategoryType === 'single_select'
+                ? 'Options, comma-separated: Calm, Agitated=0.5 (value 0-1, default 0)'
+                : 'Options, comma-separated: Dog, Cat'}
+              value={newCategoryOptionsText}
+              onChangeText={setNewCategoryOptionsText}
+              autoCapitalize="none"
+              multiline
+            />
+          </View>
+        )}
         
-        {(newCategoryType === 'number' || newCategoryType === 'single_select') && (
-                  <View style={styles.dangerWeightContainer}>
-          <Text style={styles.dangerWeightLabel}>Danger Weight: {newCategoryDangerWeight}</Text>
+        {isWeightedType && (
+          <View style={styles.dangerWeightContainer}>
+            <Text style={styles.dangerWeightLabel}>Urgency Weight (0-100)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="0-100"
+              value={newCategoryWeight}
+              onChangeText={setNewCategoryWeight}
+              keyboardType="numeric"
+              maxLength={5}
+            />
             <TouchableOpacity 
               style={[styles.autoTriggerButton, newCategoryAutoTrigger && styles.autoTriggerButtonActive]}
               onPress={() => setNewCategoryAutoTrigger(!newCategoryAutoTrigger)}
@@ -400,8 +250,9 @@ export default function CategoriesScreen() {
         )}
         
         <TouchableOpacity 
-          style={styles.addButton}
+          style={[styles.addButton, isCreating && styles.exportButtonDisabled]}
           onPress={addNewCategory}
+          disabled={isCreating}
         >
           <Ionicons name="add" size={20} color="#fff" />
           <Text style={styles.addButtonText}>Add Category</Text>
@@ -413,9 +264,10 @@ export default function CategoriesScreen() {
         <Text style={styles.sectionTitle}>Export Information</Text>
         <Text style={styles.infoText}>
           • CSV includes all individuals in the database{'\n'}
-          • All active categories are included as columns{'\n'}
-          • Urgency scores and last interaction dates included{'\n'}
+          • Every category is a column{'\n'}
+          • Urgency score and Last Seen (latest interaction) included{'\n'}
           • Multi-select values are comma-separated{'\n'}
+          • Opens the share sheet: you choose where the file goes{'\n'}
           • File is named with current date and time
         </Text>
       </View>
@@ -538,9 +390,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
   },
-  toggleButtonActive: {
-    backgroundColor: '#007AFF',
-  },
   essentialToggleButton: {
     backgroundColor: '#10B981',
   },
@@ -548,9 +397,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#6B7280',
-  },
-  toggleTextActive: {
-    color: '#fff',
   },
   essentialToggleText: {
     color: '#fff',
@@ -655,101 +501,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  editButton: {
-    backgroundColor: '#3B82F6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  editButtonText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  editCategoryContainer: {
-    flex: 1,
-    padding: 12,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-  },
-  editInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  editLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
-    width: 60,
-  },
-  editInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-    fontSize: 14,
-  },
-  prioritySelector: {
-    flexDirection: 'row',
-    flex: 1,
-    gap: 8,
-  },
-  priorityOption: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 6,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-  },
-  priorityOptionSelected: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-  },
-  priorityOptionText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
-  },
-  priorityOptionTextSelected: {
-    color: '#fff',
-  },
-  editButtonRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  cancelEditButton: {
-    flex: 1,
-    backgroundColor: '#6B7280',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  cancelEditButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  saveEditButton: {
-    flex: 1,
-    backgroundColor: '#10B981',
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  saveEditButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
   },
 }); 

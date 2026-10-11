@@ -3,6 +3,7 @@ import { getApiUrl } from '../config/api';
 import { daysSince } from '../utils/urgencyScore';
 import { stripEmpty } from '../utils/fieldValues';
 import { SearchResult, IndividualProfile, Interaction, FieldError, LocationData } from '../types';
+import type { Category, CreateCategoryPayload } from '../utils/categoryPayload';
 
 // The one error type every backend call throws (C-16). `detail` is the backend's
 // `detail` (a FastAPI 422 list is joined as "field: msg; field: msg"), or a generic
@@ -371,9 +372,10 @@ export const api = {
     }));
   },
 
-  // Create category
-  createCategory: async (data: any) => {
-    return apiRequest('/api/categories', {
+  // Create category (payload from utils/categoryPayload.buildCategoryPayload).
+  // Throws ApiError: 409 when the name's key already exists, 422 when invalid.
+  createCategory: async (data: CreateCategoryPayload): Promise<Category> => {
+    return apiRequest<Category>('/api/categories', {
       method: 'POST',
       body: JSON.stringify(data),
     });

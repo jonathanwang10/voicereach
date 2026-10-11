@@ -110,6 +110,26 @@ first one), plus the transcript and location. `individual_embeddings` backs
 semantic search. Because fields live in `categories` rather than in columns,
 adding a new field at runtime does not require a migration.
 
+**Creating a category** (Categories tab, or `POST /api/categories`). The name
+you type (1–50 characters, at least one letter or digit) is kept as the label
+(`display_name`, e.g. "HIV status"); its key (`category_key`: lower case,
+spaces and hyphens to `_`, e.g. `hiv_status`) is stored as `name` and used in
+every person's `data`. A name whose key matches an existing category is
+rejected (409), so "Veteran status" can't duplicate the preset. Single- and
+multi-select fields need options, typed comma-separated; for single-select,
+`Label=0.5` gives an option a value from 0 to 1 (default 0), which is the share
+of the category's weight it adds to urgency. The weight box (0–100) appears for
+number and single-select fields only. Every category, custom ones included,
+becomes an export column, part of each person's semantic-search text, and a
+field the voice assistant is shown (`services/field_registry.py`).
+
+**Export CSV** (Categories tab) writes the file to the app's cache and opens the
+share sheet, so the worker chooses where it goes; the cached copy is deleted
+when the sheet closes. Columns: one per category, then "Urgency Score" (the
+override if set) and "Last Seen". Cells that a spreadsheet would run as a
+formula (starting `=`, `+`, `-`, `@`) are prefixed with `'`. An empty database
+gives a header-only file.
+
 ## Setup
 
 You need Python 3.11, a current Node.js LTS, a Supabase project and an OpenAI API key.
@@ -364,7 +384,7 @@ request bodies are in [`backend/README.md`](backend/README.md).
 ### Two rules worth knowing before changing anything
 
 **Urgency score.** Only `number` and `single_select` types may carry an urgency
-weight or an auto-trigger — enforced in `CreateCategoryRequest.model_post_init`
+weight or an auto-trigger — enforced in `CreateCategoryRequest`
 (`db/models.py`). Each category with a value adds `normalized_value * weight` to
 a running sum, where a number is `min(max(value, 0) / 300, 1.0)` (so it clamps
 above 300) and a select is its option's value. The result is then **normalized
@@ -492,24 +512,20 @@ These are still true:
 
 - **The deployed demo is offline.** Run it locally against your own Supabase
   project.
-- **Categories are effectively create-only.** Editing a category in the app only
-  changes local state; there is no backend update route
-  (`mobile/screens/CategoriesScreen.tsx:205`). The create form does not send
-  `urgency_weight` or `auto_trigger` (`CategoriesScreen.tsx:129-130`), so the
-  Danger Weight control has no effect.
-- **Export CSV in the app does not save the file.** It fetches the CSV from
-  `GET /api/export` and shows a success alert, but nothing is written or shared
-  (`CategoriesScreen.tsx:66-85`). Use `curl` against the endpoint to get the file.
+- **Categories are create-only.** There is no edit, delete or on/off switch for
+  a category, in the app or the API. The Categories tab lists them and creates
+  new ones; any change to an existing category is a SQL edit in Supabase.
 - **The match list says "Streamlined confirmation" for matches ≥ 95%**
   (`TranscriptionResults.tsx:437`), but Save opens the same merge UI as any other
   match.
 - **Closing the app during the 5-second undo window cancels the delete.** The
   pending delete is kept in memory only (see "Deleting a person" above), so the
   person is still there on next launch and has to be deleted again.
-- **Semantic search ignores custom categories.** The text that gets embedded is
-  built from a hardcoded field list (`services/embedding_service.py:50-90`).
-  Embeddings are stored as JSONB and compared in Python, and list/search loads
-  the whole table; pgvector would be the scalable choice.
+- **Embeddings are compared in Python.** They are stored as JSONB and search
+  loads the whole table; pgvector would be the scalable choice. After creating a
+  category, existing people's embeddings only pick up its label when they are
+  next saved (or re-run `POST /api/embeddings/generate-all` or the backfill
+  script).
 - **Not yet re-verified against live services.** After the dependency upgrade,
   the OpenAI and Supabase calls were checked only offline (mocks and
   introspection). Run the curl check in [Auth](#auth) and one recording after
