@@ -20,10 +20,13 @@ class FakeSupabase:
     without one keeps case-insensitive equal names. Rows come
     back in the given order (treat it as "most recently updated first").
     With fail=True every execute() raises, like a database outage.
+    table("categories") returns `categories` (default none) instead of people;
+    with categories_fail=True only that table raises.
     """
 
-    def __init__(self, individuals, fail=False):
+    def __init__(self, individuals, fail=False, categories=None, categories_fail=False):
         self.individuals, self.fail, self.queries = list(individuals), fail, []
+        self.categories, self.categories_fail = list(categories or []), categories_fail
 
     def table(self, name):
         return _FakeQuery(self, name)
@@ -54,8 +57,10 @@ class _FakeQuery:
     def execute(self):
         from unittest.mock import MagicMock
         self.sb.queries.append((self.table, list(self.filters)))
-        if self.sb.fail:
+        if self.sb.fail or (self.table == "categories" and self.sb.categories_fail):
             raise RuntimeError("database unavailable")
+        if self.table == "categories":
+            return MagicMock(data=list(self.sb.categories))
         rows = list(self.sb.individuals)
         for f in self.filters:
             if f[0] == "ilike":

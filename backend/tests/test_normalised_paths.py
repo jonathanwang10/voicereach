@@ -187,12 +187,15 @@ async def test_categorize_matches_gpt_keys_case_insensitively():
 async def test_embedding_text_joins_lists_and_strings_safely():
     from services.embedding_service import EmbeddingService
     svc = EmbeddingService.__new__(EmbeddingService)
+    svc.dimensions = 1
     svc.generate_embedding = AsyncMock(return_value=[0.0])
-    await svc.generate_individual_embedding({"name": "Ann", "data": {
-        "medical_conditions": "Diabetes", "substance_abuse_history": ["Mild", 3]}})
-    text = svc.generate_embedding.await_args.args[0]
-    assert "Medical conditions: Diabetes" in text
-    assert "Substance abuse: Mild, 3" in text
+    cats = [{"name": "medical_conditions", "display_name": "Medical Conditions"},
+            {"name": "substance_abuse_history", "display_name": "Substance Abuse History"}]
+    _, text = await svc.generate_individual_embedding({"name": "Ann", "data": {
+        "medical_conditions": "Diabetes", "substance_abuse_history": ["Mild", 3]}}, cats)
+    assert svc.generate_embedding.await_args.args[0] == text
+    assert "Medical Conditions: Diabetes" in text
+    assert "Substance Abuse History: Mild, 3" in text
 
 
 @pytest.mark.asyncio

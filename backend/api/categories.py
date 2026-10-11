@@ -12,90 +12,73 @@ from supabase import create_client, Client
 from api.auth import get_current_user
 from api.errors import internal_error
 from db.models import CreateCategoryRequest, CategoryResponse
+from services.field_registry import category_key, export_columns, format_field_value
+from services.individual_service import fetch_last_seen
+from services.urgency_calculator import get_display_urgency_score
 from datetime import datetime, timezone
 from uuid import uuid4
 
 router = APIRouter()
 
+# A cell starting with one of these runs as a formula when the CSV is opened in a
+# spreadsheet (OWASP "CSV injection"); such cells get a leading "'".
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_cell(value) -> str:
+    """One CSV cell: text via field_registry.format_field_value, formula-safe.
+    Real numbers are written as-is (a negative number is not a formula)."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    text = format_field_value(value)
+    return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
+
+
 @router.get("/api/export")
 async def export_csv(user_id: str = Depends(get_current_user)):
     """
-    Export all individuals data as CSV file.
-    Returns CSV with columns: name, height, weight, urgency_score, last_seen
-    Multi-select values are comma-separated.
+    Export every individual as CSV.
+
+    Columns: one per category (field_registry.export_columns: Name first, then
+    required fields, other presets, then custom fields, headed with each
+    category's label), then "Urgency Score" (get_display_urgency_score: the
+    override if set, else the calculated score) and "Last Seen" (the latest
+    interaction, else when the person was created; never `updated_at`, which an
+    urgency override also bumps). Multi-select values are comma-separated, a
+    location is its address. Cells that a spreadsheet would run as a formula are
+    prefixed with "'". An empty database gives a header-only CSV.
     """
     try:
-        # Initialize Supabase client
         supabase: Client = create_client(
             os.getenv("SUPABASE_URL"),
             os.getenv("SUPABASE_SERVICE_KEY")
         )
-        
-        # Get all individuals with their data
-        response = supabase.table("individuals").select("*").order("created_at", desc=True).execute()
-        
-        if not response.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No individuals found to export"
-            )
-        
-        # Create CSV content
+
+        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+        individuals = supabase.table("individuals").select("*").order("created_at", desc=True).execute().data or []
+        latest = fetch_last_seen(supabase, [i["id"] for i in individuals]) if individuals else {}
+        columns = export_columns(categories)
+
         output = io.StringIO()
         writer = csv.writer(output)
-        
-        # Write header
-        writer.writerow([
-            'Name', 'Height', 'Weight', 'Urgency Score', 'Last Seen',
-            'Age', 'Gender', 'Substance Abuse History', 'Medical Conditions',
-            'Veteran Status', 'Housing Priority', 'Behavior'
-        ])
-        
-        # Write data rows
-        for individual in response.data:
-            data = individual.get("data", {})
-            
-            # Format multi-select values as comma-separated
-            substance_abuse = data.get("substance_abuse_history", "")
-            if isinstance(substance_abuse, list):
-                substance_abuse = ", ".join(substance_abuse)
-            
-            medical_conditions = data.get("medical_conditions", "")
-            if isinstance(medical_conditions, list):
-                medical_conditions = ", ".join(medical_conditions)
-            
-            # Calculate display urgency score (override or calculated)
-            override = individual.get("urgency_override")
-            urgency_score = override if override is not None else individual.get("urgency_score", 0)
-            
-            writer.writerow([
-                individual.get("name", ""),
-                data.get("height", ""),
-                data.get("weight", ""),
-                urgency_score,
-                individual.get("updated_at", ""),
-                data.get("age", ""),
-                data.get("gender", ""),
-                substance_abuse,
-                medical_conditions,
-                data.get("veteran_status", ""),
-                data.get("housing_priority", ""),
-                data.get("behavior", "")
-            ])
-        
-        # Prepare response
-        output.seek(0)
-        csv_content = output.getvalue()
-        
-        # Create streaming response
+        writer.writerow([_csv_cell(header) for _, header in columns] + ["Urgency Score", "Last Seen"])
+
+        for individual in individuals:
+            data = individual.get("data") or {}
+            seen = latest.get(str(individual["id"]))
+            row = [_csv_cell(individual.get("name") if key == "name" else data.get(key)) for key, _ in columns]
+            row.append(get_display_urgency_score(individual))
+            row.append(seen["last_seen"] if seen else individual.get("created_at") or "")
+            writer.writerow(row)
+
         return StreamingResponse(
-            io.BytesIO(csv_content.encode('utf-8')),
+            io.BytesIO(output.getvalue().encode('utf-8')),
             media_type="text/csv",
             headers={
                 "Content-Disposition": f"attachment; filename=individuals_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             }
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -125,6 +108,7 @@ async def get_categories(user_id: str = Depends(get_current_user)):
             cat_data = {
                 "id": category["id"],
                 "name": category["name"],
+                "display_name": category.get("display_name"),
                 "type": category["type"],
                 "is_required": category["is_required"],
                 "is_preset": category["is_preset"],
@@ -143,41 +127,52 @@ async def get_categories(user_id: str = Depends(get_current_user)):
         raise internal_error("Fetch categories", e)
 
 
+def _is_unique_violation(exc: Exception) -> bool:
+    """A Postgres unique-constraint error (23505), e.g. two concurrent creates."""
+    return getattr(exc, "code", None) == "23505"
+
+
 @router.post("/api/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
     request: CreateCategoryRequest,
     user_id: str = Depends(get_current_user)
 ):
     """
-    Create a new custom category with validation.
-    
-    Validation rules:
-    - Only number and single_select types can have urgency_weight > 0
-    - Only number and single_select types can have auto_trigger = true
-    - Category names must be unique (case insensitive)
-    - Single-select options must be list of {label, value} objects
-    - Multi-select options must be list of strings
+    Create a new custom category.
+
+    The worker's text is kept as `display_name` ("HIV status") and its
+    `category_key` ("hiv_status") is stored as `name`, the key used in every
+    individual's `data`. A name whose key matches an existing category's key
+    (by `name` or `display_name`) is a 409, so "Veteran status" can't shadow
+    the preset `veteran_status` and "Housing-status" can't sit beside
+    "Housing status". The check compares keys in Python (the table is small),
+    so `%` and `_` are never LIKE wildcards. A concurrent duplicate that slips
+    past the check hits the UNIQUE constraint (23505) and is also a 409.
+
+    Type rules (options, weight, auto-trigger) are enforced by
+    CreateCategoryRequest, so a bad request is a 422 before this runs.
     """
     try:
-        # Initialize Supabase client
         supabase: Client = create_client(
             os.getenv("SUPABASE_URL"),
             os.getenv("SUPABASE_SERVICE_KEY")
         )
-        
-        # Check for duplicate name (case insensitive)
-        existing = supabase.table("categories").select("name").ilike("name", request.name).execute()
-        if existing.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Category with name '{request.name}' already exists"
-            )
-        
-        # Prepare category data
+
+        key = category_key(request.name)
+        conflict = HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A category named '{request.name}' already exists"
+        )
+        existing = supabase.table("categories").select("name, display_name").execute().data or []
+        for row in existing:
+            if key in {category_key(row.get("name") or ""), category_key(row.get("display_name") or "")}:
+                raise conflict
+
         now = datetime.now(timezone.utc).isoformat()
         category_data = {
             "id": str(uuid4()),
-            "name": request.name,  # Already capitalized by validator
+            "name": key,
+            "display_name": request.name,
             "type": request.type,
             "is_required": request.is_required,
             "is_preset": False,  # Custom categories are never preset
@@ -188,21 +183,25 @@ async def create_category(
             "created_at": now,
             "updated_at": now
         }
-        
-        # Insert into database
-        result = supabase.table("categories").insert(category_data).execute()
-        
+
+        try:
+            result = supabase.table("categories").insert(category_data).execute()
+        except Exception as e:
+            if _is_unique_violation(e):
+                raise conflict
+            raise
+
         if not result.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to create category"
             )
-        
-        # Return created category
+
         created = result.data[0]
         return CategoryResponse(
             id=created["id"],
             name=created["name"],
+            display_name=created.get("display_name"),
             type=created["type"],
             is_required=created["is_required"],
             is_preset=created["is_preset"],
@@ -213,7 +212,7 @@ async def create_category(
             created_at=created["created_at"],
             updated_at=created["updated_at"]
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:

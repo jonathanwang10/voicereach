@@ -52,50 +52,28 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 
-async def generate_embedding_background(individual_id: str, individual_data: dict):
+async def generate_embedding_background(individual_id: str, individual_data: dict,
+                                        categories: Optional[list] = None):
     """
-    Background task to generate embedding for an individual
-    
+    Background task: embed one saved individual (field_registry.build_embedding_text,
+    the same text every embedding path uses) and store the vector with that text.
+
     Args:
         individual_id: ID of the individual
-        individual_data: Individual data dictionary
+        individual_data: {"id", "name", "data"} of the saved individual
+        categories: the category rows the save already fetched (fetched here if None)
     """
     try:
         from services.embedding_service import EmbeddingService
-        
-        # Get Supabase client
+
         supabase = get_supabase_client()
-        
-        # Initialize embedding service
-        embedding_service = EmbeddingService()
-        
-        # Generate embedding
-        embedding = await embedding_service.generate_individual_embedding(individual_data)
-        
-        # Create text representation for storage
-        text_parts = []
-        if individual_data.get('name'):
-            text_parts.append(f"Name: {individual_data['name']}")
-        if individual_data.get('data'):
-            data = individual_data['data']
-            if isinstance(data, dict):
-                for key, value in data.items():
-                    if value and str(value).strip():
-                        text_parts.append(f"{key}: {value}")
-        
-        embedding_text = " | ".join(text_parts)
-        
-        # Store embedding in database
-        supabase.table("individual_embeddings").upsert({
-            "individual_id": individual_id,
-            "embedding_data": embedding,
-            "embedding_text": embedding_text
-        }, on_conflict="individual_id").execute()
-        
-        print(f"✅ Background task: Generated embedding for individual: {individual_data.get('name', 'Unknown')}")
-        
+        if categories is None:
+            categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+        await EmbeddingService().store_individual_embedding(
+            supabase, {**individual_data, "id": str(individual_id)}, categories)
     except Exception as e:
-        print(f"❌ Background task: Failed to generate embedding for {individual_data.get('name', 'Unknown')}: {str(e)}")
+        # Id and error type only: no names, no upstream error text
+        print(f"Background embedding failed for {individual_id}: {type(e).__name__}")
 
 
 @router.post("", response_model=SaveIndividualResponse)
@@ -174,7 +152,8 @@ async def save_individual(
                 "id": result.individual.id,
                 "name": result.individual.name,
                 "data": result.individual.data
-            }
+            },
+            categories,
         )
         
         return result

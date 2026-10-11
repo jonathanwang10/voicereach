@@ -8,19 +8,13 @@ from openai import AsyncOpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
+from services.field_registry import build_embedding_text
+
 # Load environment variables
 load_dotenv()
 
 # Cosine-similarity cut-off for semantic search; the one value every caller defaults to.
 DEFAULT_SIMILARITY_THRESHOLD = 0.15
-
-
-def _join(value: Any) -> str:
-    """Join a multi-select list for embedding text; a plain string is used as-is
-    (joining a string would spell it out letter by letter)."""
-    if isinstance(value, list):
-        return ', '.join(map(str, value))
-    return str(value)
 
 
 class EmbeddingService:
@@ -49,61 +43,41 @@ class EmbeddingService:
         except Exception as e:
             raise Exception(f"Failed to generate embedding: {str(e)}")
     
-    async def generate_individual_embedding(self, individual_data: Dict[str, Any]) -> List[float]:
+    async def generate_individual_embedding(
+        self, individual: Dict[str, Any], categories: List[Dict[str, Any]]
+    ) -> Tuple[List[float], str]:
         """
-        Generate embedding for an individual by combining all their data
-        
-        Args:
-            individual_data: Dictionary containing individual's profile data
-            
+        Embed one person. The text comes from field_registry.build_embedding_text
+        (every category, in category order, no urgency), so all four callers embed
+        the same text for the same person.
+
         Returns:
-            List of 3072 float values representing the embedding
+            (embedding, text): the vector and the exact text that was embedded
+
+        Raises:
+            ValueError: the vector is not `self.dimensions` long (a model mismatch
+            would otherwise leave rows that search can't compare)
         """
-        # Create a comprehensive text representation of the individual
-        text_parts = []
-        
-        # Basic info
-        if individual_data.get('name'):
-            text_parts.append(f"Name: {individual_data['name']}")
-        
-        # Physical attributes
-        if individual_data.get('data'):
-            data = individual_data['data']
-            if data.get('age'):
-                text_parts.append(f"Age: {data['age']} years old")
-            if data.get('height'):
-                text_parts.append(f"Height: {data['height']} inches")
-            if data.get('weight'):
-                text_parts.append(f"Weight: {data['weight']} pounds")
-            if data.get('gender'):
-                text_parts.append(f"Gender: {data['gender']}")
-            
-            # Medical and behavioral info
-            if data.get('substance_abuse_history'):
-                text_parts.append(f"Substance abuse: {_join(data['substance_abuse_history'])}")
-            if data.get('medical_conditions'):
-                text_parts.append(f"Medical conditions: {_join(data['medical_conditions'])}")
-            if data.get('mental_health_issues'):
-                text_parts.append(f"Mental health: {_join(data['mental_health_issues'])}")
-            if data.get('veteran_status'):
-                text_parts.append(f"Veteran status: {data['veteran_status']}")
-            if data.get('housing_status'):
-                text_parts.append(f"Housing status: {data['housing_status']}")
-            if data.get('behavior'):
-                text_parts.append(f"Behavior: {data['behavior']}")
-        
-        # Urgency score info
-        if individual_data.get('urgency_score'):
-            text_parts.append(f"Urgency score: {individual_data['urgency_score']}")
-        if individual_data.get('urgency_override'):
-            text_parts.append(f"Urgency override: {individual_data['urgency_override']}")
-        
-        # Combine all text parts
-        combined_text = " ".join(text_parts)
-        
-        # Generate embedding
-        return await self.generate_embedding(combined_text)
-    
+        text = build_embedding_text(individual, categories)
+        embedding = await self.generate_embedding(text)
+        if len(embedding) != self.dimensions:
+            raise ValueError(f"Embedding has {len(embedding)} dimensions, expected {self.dimensions}")
+        return embedding, text
+
+    async def store_individual_embedding(
+        self, supabase: Any, individual: Dict[str, Any], categories: List[Dict[str, Any]]
+    ) -> int:
+        """Embed one person and upsert the vector with the text it was built from.
+        Used by the save path, /generate, /generate-all and the backfill script.
+        Returns the vector length."""
+        embedding, text = await self.generate_individual_embedding(individual, categories)
+        supabase.table("individual_embeddings").upsert({
+            "individual_id": individual["id"],
+            "embedding_data": embedding,
+            "embedding_text": text,
+        }, on_conflict="individual_id").execute()
+        return len(embedding)
+
     async def search_similar_individuals(
         self, 
         query_embedding: List[float], 

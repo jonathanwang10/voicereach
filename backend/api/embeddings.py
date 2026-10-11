@@ -71,46 +71,15 @@ async def generate_embedding_for_individual(
             raise HTTPException(status_code=404, detail="Individual not found")
         
         individual = result.data[0]
-        
-        # Generate embedding
-        embedding = await embedding_service.generate_individual_embedding(individual)
-        
-        # Create text representation for storage
-        text_parts = []
-        if individual.get('name'):
-            text_parts.append(f"Name: {individual['name']}")
-        if individual.get('data'):
-            data = individual['data']
-            if data.get('age'):
-                text_parts.append(f"Age: {data['age']} years old")
-            if data.get('height'):
-                text_parts.append(f"Height: {data['height']} inches")
-            if data.get('weight'):
-                text_parts.append(f"Weight: {data['weight']} pounds")
-            if data.get('gender'):
-                text_parts.append(f"Gender: {data['gender']}")
-            if data.get('substance_abuse_history'):
-                text_parts.append(f"Substance abuse: {', '.join(data['substance_abuse_history'])}")
-            if data.get('medical_conditions'):
-                text_parts.append(f"Medical conditions: {', '.join(data['medical_conditions'])}")
-            if data.get('veteran_status'):
-                text_parts.append(f"Veteran status: {data['veteran_status']}")
-            if data.get('housing_status'):
-                text_parts.append(f"Housing status: {data['housing_status']}")
-        
-        embedding_text = " ".join(text_parts)
-        
-        # Store embedding in database
-        supabase.table("individual_embeddings").upsert({
-            "individual_id": individual_id,
-            "embedding_data": embedding,
-            "embedding_text": embedding_text
-        }, on_conflict="individual_id").execute()
-        
+        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+
+        # Same text and storage as every other embedding path (C-34)
+        dimensions = await embedding_service.store_individual_embedding(supabase, individual, categories)
+
         return {
             "success": True,
             "message": f"Embedding generated and stored for individual {individual_id}",
-            "embedding_dimensions": len(embedding)
+            "embedding_dimensions": dimensions
         }
         
     except HTTPException:
@@ -149,7 +118,11 @@ async def semantic_search_individuals(
         embedding_results = []
         try:
             result = supabase.table("individual_embeddings").select("*, individuals(*)").execute()
-            rows = [r for r in (result.data or []) if r.get('embedding_data') and r.get('individuals')]
+            # Rows from another embedding model (another vector size) can't be compared
+            # with the query and would make the whole comparison fail: skip them (C-34)
+            rows = [r for r in (result.data or [])
+                    if r.get('individuals') and isinstance(r.get('embedding_data'), list)
+                    and len(r['embedding_data']) == embedding_service.dimensions]
             if rows:
                 search_results = await embedding_service.semantic_search(
                     request.query,
@@ -240,47 +213,14 @@ async def generate_embeddings_for_all_individuals(
             return {"message": "No individuals found in database"}
         
         individuals = result.data
-        
+        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+
         generated_count = 0
         errors = []
         
         for individual in individuals:
             try:
-                # Generate embedding
-                embedding = await embedding_service.generate_individual_embedding(individual)
-                
-                # Create text representation
-                text_parts = []
-                if individual.get('name'):
-                    text_parts.append(f"Name: {individual['name']}")
-                if individual.get('data'):
-                    data = individual['data']
-                    if data.get('age'):
-                        text_parts.append(f"Age: {data['age']} years old")
-                    if data.get('height'):
-                        text_parts.append(f"Height: {data['height']} inches")
-                    if data.get('weight'):
-                        text_parts.append(f"Weight: {data['weight']} pounds")
-                    if data.get('gender'):
-                        text_parts.append(f"Gender: {data['gender']}")
-                    if data.get('substance_abuse_history'):
-                        text_parts.append(f"Substance abuse: {', '.join(data['substance_abuse_history'])}")
-                    if data.get('medical_conditions'):
-                        text_parts.append(f"Medical conditions: {', '.join(data['medical_conditions'])}")
-                    if data.get('veteran_status'):
-                        text_parts.append(f"Veteran status: {data['veteran_status']}")
-                    if data.get('housing_status'):
-                        text_parts.append(f"Housing status: {data['housing_status']}")
-                
-                embedding_text = " ".join(text_parts)
-                
-                # Store embedding
-                supabase.table("individual_embeddings").upsert({
-                    "individual_id": individual['id'],
-                    "embedding_data": embedding,
-                    "embedding_text": embedding_text
-                }, on_conflict="individual_id").execute()
-                
+                await embedding_service.store_individual_embedding(supabase, individual, categories)
                 generated_count += 1
                 
             except Exception as e:

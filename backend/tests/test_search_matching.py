@@ -157,6 +157,7 @@ def _post_search(sb, query, semantic=()):
     with patch("api.embeddings.get_supabase_client", return_value=sb), \
          patch("api.embeddings.embedding_service") as emb:
         emb.semantic_search = MagicMock(side_effect=fake_semantic)
+        emb.dimensions = 1  # the fake stored vectors below are 1-d
         r = TestClient(app, raise_server_exceptions=False).post("/api/embeddings/search", json={"query": query})
     assert r.status_code == 200, r.text
     return r.json()["results"]

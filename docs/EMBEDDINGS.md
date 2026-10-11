@@ -6,18 +6,13 @@ How the semantic search over individual profiles is set up and how it behaves.
 
 The search uses OpenAI's `text-embedding-3-large` model (3072 dimensions) to turn
 each profile into a vector, so a query like "veteran with diabetes" can find
-people whose records never contain that exact phrase. The embedded text covers:
-
-- name
-- age, height, weight, gender
-- substance abuse history, medical conditions, mental health issues
-- veteran status, housing status, behavior
-- urgency score and override (only when embedded via the `/generate` endpoints;
-  see below)
-
-Only these fields are embedded. The list is hardcoded in
-`backend/services/embedding_service.py:50-90`, so custom categories are not part
-of the vector.
+people whose records never contain that exact phrase. The embedded text covers
+the name and **every non-empty field in the person's `data`**, labelled with its
+category's label and in category order, so custom categories and free-text
+notes (`additional_information`) are searchable too. Urgency is never part of
+the text. It is built by one function,
+`field_registry.build_embedding_text(individual, categories)`, which every
+embedding path uses.
 
 ## Architecture
 
@@ -145,15 +140,27 @@ in Python, so search time grows linearly with the number of people: fine to abou
 1-5k people.
 
 ### 2. Text representation
-`generate_individual_embedding` builds one line of text per profile, for example:
+`build_embedding_text` (`backend/services/field_registry.py`) builds one line
+per profile: the name, then each non-empty `data` value labelled with the
+category's `display_name` (else its key title-cased), in category order; data
+keys that match no category follow, labelled from the key. Lists are joined
+with ", " and a location is its address. For example:
 
 ```
-Name: John Doe Age: 45 years old Height: 72 inches Weight: 180 pounds Gender: Male
-Substance abuse: Moderate Medical conditions: Diabetes Veteran status: No Urgency score: 23
+Name: John Doe. Height: 72; Weight: 180; Age: 45; Gender: Male; Substance Abuse History: Moderate; Medical Conditions: Diabetes; Veteran Status: No; HIV status: Negative
 ```
 
-The `embedding_text` column stores a readable summary alongside the vector. It
-is built separately and is not always exactly the text that was embedded.
+`EmbeddingService.store_individual_embedding` embeds that text and upserts the
+vector with **exactly that text** as `embedding_text`. All four paths use it:
+the background task on save, `/generate`, `/generate-all` and
+`scripts/backfill_embeddings.py`, so the same person always gets the same text.
+A vector that isn't 3072 long is rejected rather than stored, and search skips
+stored vectors of another length (left by an older model) instead of failing
+the whole semantic comparison.
+
+Creating a category doesn't re-embed anyone: existing people pick up the new
+field's label when they are next saved, or run `/generate-all` or the backfill
+script.
 
 ### 3. Automatic generation on save
 Every successful `POST /api/individuals` (create or merge) schedules a FastAPI
@@ -167,24 +174,23 @@ async def save_individual(request, background_tasks: BackgroundTasks, user_id=De
         generate_embedding_background,
         result.individual.id,
         {"id": result.individual.id, "name": result.individual.name, "data": result.individual.data},
+        categories,   # the rows the save already loaded
     )
     return result
 ```
 
-The task embeds the profile and upserts it:
+The task calls `store_individual_embedding`, which upserts:
 
 ```python
 supabase.table("individual_embeddings").upsert({
-    "individual_id": individual_id,
+    "individual_id": individual["id"],
     "embedding_data": embedding,
-    "embedding_text": embedding_text,
+    "embedding_text": text,          # the exact text that was embedded
 }, on_conflict="individual_id").execute()
 ```
 
 `on_conflict="individual_id"` makes a re-save replace the person's existing
-vector instead of failing on the unique constraint. The background task passes
-only `id`, `name` and `data`, so vectors made on save do not include the urgency
-score; vectors made by `/generate` and `/generate-all` do.
+vector instead of failing on the unique constraint.
 
 If the task fails (for example, OpenAI is unreachable), the error is logged and
 the save is unaffected. There is no retry; run `/generate` or `/generate-all` to
@@ -217,8 +223,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 - **500 "Failed to generate embedding":** check `OPENAI_API_KEY`, quota and rate
   limits.
 - **A new person never shows up in semantic results:** look in the backend log
-  for "Background task: Failed to generate embedding", then call `/generate` for
-  that id. Text matches still work without a vector.
+  for "Background embedding failed for <id>", then call `/generate` for that
+  id. Text matches still work without a vector.
 - **Too many weak matches:** raise `similarity_threshold` in the request.
 
 ## Privacy

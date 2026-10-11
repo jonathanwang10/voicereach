@@ -61,7 +61,9 @@ Backend needs `backend/.env` (see `backend/.env.example`); the app needs
   text goes to the model only as a delimited `user` item (`build_context_item`), never
   as a `system` message.
 - **Categories** are schema-as-data rows; the API names are `urgency_weight` and
-  `single_select` (UI labels may say "Danger Weight").
+  `single_select`. A category's `name` is its key (`category_key`, e.g. `hiv_status`)
+  and `display_name` is the label as typed; export columns, embedding text and the
+  assistant's fields all come from the categories (`services/field_registry.py`).
 
 ## App structure
 

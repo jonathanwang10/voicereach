@@ -249,3 +249,68 @@ def normalize_individual_data(data: dict, categories: list) -> Tuple[Dict[str, A
             errors.append({"field": out_key, "message": error})
 
     return clean, errors
+
+
+# --- Category-driven consumers: labels, embedding text, export columns ----------------
+
+def display_label(category: dict) -> str:
+    """The label people see: `display_name`, else the key title-cased ("hiv_status" -> "Hiv Status")."""
+    label = str(category.get("display_name") or "").strip()
+    return label or str(category.get("name") or "").replace("_", " ").title()
+
+
+def format_field_value(value: Any) -> str:
+    """One field value as plain text: lists joined with ", ", a location as its
+    address (else "lat, lng"), everything else str(). Empty values give ""."""
+    if _is_empty(value):
+        return ""
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value if not _is_empty(v))
+    if isinstance(value, dict):
+        address = value.get("address")
+        if isinstance(address, str) and address.strip():
+            return address.strip()
+        lat, lng = value.get("latitude"), value.get("longitude")
+        return f"{lat}, {lng}" if lat is not None and lng is not None else ""
+    return str(value).strip()
+
+
+def build_embedding_text(individual: dict, categories: list) -> str:
+    """The text embedded (and stored as `embedding_text`) for one person.
+
+    "Name: Ann Lee. Height: 64; HIV status: Negative; ..." -- every non-empty
+    `data` value, labelled with display_label, in category order; data keys with
+    no category follow, labelled from the key. Urgency is never included (it is
+    not something a search describes, and it changes on every override).
+    """
+    data = individual.get("data") or {}
+    parts: List[str] = []
+    used = {"name"}
+    for category in categories or []:
+        key = category.get("name")
+        if not key or key in used:
+            continue
+        used.add(key)
+        text = format_field_value(data.get(key))
+        if text:
+            parts.append(f"{display_label(category)}: {text}")
+    for key, value in data.items():
+        if key in used or not isinstance(key, str):
+            continue
+        text = format_field_value(value)
+        if text:
+            parts.append(f"{display_label({'name': key})}: {text}")
+    name = str(individual.get("name") or data.get("name") or "Unknown").strip()
+    return f"Name: {name}." + (" " + "; ".join(parts) if parts else "")
+
+
+def export_columns(categories: list) -> List[Tuple[str, str]]:
+    """[(key, header)] for every category: name first, then required, then other
+    presets, then the rest, each group in the given (creation) order."""
+    unique: Dict[str, dict] = {}
+    for category in categories or []:
+        if category.get("name") and category["name"] not in unique:
+            unique[category["name"]] = category
+    ordered = sorted(unique.values(), key=lambda c: (
+        c["name"] != "name", not c.get("is_required"), not c.get("is_preset")))
+    return [(c["name"], display_label(c)) for c in ordered]

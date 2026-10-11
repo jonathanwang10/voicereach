@@ -34,7 +34,8 @@ class TestCategoryIntegration:
             new_category_id = str(uuid4())
             new_category = {
                 "id": new_category_id,
-                "name": "Emergency status",
+                "name": "emergency_status",
+                "display_name": "emergency status",
                 "type": "single_select",
                 "is_required": False,
                 "is_preset": False,
@@ -55,9 +56,7 @@ class TestCategoryIntegration:
             mock_client.table.return_value = mock_table
             mock_select = MagicMock()
             mock_table.select.return_value = mock_select
-            mock_ilike = MagicMock()
-            mock_select.ilike.return_value = mock_ilike
-            mock_ilike.execute.return_value.data = []
+            mock_select.execute.return_value.data = []  # no existing categories
             
             # Mock insert
             mock_insert = MagicMock()
@@ -84,7 +83,8 @@ class TestCategoryIntegration:
                 
                 assert create_response.status_code == 201
                 created = create_response.json()
-                assert created["name"] == "Emergency status"  # Capitalized
+                assert created["name"] == "emergency_status"  # stored as the key
+                assert created["display_name"] == "emergency status"  # the user's text
                 assert created["urgency_weight"] == 50
                 
                 # Now mock GET categories to include the new one
@@ -118,7 +118,7 @@ class TestCategoryIntegration:
                 
                 # Find our new category
                 custom_category = next(
-                    (cat for cat in data["categories"] if cat["name"] == "Emergency status"),
+                    (cat for cat in data["categories"] if cat["name"] == "emergency_status"),
                     None
                 )
                 assert custom_category is not None

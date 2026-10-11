@@ -53,7 +53,8 @@ api/
   voice_assistant.py /api/voice-assistant helper routes
 services/
   openai_service.py             Whisper, GPT-4o extraction, duplicate scoring call
-  field_registry.py             Shared field normaliser, category_key, height parsing
+  field_registry.py             Field normaliser, category_key, height parsing; labels,
+                                embedding text and export columns from the categories
   duplicate_detection_service.py Candidate search + GPT-4o comparison (threshold 60)
   individual_service.py         Save / merge, search, profile, interaction history
   urgency_calculator.py         Urgency score and display score
@@ -169,22 +170,41 @@ the fields or the transcribe check failed. A failed check is a 500
 
 ### Categories and export (`api/categories.py`)
 
-**`GET /api/categories`** — Returns `{"categories": [...]}` with `name`, `type`,
-`is_required`, `is_preset`, `priority`, `urgency_weight`, `auto_trigger` and
-`options`.
+**`GET /api/categories`** — Returns `{"categories": [...]}` with `name` (the
+key used in `data`), `display_name` (the label as typed; may be null for
+presets created without one), `type`, `is_required`, `is_preset`, `priority`,
+`urgency_weight`, `auto_trigger` and `options`.
 
 **`POST /api/categories`** — Body: `name`, `type` (`text`, `number`,
 `single_select`, `multi_select`, `date`, `location`), optional `priority`,
-`urgency_weight` (0-100), `auto_trigger`, `is_required`, `options`. Rules:
-only `number` and `single_select` may have a weight or auto-trigger;
-single-select options are `[{"label": ..., "value": <number>}]`, multi-select
-options are strings; names are unique (case-insensitive, 409 otherwise) and are
-stored capitalised. Returns 201 with the category. There is no update or delete.
+`urgency_weight` (0-100), `auto_trigger`, `is_required`, `options`. Rules
+(`CreateCategoryRequest`, 422 otherwise):
+- `name` is stripped (inner whitespace collapsed), 1-50 characters, with at
+  least one letter or digit. It is stored as `display_name`, and its
+  `category_key` (`"HIV status"` -> `"hiv_status"`) as `name`.
+- only `number` and `single_select` may have a weight or auto-trigger;
+- `single_select` and `multi_select` need at least one option (at most 50).
+  Single-select options are `[{"label": ..., "value": <number 0-1>}]`,
+  multi-select options are strings. Labels are stripped, non-blank, at most 50
+  characters, unique ignoring case, and can't contain commas. Other types
+  can't have options.
 
-**`GET /api/export`** — CSV of every individual: name, height, weight, urgency
-score (the override if set, including 0), last seen (`updated_at`), age, gender,
-substance abuse history, medical conditions, veteran status, housing priority
-and behavior. 404 if there are no individuals.
+A name whose key equals the key of an existing category's `name` or
+`display_name` is a 409 (`"Veteran status"` vs the preset `veteran_status`,
+`"Housing-status"` vs `"Housing status"`). Keys are compared in Python, so `%`
+and `_` are not wildcards; a concurrent duplicate that reaches the UNIQUE
+constraint (Postgres `23505`) is also a 409. Returns 201 with the category
+(including `display_name`). There is no update or delete.
+
+**`GET /api/export`** — `text/csv` of every individual. Columns come from
+`field_registry.export_columns(categories)`: one per category (Name first, then
+required fields, other presets, then custom ones, headed with the category's
+label), then "Urgency Score" (`get_display_urgency_score`: the override if set,
+including 0) and "Last Seen" (`fetch_last_seen`: the latest interaction, else
+`created_at`; never `updated_at`). Lists are comma-separated and a location is
+its address. A text cell starting with `=`, `+`, `-`, `@`, tab or CR gets a
+leading `'` so a spreadsheet won't run it as a formula. No individuals gives a
+header-only CSV (200).
 
 ### Embeddings (`api/embeddings.py`, prefix `/api/embeddings`)
 
@@ -192,8 +212,16 @@ and behavior. 404 if there are no individuals.
   "similarity_threshold": 0.15 (0-1)}`; out of range is a 422.
   Ranked in tiers: name match (`search_type: "exact"`, 1.0), data-value match
   (`"value"`, 0.9), then semantic matches by cosine score. See
-  [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md).
+  [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md). Stored vectors whose length
+  isn't 3072 (another embedding model) are skipped rather than breaking search.
 - **`POST /generate`** — `{"individual_id": "uuid"}`.
+
+All four embedding paths (the save's background task, `/generate`,
+`/generate-all`, the backfill script) go through
+`EmbeddingService.store_individual_embedding`: the text is
+`field_registry.build_embedding_text(individual, categories)` (every category,
+labelled, no urgency), and that exact text is stored as `embedding_text`. A
+vector of the wrong length is rejected, not stored.
 - **`POST /generate-all`** — Embed every individual. One call per user per
   minute by default; `scripts/backfill_embeddings.py` does the same offline.
 - **`GET /status`** — `total_individuals`, `total_embeddings`,

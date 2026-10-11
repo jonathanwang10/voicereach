@@ -58,67 +58,35 @@ async def setup_embeddings():
         existing_embeddings = embedding_result.count if hasattr(embedding_result, 'count') else len(embedding_result.data)
         print(f"🧠 Found {existing_embeddings} existing embeddings")
         
-        # Get all individuals
+        # Get all individuals, and the categories that label their fields
         result = supabase.table("individuals").select("*").execute()
         individuals = result.data
-        
+        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+
         generated_count = 0
         errors = []
-        
+
         print(f"🔄 Generating embeddings for {total_individuals} individuals...")
-        
+
         for i, individual in enumerate(individuals, 1):
             try:
-                print(f"  [{i}/{total_individuals}] Processing {individual.get('name', 'Unknown')}...")
-                
-                # Generate embedding
-                embedding = await embedding_service.generate_individual_embedding(individual)
-                
-                # Create text representation
-                text_parts = []
-                if individual.get('name'):
-                    text_parts.append(f"Name: {individual['name']}")
-                if individual.get('data'):
-                    data = individual['data']
-                    if data.get('age'):
-                        text_parts.append(f"Age: {data['age']} years old")
-                    if data.get('height'):
-                        text_parts.append(f"Height: {data['height']} inches")
-                    if data.get('weight'):
-                        text_parts.append(f"Weight: {data['weight']} pounds")
-                    if data.get('gender'):
-                        text_parts.append(f"Gender: {data['gender']}")
-                    if data.get('substance_abuse_history'):
-                        text_parts.append(f"Substance abuse: {', '.join(data['substance_abuse_history'])}")
-                    if data.get('medical_conditions'):
-                        text_parts.append(f"Medical conditions: {', '.join(data['medical_conditions'])}")
-                    if data.get('veteran_status'):
-                        text_parts.append(f"Veteran status: {data['veteran_status']}")
-                    if data.get('housing_status'):
-                        text_parts.append(f"Housing status: {data['housing_status']}")
-                
-                embedding_text = " ".join(text_parts)
-                
-                # Store embedding
-                supabase.table("individual_embeddings").upsert({
-                    "individual_id": individual['id'],
-                    "embedding_data": embedding,
-                    "embedding_text": embedding_text
-                }, on_conflict="individual_id").execute()
-                
+                # Same text and storage as the API paths (field_registry.build_embedding_text)
+                dimensions = await embedding_service.store_individual_embedding(
+                    supabase, individual, categories)
                 generated_count += 1
-                print(f"    ✅ Generated embedding ({len(embedding)} dimensions)")
-                
+                print(f"  [{i}/{total_individuals}] ✅ {individual.get('id')} ({dimensions} dimensions)")
+
                 # Small delay to avoid rate limiting
                 await asyncio.sleep(0.1)
-                
+
             except Exception as e:
-                error_msg = f"Failed to generate embedding for {individual.get('name', 'Unknown')}: {str(e)}"
-                print(f"    ❌ {error_msg}")
+                # Id and error type only: no names, no upstream error text
+                error_msg = f"{individual.get('id')}: {type(e).__name__}"
+                print(f"  [{i}/{total_individuals}] ❌ {error_msg}")
                 errors.append(error_msg)
                 continue
-        
-        print(f"\n🎉 Embedding setup completed!")
+
+        print("\n🎉 Embedding setup completed!")
         print(f"✅ Successfully generated: {generated_count} embeddings")
         if errors:
             print(f"❌ Errors: {len(errors)}")

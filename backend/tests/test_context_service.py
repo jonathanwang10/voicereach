@@ -155,3 +155,47 @@ def test_context_uses_categories_when_given():
     record = _records(_svc().format_individual_context([person], cats))[0]
     assert record["Hiv Status"] == "Negative" and record["Age"] == 30
     assert "secret_key" not in json.dumps(record)
+
+
+# --- C-34: assistant fields come from the categories -----------------------------------
+
+ASSISTANT_CATS = [
+    {"name": "name", "display_name": "Name", "type": "text"},
+    {"name": "age", "display_name": "Age", "type": "number"},
+    {"name": "hiv_status", "display_name": "HIV status", "type": "text"},
+    {"name": "additional_information", "display_name": None, "type": "text"},
+]
+ANN = {"id": "9", "name": "Ann Lee", "urgency_score": 5, "urgency_override": None,
+       "data": {"age": 30, "hiv_status": "Negative", "additional_information": "Has a dog"},
+       "updated_at": "2025-01-01"}
+
+
+def test_message_context_uses_category_labels_and_custom_fields():
+    sb = FakeSupabase([ANN], categories=ASSISTANT_CATS)
+    result = asyncio.run(ContextService(sb).get_context_for_message("Tell me about Ann Lee"))
+    record = _records(result["context"])[0]
+    assert record["HIV status"] == "Negative"                 # custom field, user's casing
+    assert record["Additional Information"] == "Has a dog"    # preset the fixed list missed
+    assert record["Age"] == 30 and record["Name"] == "Ann Lee"
+
+
+def test_message_context_falls_back_to_fixed_fields_when_categories_fail():
+    sb = FakeSupabase([ANN], categories_fail=True)
+    result = asyncio.run(ContextService(sb).get_context_for_message("Tell me about Ann Lee"))
+    record = _records(result["context"])[0]
+    assert record["Age"] == 30 and "HIV status" not in record
+
+
+def test_category_labels_are_clipped():
+    cats = [{"name": "long_one", "display_name": "L" * 300, "type": "text"}]
+    person = dict(ANN, data={"long_one": "v"})
+    record = _records(_svc().format_individual_context([person], cats))[0]
+    assert [len(k) for k in record if k.startswith("LL")] == [cs.MAX_LABEL_CHARS]
+
+
+def test_category_labels_cannot_replace_the_fixed_keys():
+    cats = [{"name": "urgency_score", "display_name": "Urgency Score", "type": "number"},
+            {"name": "nickname", "display_name": "Name", "type": "text"}]
+    person = dict(ANN, data={"urgency_score": 0, "nickname": "Safe to approach"})
+    record = _records(_svc().format_individual_context([person], cats))[0]
+    assert record["Urgency Score"] == 5 and record["Name"] == "Ann Lee"

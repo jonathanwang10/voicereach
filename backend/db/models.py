@@ -1,7 +1,9 @@
 """
 Database models and Pydantic schemas for individual management
 """
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
@@ -131,58 +133,99 @@ class InteractionsResponse(BaseModel):
 
 
 # Category Models
+MAX_CATEGORY_NAME_LENGTH = 50
+MAX_OPTION_LABEL_LENGTH = 50
+MAX_OPTIONS = 50
+SELECT_TYPES = ("single_select", "multi_select")
+WEIGHTED_TYPES = ("number", "single_select")
+
+
 class CreateCategoryRequest(BaseModel):
-    """Request to create a new custom category"""
-    name: str  # Required, will be capitalized
+    """Request to create a new custom category.
+
+    `name` is the worker's label ("HIV status"): stripped, 1-50 characters, and
+    it must contain a letter or digit. The route stores `category_key(name)`
+    ("hiv_status") as the category's `name` and the label as `display_name`.
+    Select types need at least one option; single-select options are
+    `{label, value}` with 0 <= value <= 1 (the fraction of the weight it adds),
+    multi-select options are plain strings. Labels are stripped, non-blank,
+    unique ignoring case, and can't contain commas (multi-select values are
+    comma-separated).
+    """
+    name: str
     type: str = Field(..., pattern="^(text|number|single_select|multi_select|date|location)$")
     priority: str = Field("medium", pattern="^(high|medium|low)$")
     urgency_weight: int = Field(0, ge=0, le=100)
     auto_trigger: bool = False
     is_required: bool = False
     options: Optional[List[Any]] = None  # List[Dict] for single_select, List[str] for multi_select
-    
+
     @field_validator('name')
-    def capitalize_name(cls, v):
-        """Capitalize first letter, lowercase rest"""
-        return v.strip().capitalize() if v else v
-    
-    @field_validator('options')
-    def validate_options_format(cls, v, values):
-        """Validate options format based on type"""
-        if 'type' in values.data:
-            field_type = values.data['type']
-            if field_type == 'single_select' and v is not None:
-                # Must be list of dicts with label and value
-                if not isinstance(v, list) or not all(
-                    isinstance(opt, dict) and 'label' in opt and 'value' in opt 
-                    for opt in v
-                ):
-                    raise ValueError("Single-select options must be list of objects with 'label' and 'value'")
-                if not all(isinstance(opt['value'], (int, float)) and not isinstance(opt['value'], bool) for opt in v):
-                    raise ValueError("Single-select option values must be numbers")
-            elif field_type == 'multi_select' and v is not None:
-                # Must be list of strings
-                if not isinstance(v, list) or not all(isinstance(opt, str) for opt in v):
-                    raise ValueError("Multi-select options must be list of strings")
-            elif field_type not in ['single_select', 'multi_select'] and v is not None:
-                raise ValueError(f"Options not allowed for type {field_type}")
+    @classmethod
+    def clean_name(cls, v):
+        """Strip, keep the user's casing, bound the length, reject blank names."""
+        v = " ".join(str(v).split())
+        if not re.search(r"[A-Za-z0-9]", v):
+            raise ValueError("Category name must contain a letter or digit")
+        if len(v) > MAX_CATEGORY_NAME_LENGTH:
+            raise ValueError(f"Category name must be at most {MAX_CATEGORY_NAME_LENGTH} characters")
         return v
-    
-    def model_post_init(self, __context):
-        """Additional validation after model creation"""
-        # Validate urgency_weight only for number/single_select
-        if self.type not in ['number', 'single_select'] and self.urgency_weight > 0:
+
+    @model_validator(mode='after')
+    def check_type_rules(self):
+        """Options, weight and auto-trigger must fit the type."""
+        if self.type in SELECT_TYPES:
+            if not self.options:
+                raise ValueError(f"options are required for type {self.type}")
+            self.options = _clean_options(self.type, self.options)
+        elif self.options is not None:
+            raise ValueError(f"Options not allowed for type {self.type}")
+        if self.type not in WEIGHTED_TYPES and self.urgency_weight > 0:
             raise ValueError(f"urgency_weight must be 0 for type {self.type}")
-        
-        # Validate auto_trigger only for number/single_select
-        if self.type not in ['number', 'single_select'] and self.auto_trigger:
+        if self.type not in WEIGHTED_TYPES and self.auto_trigger:
             raise ValueError(f"auto_trigger not allowed for type {self.type}")
+        return self
+
+
+def _clean_options(field_type: str, options: List[Any]) -> List[Any]:
+    """Validated, stripped options for a select type (raises ValueError)."""
+    if len(options) > MAX_OPTIONS:
+        raise ValueError(f"At most {MAX_OPTIONS} options are allowed")
+    cleaned: List[Any] = []
+    seen = set()
+    for option in options:
+        if field_type == "single_select":
+            if not isinstance(option, dict) or "label" not in option or "value" not in option:
+                raise ValueError("Single-select options must be list of objects with 'label' and 'value'")
+            value = option["value"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("Single-select option values must be numbers")
+            if not 0 <= value <= 1:
+                raise ValueError("Single-select option values must be between 0 and 1")
+            label = option["label"]
+        else:
+            if not isinstance(option, str):
+                raise ValueError("Multi-select options must be list of strings")
+            label = option
+        if not isinstance(label, str) or not label.strip():
+            raise ValueError("Option labels can't be blank")
+        label = label.strip()
+        if "," in label:
+            raise ValueError("Option labels can't contain commas")
+        if len(label) > MAX_OPTION_LABEL_LENGTH:
+            raise ValueError(f"Option labels must be at most {MAX_OPTION_LABEL_LENGTH} characters")
+        if label.lower() in seen:
+            raise ValueError(f"Duplicate option '{label}'")
+        seen.add(label.lower())
+        cleaned.append({"label": label, "value": value} if field_type == "single_select" else label)
+    return cleaned
 
 
 class CategoryResponse(BaseModel):
-    """Category data returned from API"""
+    """Category data returned from API (`name` is the key, `display_name` the label)"""
     id: UUID
     name: str
+    display_name: Optional[str] = None
     type: str
     is_required: bool
     is_preset: bool

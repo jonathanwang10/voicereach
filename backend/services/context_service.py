@@ -13,6 +13,9 @@ format their records as reference data.
   calls run in a worker thread so they never block the event loop.
 - Format (C-28): one JSON record per person, every string value cut to
   MAX_VALUE_CHARS. main.py wraps it as delimited reference data in a user item.
+- Fields (C-34): every category, labelled with field_registry.display_label
+  (cut to MAX_LABEL_CHARS), so custom fields reach the assistant. If the
+  categories can't be read, a fixed list of the presets is used.
 """
 import hashlib
 import json
@@ -23,13 +26,14 @@ from typing import Any, Dict, List, Optional
 from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
-from services.field_registry import category_key
+from services.field_registry import category_key, display_label
 from services.urgency_calculator import get_display_urgency_score
 
 MAX_NAMES = 3
 MAX_RESULTS_PER_NAME = 3
 MAX_MESSAGE_CHARS = 2000
 MAX_VALUE_CHARS = 100
+MAX_LABEL_CHARS = 50
 MAX_WORDS_PER_NAME = 4
 _TOKEN_CANDIDATE_LIMIT = 50
 
@@ -59,6 +63,7 @@ _RELEVANT_FIELDS = [
     ("gender", "Gender"),
     ("height", "Height"),
     ("weight", "Weight"),
+    ("additional_information", "Additional Information"),
 ]
 
 
@@ -183,15 +188,18 @@ class ContextService:
                                   categories: Optional[List[Dict[str, Any]]] = None) -> str:
         """One JSON record per line; every string value cut to MAX_VALUE_CHARS.
 
-        Fields come from `categories` (all of them, labelled from the name) when
-        given, else a fixed list. `<` and `>` are \\u-escaped, which is still valid
-        JSON, so no value can contain the `>>>` that ends the reference block.
+        Fields come from `categories` (all of them, labelled with display_label,
+        each label cut to MAX_LABEL_CHARS) when given, else a fixed list. A label
+        never replaces the fixed "Name", "Urgency Score" or "Last Updated" keys.
+        `<` and `>` are \\u-escaped, which is still valid JSON, so no value or
+        label can contain the `>>>` that ends the reference block.
         """
         if categories:
-            fields = [(c["name"], c["name"].replace("_", " ").title())
+            fields = [(c["name"], display_label(c)[:MAX_LABEL_CHARS])
                       for c in categories if c.get("name") and category_key(c["name"]) != "name"]
         else:
             fields = _RELEVANT_FIELDS
+        reserved = {"Name", "Urgency Score", "Last Updated"}
 
         lines = []
         for individual in individuals or []:
@@ -202,6 +210,8 @@ class ContextService:
             }
             for key, label in fields:
                 value = data.get(key)
+                if label in reserved or label in record:
+                    continue
                 if value is not None and value != "" and value != []:
                     record[label] = _clip(value)
             if individual.get("updated_at"):
@@ -210,6 +220,16 @@ class ContextService:
             lines.append(line.replace("<", "\\u003c").replace(">", "\\u003e"))
         return "\n".join(lines)
 
+    async def _categories(self) -> Optional[List[Dict[str, Any]]]:
+        """Category rows (in a worker thread), or None if they can't be read."""
+        def fetch():
+            return self.supabase.table("categories").select("*").order("created_at").execute().data
+        try:
+            return await run_in_threadpool(fetch) or None
+        except Exception as e:
+            print(f"Context categories unavailable: {type(e).__name__}")
+            return None
+
     async def get_context_for_message(self, message: str) -> Dict[str, Any]:
         """{"context": str, "individuals_found": list, "names_detected": list}."""
         try:
@@ -217,8 +237,9 @@ class ContextService:
             if not names:
                 return {"context": "", "individuals_found": [], "names_detected": []}
             individuals = await self.search_individuals_by_names(names)
+            categories = await self._categories() if individuals else None
             return {
-                "context": self.format_individual_context(individuals),
+                "context": self.format_individual_context(individuals, categories),
                 "individuals_found": individuals,
                 "names_detected": names,
             }
