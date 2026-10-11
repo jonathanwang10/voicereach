@@ -124,8 +124,8 @@ in the background.
 
 **`GET /api/individuals`** — Query: `search`, `limit` (1-100, default 20),
 `offset`, `sort_by` (`last_seen`, `urgency_score`, `name`), `sort_order`
-(`asc`, `desc`). A search matches the name or any string value / list item in
-`data`, never field names (`services/search_matching.match_individual`); name
+(`asc`, `desc`). A search matches the name (substring) or any string value /
+list item in `data` at a word start ("male" does not match "Female"), never field names (`services/search_matching.match_individual`); name
 matches sort before value matches, then `sort_by` orders each group
 (`urgency_score` sorts by the display score, `last_seen` by parsed time). Returns
 `{individuals, total, offset, limit}`; each entry has `display_score`, `last_seen`

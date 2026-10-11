@@ -42,6 +42,30 @@ def test_value_match_is_case_insensitive_substring_including_list_items():
     assert match_individual("diab", person) == "value"
 
 
+# Fix round 1 (R-2 as amended): values match at a word start, names as a substring
+@pytest.mark.parametrize("query,value,expected", [
+    ("male", "Female", None),
+    ("male", "Male", "value"),
+    ("diab", "Diabetes", "value"),
+    ("market st", "123 Market St, SF", "value"),
+    ("vet", "Veteran status: Yes", "value"),
+    ("#12", "Unit #12", "value"),
+    ("eteran", "Veteran", None),
+])
+def test_value_matches_start_at_a_word(query, value, expected):
+    assert match_individual(query, {"name": "Bob", "data": {"field": value}}) == expected
+
+
+def test_value_word_start_also_applies_to_list_items():
+    person = {"name": "Bob", "data": {"gender_list": ["Female"], "conditions": ["Type 2 diabetes"]}}
+    assert match_individual("male", person) is None
+    assert match_individual("diab", person) == "value"
+
+
+def test_name_match_is_still_a_plain_substring():
+    assert match_individual("ann", {"name": "Joanne", "data": {}}) == "name"
+
+
 def test_name_match_wins_over_value_match():
     person = {"name": "Veronica Ash", "data": {"notes": "veronica's dog"}}
     assert match_individual("VERON", person) == "name"
@@ -178,3 +202,30 @@ def test_dedup_step3_does_not_take_candidates_through_keys():
     sb = _SB(people, [])
     found = asyncio.run(DuplicateDetectionService(sb, MagicMock())._find_candidates("Al"))
     assert [c["name"] for c in found] == ["Zed"]
+
+
+def test_dedup_step3_still_finds_a_name_variation_in_a_value():
+    from services.duplicate_detection_service import DuplicateDetectionService
+    people = [_person(1, name="Zed", data={"aka": "Al Smith"}),
+              _person(2, name="Yan", data={"aka": "Hal Jones"})]  # "Al" inside "Hal" is not a word start
+    sb = _SB(people, [])
+    found = asyncio.run(DuplicateDetectionService(sb, MagicMock())._find_candidates("Al"))
+    assert [c["name"] for c in found] == ["Zed"]
+
+
+def test_person_found_by_text_and_semantic_appears_once_as_text():
+    id1 = ID1
+    people = [_person(1, name="Bob", data={"notes": "army veteran"}), _person(2, name="Carl")]
+    embeddings_rows = [{"individual_id": id1, "embedding_data": [0.1], "individuals": people[0]}]
+
+    class _SBWithEmbeddings(_SB):
+        def table(self, name):
+            if name == "individual_embeddings":
+                q = MagicMock()
+                q.select.return_value.execute.return_value = MagicMock(data=embeddings_rows)
+                return q
+            return super().table(name)
+
+    sb = _SBWithEmbeddings(people, [])
+    results = _post_search(sb, "veteran", semantic=[{"individual_id": id1, "similarity_score": 0.99}])
+    assert [(r["id"], r["search_type"], r["similarity_score"]) for r in results] == [(id1, "value", 0.9)]

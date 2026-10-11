@@ -238,3 +238,53 @@ it('renders the match badge for a 0 similarity score', async () => {
   await waitFor(() => getByText('0%'));
   expect(getByText('Details')).toBeTruthy(); // a value match is not shown as "90%"
 });
+
+// Fix round 1: keep the scroll target while a spinner replaces the list; retry a failed scroll once.
+describe('restored-row scroll (fix round 1)', () => {
+  const bob = { ...ann, id: 'b2', name: 'Bob Day' };
+  const cy = { ...ann, id: 'c3', name: 'Cy Moe' };
+
+  it('waits for the list to come back from a search spinner before scrolling', async () => {
+    const scroll = jest.spyOn(FlatList.prototype, 'scrollToIndex').mockImplementation(() => {});
+    let resolveSearch: (r: any[]) => void = () => {};
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob, cy]);
+    (api.semanticSearchIndividuals as jest.Mock).mockImplementation((q: string) =>
+      q === 'm' ? Promise.resolve([ann, bob, cy]) : new Promise(r => { resolveSearch = r; }));
+    const { getByText, getByPlaceholderText } = render(
+      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Cy Moe'));
+    const box = getByPlaceholderText('Search by name, description, or details...');
+    fireEvent.changeText(box, 'm'); // results for "m" (Cy at index 2) stay in state under the spinner
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledWith('m'));
+    await waitFor(() => getByText('Cy Moe'));
+    let handle: { cancel: () => boolean } = { cancel: () => false };
+    act(() => { handle = scheduleDelete('c3'); });
+    fireEvent.changeText(box, 'mo');
+    await waitFor(() => getByText('Searching...'));
+    act(() => { handle.cancel(); }); // Undo while the spinner hides the list
+    expect(scroll).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledWith('mo'));
+    await act(async () => { resolveSearch([bob, cy]); });
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ index: 1 })));
+    scroll.mockRestore();
+  });
+
+  it('retries a failed scrollToIndex at most once', async () => {
+    const scroll = jest.spyOn(FlatList.prototype, 'scrollToIndex').mockImplementation(() => {});
+    const offset = jest.spyOn(FlatList.prototype, 'scrollToOffset').mockImplementation(() => {});
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob, cy]);
+    const { getByText, UNSAFE_getByType } = render(
+      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Cy Moe'));
+    const onFailed = UNSAFE_getByType(FlatList).props.onScrollToIndexFailed;
+    const info = { index: 2, averageItemLength: 100, highestMeasuredFrameIndex: 0 };
+    act(() => { onFailed(info); });
+    await act(async () => { await new Promise(r => setTimeout(r, 300)); });
+    expect(scroll).toHaveBeenCalledTimes(1);
+    act(() => { onFailed(info); }); // the retry failed too: give up
+    await act(async () => { await new Promise(r => setTimeout(r, 300)); });
+    expect(scroll).toHaveBeenCalledTimes(1);
+    scroll.mockRestore();
+    offset.mockRestore();
+  });
+});

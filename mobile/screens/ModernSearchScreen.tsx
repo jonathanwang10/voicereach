@@ -165,19 +165,32 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
+  // The FlatList is only mounted when no spinner or error view replaces it
+  const listMounted = !isSearching && !(isLoading && !hasQuery) && !loadError;
+  const scrollRetries = useRef(0);
+  const scrollRetryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (scrollRetryTimeout.current) clearTimeout(scrollRetryTimeout.current);
+  }, []);
+
   useEffect(() => {
-    if (!scrollTargetId) return;
+    if (!scrollTargetId || !listMounted) return; // keep the target until the list is back
     const index = visibleResults.findIndex(item => item.id === scrollTargetId);
     if (index < 0) return; // not shown yet: try again when the list changes
     setScrollTargetId(null);
+    scrollRetries.current = 0;
     listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
-  }, [scrollTargetId, shownResults, pendingVersion]);
+  }, [scrollTargetId, shownResults, pendingVersion, listMounted]);
 
   // scrollToIndex needs the row's layout; if it is not measured yet, scroll near it
-  // first and try once more.
+  // first and try once more (only once).
   const handleScrollToIndexFailed = (info: { index: number; averageItemLength: number }) => {
     listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
-    setTimeout(() => {
+    if (scrollRetries.current >= 1) return;
+    scrollRetries.current += 1;
+    if (scrollRetryTimeout.current) clearTimeout(scrollRetryTimeout.current);
+    scrollRetryTimeout.current = setTimeout(() => {
+      scrollRetryTimeout.current = null;
       listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.2 });
     }, 250);
   };

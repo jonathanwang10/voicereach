@@ -373,9 +373,10 @@ JSONB with what the client posts, so any field the client omits is dropped.
 
 Every text search (the list's `search`, the text half of
 `POST /api/embeddings/search`, and duplicate-candidate lookup) uses one matcher,
-`match_individual` in `backend/services/search_matching.py`. It is a
-case-insensitive substring match on the person's name, or on any string value or
-list item in `data`. It never looks at field names, so "veteran" or "age" do not
+`match_individual` in `backend/services/search_matching.py`. The person's name
+matches as a case-insensitive substring ("ann" finds "Joanne"). A string value or
+list item in `data` matches only where the query starts a word, so "male" finds
+"Male" but not "Female", while "diab" finds "Diabetes". It never looks at field names, so "veteran" or "age" do not
 match everyone through `veteran_status` or `age` keys. Numbers are not matched as
 text. Results are ranked in tiers: name match (`search_type: "exact"`, score 1.0),
 then a data-value match (`"value"`, 0.9), then semantic matches by cosine score.

@@ -127,9 +127,10 @@ GET /api/embeddings/status
 `POST /api/embeddings/search` is a hybrid:
 
 1. **Text match.** `match_individual` (`backend/services/search_matching.py`, the
-   same matcher the list search and duplicate detection use) does a
-   case-insensitive substring match on the name, or on any string value or list
-   item in `data`. It never matches field names, so "veteran" does not hit
+   same matcher the list search and duplicate detection use) is case-insensitive.
+   The name matches as a substring; a string value or list item in `data` matches
+   only where the query starts a word ("male" finds "Male", not "Female"; "diab"
+   finds "Diabetes"). It never matches field names, so "veteran" does not hit
    everyone with a `veteran_status` key. A name match is `search_type: "exact"`
    with a score of 1.0; a data-value match is `"value"` with 0.9.
 2. **Semantic match.** The query is embedded, compared with every stored vector,
