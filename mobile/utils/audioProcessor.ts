@@ -41,6 +41,34 @@ export class AudioProcessor {
   }
 
   /**
+   * Join decoded audio chunks into one buffer. Each Realtime audio delta is its own
+   * base64 string (possibly '='-padded), so decode them one by one and join the bytes,
+   * never the base64 text (C-26).
+   */
+  static concatChunks(chunks: Uint8Array[]): Uint8Array {
+    const total = chunks.reduce((sum, c) => sum + c.length, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      out.set(c, offset);
+      offset += c.length;
+    }
+    return out;
+  }
+
+  /**
+   * Encode bytes as base64 (built in slices so large buffers don't overflow the call stack).
+   */
+  static bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    const slice = 0x8000;
+    for (let i = 0; i < bytes.length; i += slice) {
+      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + slice)));
+    }
+    return btoa(binary);
+  }
+
+  /**
    * Create WAV file from PCM data for audio playback
    */
   static createWavFile(pcmData: Uint8Array, sampleRate: number = AUDIO_SPECS.SAMPLE_RATE): ArrayBuffer {
@@ -89,20 +117,25 @@ export class AudioProcessor {
     const minRequiredSize = Math.floor(0.1 * AUDIO_SPECS.SAMPLE_RATE * AUDIO_SPECS.BYTES_PER_SAMPLE); // 100ms minimum
     const maxSize = 50 * 1024 * 1024; // Maximum 50MB for audio data
     
-    const isValid = data.length >= minRequiredSize && data.length <= maxSize;
-    
-    if (!isValid) {
-      console.log('❌ PCM data validation failed:', {
-        dataLength: data.length,
-        minRequired: minRequiredSize,
-        maxAllowed: maxSize,
-        durationMs: (data.length / (AUDIO_SPECS.SAMPLE_RATE * AUDIO_SPECS.BYTES_PER_SAMPLE)) * 1000
-      });
-    }
-    
-    return isValid;
+    return data.length >= minRequiredSize && data.length <= maxSize;
   }
 }
+
+/**
+ * Switch the audio session to playback before playing an assistant reply (C-24, R-7).
+ * While allowsRecordingIOS is true, iOS routes playback to the earpiece receiver;
+ * turning it off sends the reply to the loudspeaker. configureAudioRecording turns
+ * recording back on when the next recording starts.
+ */
+export const configureAudioPlayback = async (): Promise<void> => {
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: false,
+    playsInSilentModeIOS: true,
+    shouldDuckAndroid: true,
+    playThroughEarpieceAndroid: false,
+    staysActiveInBackground: false,
+  });
+};
 
 /**
  * Helper function to configure audio recording for optimal results
@@ -123,10 +156,8 @@ export const configureAudioRecording = async (): Promise<void> => {
       playThroughEarpieceAndroid: false,
       staysActiveInBackground: false,
     });
-
-    console.log('✅ Audio recording configured successfully');
   } catch (error) {
-    console.error('❌ Failed to configure audio recording:', error);
+    if (__DEV__) console.warn('Failed to configure audio recording:', error);
     throw error;
   }
 };
