@@ -7,6 +7,8 @@ import uuid
 from typing import List, Dict
 from supabase import Client
 
+from services.search_matching import match_individual
+
 
 class DuplicateDetectionService:
     """Service for detecting duplicate individuals using database search and LLM comparison"""
@@ -128,8 +130,8 @@ class DuplicateDetectionService:
                             candidates.append(ind)
                             seen_ids.add(ind["id"])
 
-            # Step 3: Also search in JSONB data for name variations
-            # (if we still have room for more candidates)
+            # Step 3: Also search the data values for name variations (e.g. an
+            # "aka" field), with the shared value-only matcher (never dict keys, C-01)
             if len(candidates) < limit:
                 # Get more individuals to search through their data field
                 all_response = self.supabase.table("individuals") \
@@ -139,16 +141,12 @@ class DuplicateDetectionService:
                     .execute()
 
                 if all_response.data:
-                    name_lower = name.lower()
                     for ind in all_response.data:
                         if len(candidates) >= limit:
                             break
-                        if ind["id"] not in seen_ids:
-                            # Search in the JSONB data field
-                            data_str = str(ind.get("data", {})).lower()
-                            if name_lower in data_str:
-                                candidates.append(ind)
-                                seen_ids.add(ind["id"])
+                        if ind["id"] not in seen_ids and match_individual(name, ind):
+                            candidates.append(ind)
+                            seen_ids.add(ind["id"])
 
         except Exception as e:
             print(f"Error searching for candidates: {str(e)}")

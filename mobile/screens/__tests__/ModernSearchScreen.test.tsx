@@ -3,10 +3,19 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
+// Runs like a focus on mount; `refocus()` replays the screen's focus callbacks
+const mockFocusCallbacks = new Set<() => void>();
 jest.mock('@react-navigation/native', () => {
   const React = require('react');
-  return { useFocusEffect: (cb: any) => React.useEffect(cb, [cb]) };
+  return {
+    useFocusEffect: (cb: any) => React.useEffect(() => {
+      mockFocusCallbacks.add(cb);
+      cb();
+      return () => { mockFocusCallbacks.delete(cb); };
+    }, [cb]),
+  };
 });
+const refocus = () => act(() => { mockFocusCallbacks.forEach(cb => cb()); });
 jest.mock('../../services/api', () => ({
   api: {
     searchIndividuals: jest.fn(),
@@ -14,7 +23,8 @@ jest.mock('../../services/api', () => ({
   },
 }));
 
-import { Alert } from 'react-native';
+import { Alert, FlatList } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { act } from '@testing-library/react-native';
 import { ModernSearchScreen } from '../ModernSearchScreen';
 import { api } from '../../services/api';
@@ -125,4 +135,106 @@ it('shows the display score (override) on the row', async () => {
   ]);
   const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
   await waitFor(() => getByText('88'));
+});
+
+// C-06: one search per pause in typing, and stale responses are dropped.
+describe('search sequencing', () => {
+  const box = 'Search by name, description, or details...';
+
+  it('searches once per pause in typing, not twice per keystroke', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+    (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
+    const { getByText, getByPlaceholderText } = render(
+      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    fireEvent.changeText(getByPlaceholderText(box), 'a');
+    fireEvent.changeText(getByPlaceholderText(box), 'an');
+    fireEvent.changeText(getByPlaceholderText(box), 'ann');
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalled());
+    await new Promise(r => setTimeout(r, 400));
+    expect((api.semanticSearchIndividuals as jest.Mock).mock.calls).toEqual([['ann']]);
+  });
+
+  it('a slow response for "v" never overwrites the results for "veteran"', async () => {
+    const vPerson = { ...ann, id: 'v1', name: 'Val Early' };
+    const vet = { ...ann, id: 'v2', name: 'Vet Later' };
+    let resolveV: (r: any[]) => void = () => {};
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+    (api.semanticSearchIndividuals as jest.Mock).mockImplementation((q: string) =>
+      q === 'v' ? new Promise(r => { resolveV = r; }) : Promise.resolve([vet]));
+    const { getByText, getByPlaceholderText, queryByText } = render(
+      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+
+    fireEvent.changeText(getByPlaceholderText(box), 'v');
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledWith('v'));
+    fireEvent.changeText(getByPlaceholderText(box), 'veteran');
+    await waitFor(() => getByText('Vet Later'));
+
+    await act(async () => { resolveV([vPerson]); });
+    expect(queryByText('Val Early')).toBeNull();
+    expect(getByText('Vet Later')).toBeTruthy();
+  });
+});
+
+// C-60: one load on mount; a later (focus) refresh runs in the background.
+describe('list reloads', () => {
+  it('loads the list once on mount', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    await new Promise(r => setTimeout(r, 50));
+    expect(api.searchIndividuals).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed refresh keeps the last good list and shows a toast instead of the retry state', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    refocus();
+    await waitFor(() => expect(Toast.show).toHaveBeenCalled());
+    expect(getByText('Ann Lee')).toBeTruthy();
+    expect(queryByText("Couldn't load — tap to retry")).toBeNull();
+    expect(queryByText('Loading individuals...')).toBeNull();
+  });
+
+  it('a refresh shows new data without a full-screen spinner', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann])
+      .mockResolvedValue([{ ...ann, name: 'Ann Updated' }]);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    refocus();
+    expect(queryByText('Loading individuals...')).toBeNull();
+    await waitFor(() => getByText('Ann Updated'));
+  });
+});
+
+// C-60: after Undo, the row comes back and the list scrolls to it.
+it('scrolls to a row whose pending delete was undone', async () => {
+  const scroll = jest.spyOn(FlatList.prototype, 'scrollToIndex').mockImplementation(() => {});
+  const people = [ann, { ...ann, id: 'b2', name: 'Bob Day' }, { ...ann, id: 'c3', name: 'Cy Moe' }];
+  (api.searchIndividuals as jest.Mock).mockResolvedValue(people);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('Cy Moe'));
+  let handle: { cancel: () => boolean } = { cancel: () => false };
+  act(() => { handle = scheduleDelete('c3'); });
+  expect(scroll).not.toHaveBeenCalled();
+  act(() => { handle.cancel(); });
+  await waitFor(() => expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ index: 2 })));
+  scroll.mockRestore();
+});
+
+// A similarity score of 0 must not render a bare `0` (it crashes React Native).
+it('renders the match badge for a 0 similarity score', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([
+    { ...ann, similarity_score: 0, search_type: 'semantic' },
+    { ...ann, id: 'b2', name: 'Bob Day', similarity_score: 0.9, search_type: 'value' },
+  ]);
+  const { getByText, getByPlaceholderText } = render(
+    <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('Ann Lee'));
+  fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'zz');
+  await waitFor(() => getByText('0%'));
+  expect(getByText('Details')).toBeTruthy(); // a value match is not shown as "90%"
 });

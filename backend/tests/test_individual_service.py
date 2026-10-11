@@ -261,32 +261,26 @@ class TestIndividualService:
     @pytest.mark.asyncio
     async def test_search_individuals_with_term(self, service, mock_supabase):
         """Test search functionality with search term"""
-        # Mock search results
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.execute.return_value.data = [
-            {
-                "id": str(uuid4()),
-                "name": "John Smith",
-                            "urgency_score": 50,
-            "urgency_override": None,
-                "created_at": datetime.utcnow().isoformat()
-            }
+        # One table read; the term is matched in Python (search_matching.match_individual)
+        john_id = str(uuid4())
+        mock_supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"id": john_id, "name": "John Smith", "urgency_score": 50, "urgency_override": None,
+             "data": {}, "created_at": datetime.utcnow().isoformat()},
+            {"id": str(uuid4()), "name": "Ann Lee", "urgency_score": 50, "urgency_override": None,
+             "data": {"john_key": "x"}, "created_at": datetime.utcnow().isoformat()},
         ]
-        
-        # Service also scans all individuals for JSONB matches
-        mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
 
         # Mock last interaction
         mock_supabase.table.return_value.select.return_value.in_.return_value.order.return_value.execute.return_value.data = [{
-            "individual_id": mock_supabase.table.return_value.select.return_value.ilike.return_value.execute.return_value.data[0]["id"],
+            "individual_id": john_id,
             "created_at": datetime.utcnow().isoformat(),
             "location": {"latitude": 37.80808794862037, "longitude": -122.43016054168524, "address": "123 Market Street"}
         }]
-        
+
         # Test search
         results = await service.search_individuals(search="John", limit=10)
         
-        assert len(results.individuals) > 0
-        assert "John" in results.individuals[0].name
+        assert [r.name for r in results.individuals] == ["John Smith"]
         # Address should be abbreviated
         assert len(results.individuals[0].last_location["address"]) < 50
     

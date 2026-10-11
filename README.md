@@ -290,7 +290,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/` | API name (public) |
 | `POST` | `/api/transcribe` | Audio → transcript → structured fields → duplicate candidates |
 | `POST` | `/api/individuals` | Create a person, or merge into one with `merge_with_id` |
-| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). `last_seen` is the latest interaction (else `created_at`), from one query; name filter is SQL, data match is in memory (fine to about 1-5k people) |
+| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory (fine to about 1-5k people) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
 | `GET` | `/api/individuals/{id}/interactions` | Encounter history |
 | `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings, clears the assistant cache); 404 if absent |
@@ -298,7 +298,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `POST` | `/api/individuals/check-duplicates` | Duplicate candidates for manually entered data |
 | `GET` / `POST` | `/api/categories` | Read / define collected fields |
 | `GET` | `/api/export` | CSV of every individual |
-| `POST` | `/api/embeddings/search` | Name + JSONB text match, then semantic matches |
+| `POST` | `/api/embeddings/search` | Hybrid search, ranked: name match (`exact`), data-value match (`value`), then semantic matches |
 | `GET` | `/api/embeddings/status` | Embedding coverage |
 | `POST` | `/api/embeddings/generate` | Embed one individual (`{"individual_id": ...}`) |
 | `POST` | `/api/embeddings/generate-all` | Embed every individual |
@@ -357,7 +357,8 @@ small number GPT returns for height (e.g. `6`) is converted from feet in
 Keys that match no category are kept, after the same cleaning.
 
 **Duplicate detection — the code and the spec disagree here.** The backend
-gathers candidates by exact name, partial name and a text scan of the JSONB data,
+gathers candidates by exact name, partial name and a match on the data values
+(`services/search_matching.py`; never field names),
 asks GPT-4o to score the first three 0–100, drops anything below 60
 (`services/duplicate_detection_service.py:216`), and returns only the best match.
 `docs/PRD.md` calls for an automatic merge at ≥ 95, but **that threshold is not
@@ -367,6 +368,23 @@ defaults each field to the newer value, but the worker can flip any field, or
 choose to create a new person instead. Note also that the backend does not merge
 server-side — `services/individual_service.py:152` replaces the whole `data`
 JSONB with what the client posts, so any field the client omits is dropped.
+
+### Search
+
+Every text search (the list's `search`, the text half of
+`POST /api/embeddings/search`, and duplicate-candidate lookup) uses one matcher,
+`match_individual` in `backend/services/search_matching.py`. It is a
+case-insensitive substring match on the person's name, or on any string value or
+list item in `data`. It never looks at field names, so "veteran" or "age" do not
+match everyone through `veteran_status` or `age` keys. Numbers are not matched as
+text. Results are ranked in tiers: name match (`search_type: "exact"`, score 1.0),
+then a data-value match (`"value"`, 0.9), then semantic matches by cosine score.
+A strong semantic hit never outranks a text match. Matching runs in Python over the
+whole table, which is fine to about 1-5k people.
+
+On the Search tab, typing runs one search per 300 ms pause, and only the newest
+response is shown. The list loads on each focus; after the first load it
+refreshes in the background, keeping the last good list if the refresh fails.
 
 ## Testing
 

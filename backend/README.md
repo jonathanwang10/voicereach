@@ -124,12 +124,15 @@ in the background.
 
 **`GET /api/individuals`** — Query: `search`, `limit` (1-100, default 20),
 `offset`, `sort_by` (`last_seen`, `urgency_score`, `name`), `sort_order`
-(`asc`, `desc`). Searches the name and the JSONB data. Returns `{individuals,
-total, offset, limit}`; each entry has `display_score`, `last_seen` and an
-abbreviated `last_location`. `last_seen` is the latest interaction's
+(`asc`, `desc`). A search matches the name or any string value / list item in
+`data`, never field names (`services/search_matching.match_individual`); name
+matches sort before value matches, then `sort_by` orders each group
+(`urgency_score` sorts by the display score, `last_seen` by parsed time). Returns
+`{individuals, total, offset, limit}`; each entry has `display_score`, `last_seen`
+and an abbreviated `last_location`. `last_seen` is the latest interaction's
 `created_at`, falling back to the person's `created_at` (never `updated_at`),
-fetched with one `interactions` query for the whole list. The name filter is an
-escaped `ILIKE` in SQL; data matching is in memory (fine to about 1-5k people).
+fetched by `fetch_last_seen` in chunks of 50 ids per `interactions` query. The
+table is read once and matched in memory (fine to about 1-5k people).
 
 **`GET /api/individuals/{id}`** — Returns `{individual, recent_interactions}`
 (the last 10). 404 if not found; a database error is a 500.
@@ -174,7 +177,8 @@ and behavior. 404 if there are no individuals.
 ### Embeddings (`api/embeddings.py`, prefix `/api/embeddings`)
 
 - **`POST /search`** — `{"query", "top_k": 10, "similarity_threshold": 0.15}`.
-  Text matches on name and JSONB first, then semantic matches. See
+  Ranked in tiers: name match (`search_type: "exact"`, 1.0), data-value match
+  (`"value"`, 0.9), then semantic matches by cosine score. See
   [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md).
 - **`POST /generate`** — `{"individual_id": "uuid"}`.
 - **`POST /generate-all`** — Embed every individual.

@@ -154,7 +154,9 @@ it was removed on purpose and must not come back.
    `#EF4444`.
 
 ### Duplicate detection and merging
-1. Candidates: exact name, partial name, then a text scan of recent JSONB data
+1. Candidates: exact name, partial name, then a match on the values (never the
+   field names) of recent records, via `match_individual` in
+   `backend/services/search_matching.py`
    (`backend/services/duplicate_detection_service.py`).
 2. GPT-4o scores the first three 0-100. Matches below 60 are dropped; only the
    best is returned.
@@ -322,13 +324,15 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 6. Two-minute recording limit, enforced in the app.
 7. Semantic search embeds a fixed set of fields, stores vectors as JSONB and
    compares them in Python.
-8. List and search endpoints load whole tables.
+8. List and search endpoints load whole tables and match text in Python
+   (`backend/services/search_matching.py`); fine to about 1-5k people.
 9. No audit trail beyond the interactions log.
 
 ## Quick reference
 
 ```sql
--- Search individuals by name or any field
+-- Rough manual search by name or anything in data (unlike the app, this
+-- also matches field names such as veteran_status)
 SELECT * FROM individuals
 WHERE name ILIKE '%john%'
    OR data::text ILIKE '%john%';

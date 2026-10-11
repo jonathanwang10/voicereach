@@ -22,7 +22,7 @@ of the vector.
 ## Architecture
 
 ```
-Search tab → POST /api/embeddings/search → name/JSONB text match
+Search tab → POST /api/embeddings/search → name / data-value text match (search_matching.py)
                                          → query embedding (OpenAI)
                                          → cosine similarity in Python against every stored vector
                                          → combined, de-duplicated results
@@ -113,25 +113,35 @@ GET /api/embeddings/status
    `GET /api/individuals?search=...` (the backend's text search).
 3. With an empty query, the screen lists everyone via `api.searchIndividuals('')`
    (`GET /api/individuals`, most recently seen first, up to 100).
-4. Results carry `similarity_score` and `search_type`, which the screen shows as
-   a match percentage, plus `last_seen` and `display_score`. `last_seen` uses the
+4. Results carry `similarity_score` and `search_type`. The screen shows "Exact"
+   for a name match, "Details" for a data-value match and the match percentage for
+   a semantic match, plus `last_seen` and `display_score`. `last_seen` uses the
    same rule as the list (latest interaction, else `created_at`).
+5. Typing runs one search per 300 ms pause. Each search takes a sequence number,
+   and a response that is no longer the newest is dropped, so a slow result for
+   "v" never replaces the one for "veteran".
 
 ## How it works
 
 ### 1. Search
 `POST /api/embeddings/search` is a hybrid:
 
-1. **Text match.** Names matching `%query%` (case-insensitive), plus anyone whose
-   JSONB `data` contains the query as a substring. These are `search_type:
-   "exact"` with a score of 1.0.
+1. **Text match.** `match_individual` (`backend/services/search_matching.py`, the
+   same matcher the list search and duplicate detection use) does a
+   case-insensitive substring match on the name, or on any string value or list
+   item in `data`. It never matches field names, so "veteran" does not hit
+   everyone with a `veteran_status` key. A name match is `search_type: "exact"`
+   with a score of 1.0; a data-value match is `"value"` with 0.9.
 2. **Semantic match.** The query is embedded, compared with every stored vector,
    and results at or above `similarity_threshold` are kept, up to `top_k`.
-3. Text matches come first, then semantic matches by score, with duplicates
-   removed.
+3. Results are ranked in tiers (`MATCH_TIER`): name matches, then value matches,
+   then semantic matches by score. A semantic score above 0.9 still ranks below a
+   value match. A person found by both text and semantic search appears once, as
+   the text match.
 
-Both steps load the whole `individuals` / `individual_embeddings` table, so
-search time grows linearly with the number of people.
+Both steps load the whole `individuals` / `individual_embeddings` table and work
+in Python, so search time grows linearly with the number of people: fine to about
+1-5k people.
 
 ### 2. Text representation
 `generate_individual_embedding` builds one line of text per profile, for example:

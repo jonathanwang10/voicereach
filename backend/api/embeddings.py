@@ -11,6 +11,15 @@ from supabase import create_client, Client
 from pydantic import BaseModel
 from services.individual_service import IndividualService, fetch_last_seen
 from services.urgency_calculator import get_display_urgency_score
+from services.search_matching import MATCH_TIER, match_individual
+
+# Text matches as search results: matcher kind -> search_type and score
+TEXT_MATCH = {
+    "name": {"search_type": "exact", "similarity_score": 1.0},
+    "value": {"search_type": "value", "similarity_score": 0.9},
+}
+# Sort tier per search_type (exact = name match)
+TIER_OF = {"exact": MATCH_TIER["name"], "value": MATCH_TIER["value"], "semantic": MATCH_TIER["semantic"]}
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 embedding_service = EmbeddingService()
@@ -113,49 +122,24 @@ async def semantic_search_individuals(
     user_id: str = Depends(get_current_user)
 ):
     """
-    Perform hybrid search: normal search + semantic search with embeddings
+    Hybrid search. Results are tiered: name matches ("exact", 1.0), then data-value
+    matches ("value", 0.9), then semantic matches by cosine score. Text matching uses
+    services/search_matching.match_individual (values only, never keys).
     """
     try:
         # Get Supabase client
         supabase = get_supabase_client()
         
-        # First, always do normal search for exact matches
-        normal_results = []
+        # Text leg: the shared value-only matcher (C-01). A name match is "exact"
+        # (score 1.0), a match in a data value is "value" (score 0.9).
         # A database failure here is an outage, not "no matches": let it become a 500 (C-17).
-        # Search individuals table directly for text matches
-        search_query = request.query.strip()
-        if search_query:
-            # Search in name field first (simpler approach)
-            search_term = f"%{search_query}%"
-            result = supabase.table("individuals").select("*").ilike("name", search_term).execute()
-            
-            if result.data:
-                normal_results = result.data
-            
-            # Also search in JSONB data
-            all_response = supabase.table("individuals").select("*").execute()
-            all_individuals = all_response.data
-            
-            # Filter by JSONB data containing search term
-            jsonb_matches = []
-            for ind in all_individuals:
-                if ind["id"] not in [i["id"] for i in normal_results]:  # Avoid duplicates
-                    data_str = str(ind.get("data", {}))
-                    if search_query.lower() in data_str.lower():
-                        jsonb_matches.append(ind)
-            
-            # Combine results
-            normal_results.extend(jsonb_matches)
-            
-            # Remove duplicates
-            seen_ids = set()
-            unique_individuals = []
-            for ind in normal_results:
-                if ind["id"] not in seen_ids:
-                    seen_ids.add(ind["id"])
-                    unique_individuals.append(ind)
-            normal_results = unique_individuals
-        
+        text_results = []
+        if request.query.strip():
+            for ind in supabase.table("individuals").select("*").execute().data or []:
+                kind = match_individual(request.query, ind)
+                if kind:
+                    text_results.append(dict(ind, **TEXT_MATCH[kind]))
+
         # Now semantic matches. Embedding failures (e.g. an OpenAI outage) degrade to
         # exact matches only; the log names the error type, never the query.
         embedding_results = []
@@ -183,9 +167,8 @@ async def semantic_search_individuals(
             print(f"Embedding search failed: {type(e).__name__}")
             embedding_results = []
 
-        # Combine and deduplicate results (exact matches first)
-        candidates = [dict(r, search_type="exact", similarity_score=1.0) for r in normal_results]
-        candidates += embedding_results
+        # Combine and deduplicate: a text match wins over a semantic hit for the same person
+        candidates = text_results + embedding_results
         seen_ids = set()
         unique = []
         for r in candidates:
@@ -214,14 +197,14 @@ async def semantic_search_individuals(
                 "similarity_score": r['similarity_score'],
             })
 
-        # Sort by relevance: exact matches first, then by similarity score
-        all_results.sort(key=lambda x: (x['search_type'] != 'exact', -x.get('similarity_score', 0)))
+        # Tiers: name match, then value match, then semantic (by cosine score)
+        all_results.sort(key=lambda x: (TIER_OF[x['search_type']], -x['similarity_score']))
 
         return {
             "results": all_results,
             "query": request.query,
             "total_results": len(all_results),
-            "normal_results": len([r for r in all_results if r['search_type'] == 'exact']),
+            "normal_results": len([r for r in all_results if r['search_type'] != 'semantic']),
             "semantic_results": len([r for r in all_results if r['search_type'] == 'semantic']),
             "similarity_threshold": request.similarity_threshold
         }

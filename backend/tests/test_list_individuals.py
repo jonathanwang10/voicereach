@@ -122,11 +122,12 @@ def test_display_score_prefers_override_even_when_zero():
     assert res.individuals[0].display_score == 0
 
 
-def test_name_filter_is_escaped_in_sql():
+def test_search_term_never_reaches_a_sql_filter():
+    # C-41: no PostgREST filter is built from raw input. Since Task 6 the term is
+    # matched in Python by search_matching.match_individual (see test_search_matching.py).
     sb = _SB([_person(1)], [])
     asyncio.run(IndividualService(sb).search_individuals(search="50%_off\\"))
-    patterns = [f[2] for t, fs in sb.queries if t == "individuals" for f in fs if f[0] == "ilike"]
-    assert patterns == ["%50\\%\\_off\\\\%"]
+    assert [fs for t, fs in sb.queries if t == "individuals"] == [[]]
 
 
 def test_pagination_only_looks_up_interactions_once_for_name_sort_too():

@@ -21,38 +21,51 @@ from db.models import (
 )
 from services.urgency_calculator import calculate_urgency_score, get_display_urgency_score
 from services.field_registry import normalize_individual_data
+from services.search_matching import MATCH_TIER, match_individual
+
+
+LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
 
 
 def fetch_last_seen(supabase: Client, individual_ids: list) -> Dict[str, Dict[str, Any]]:
     """
-    Latest interaction per person, from ONE interactions query.
+    Latest interaction per person, from one interactions query per chunk of
+    LAST_SEEN_CHUNK ids (one query for a typical page).
 
     Returns {id: {"last_seen": iso_str, "location": dict | None}}. People with no
     interactions are absent; the caller falls back to their `created_at`.
     `last_seen` is never `updated_at` (an urgency override or edit is not a sighting).
-    Demo scale: PostgREST caps a response at ~1000 rows, so with very many
-    interactions the oldest people could fall back to `created_at`.
+    Chunking keeps the `in_` list short enough for the URL, and keeps each response
+    under PostgREST's ~1000-row cap unless the chunk averages more than ~20
+    interactions per person (then the oldest of them fall back to `created_at`).
     """
     ids = [str(i) for i in individual_ids]
-    if not ids:
-        return {}
-    rows = supabase.table("interactions") \
-        .select("individual_id, created_at, location") \
-        .in_("individual_id", ids) \
-        .order("created_at", desc=True) \
-        .execute().data or []
     latest: Dict[str, Dict[str, Any]] = {}
-    for row in rows:  # newest first, so the first row per person wins
-        latest.setdefault(str(row["individual_id"]), {
-            "last_seen": row["created_at"],
-            "location": row.get("location"),
-        })
+    for start in range(0, len(ids), LAST_SEEN_CHUNK):
+        rows = supabase.table("interactions") \
+            .select("individual_id, created_at, location") \
+            .in_("individual_id", ids[start:start + LAST_SEEN_CHUNK]) \
+            .order("created_at", desc=True) \
+            .execute().data or []
+        for row in rows:  # newest first, so the first row per person wins
+            latest.setdefault(str(row["individual_id"]), {
+                "last_seen": row["created_at"],
+                "location": row.get("location"),
+            })
     return latest
 
 
-def _escape_like(term: str) -> str:
-    """Escape LIKE wildcards so '%' and '_' in a search match literally."""
-    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+def _parse_timestamp(value: Any) -> datetime:
+    """An ISO timestamp as an aware datetime, so sorting compares times, not strings.
+    Naive values are taken as UTC; anything unparseable sorts as the oldest."""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            dt = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return datetime.min.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class IndividualService:
@@ -314,39 +327,43 @@ class IndividualService:
         """
         List / search individuals.
 
-        - Name filter: escaped ILIKE in SQL. A term is also matched against the
-          JSONB `data` in Python (demo scale, fine to about 1-5k people).
-        - `last_seen`: latest interaction, else `created_at` (one interactions query).
-        - Sort, then paginate.
+        - A search term goes through `match_individual` (services/search_matching.py):
+          the name, or any string value / list item in `data`, never keys. One
+          table read, matched in Python (demo scale, fine to about 1-5k people).
+        - `last_seen`: latest interaction, else `created_at` (fetch_last_seen).
+        - Sort: name matches first, then value matches; within each tier by
+          `sort_by` (`urgency_score` means the display score). Then paginate.
         """
         # Database errors propagate (the route turns them into a 500). Returning
         # an empty list here made an outage look like "no one recorded yet" (C-17).
+        individuals = self.supabase.table("individuals").select("*").execute().data or []
         term = search.strip() if search else ""
+        tier: Dict[str, int] = {}
         if term:
-            individuals = self.supabase.table("individuals").select("*") \
-                .ilike("name", f"%{_escape_like(term)}%").execute().data or []
-            found = {ind["id"] for ind in individuals}
-            # Also match the JSONB data (the name matches came from SQL above)
-            for ind in self.supabase.table("individuals").select("*").execute().data or []:
-                if ind["id"] not in found and term.lower() in str(ind.get("data", {})).lower():
-                    individuals.append(ind)
-        else:
-            individuals = self.supabase.table("individuals").select("*").execute().data or []
+            matched = []
+            for ind in individuals:
+                kind = match_individual(term, ind)
+                if kind:
+                    tier[ind["id"]] = MATCH_TIER[kind]
+                    matched.append(ind)
+            individuals = matched
 
         total = len(individuals)
         reverse = sort_order == "desc"
 
-        # One interactions query: every person for the last_seen sort, else only the page
+        # last_seen for every person when sorting by it, else only for the page
         if sort_by == "last_seen":
             seen = fetch_last_seen(self.supabase, [i["id"] for i in individuals])
             individuals.sort(
-                key=lambda x: seen.get(x["id"], {}).get("last_seen", x["created_at"]),
+                key=lambda x: _parse_timestamp(seen.get(x["id"], {}).get("last_seen", x["created_at"])),
                 reverse=reverse
             )
         elif sort_by == "urgency_score":
-            individuals.sort(key=lambda x: x["urgency_score"], reverse=reverse)
+            individuals.sort(key=get_display_urgency_score, reverse=reverse)
         else:  # sort by name
             individuals.sort(key=lambda x: x["name"], reverse=reverse)
+        # Stable sort: the tier order wins, the sort above orders within a tier
+        individuals.sort(key=lambda x: tier.get(x["id"], 0))
 
         page = individuals[offset:offset + limit]
         if sort_by != "last_seen":
