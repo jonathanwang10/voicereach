@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { LocationPicker } from '../LocationPicker';
 
 // Mock expo-location
@@ -110,6 +110,36 @@ describe('LocationPicker', () => {
     fireEvent.press(getByText('Confirm Location'));
     await waitFor(() => expect(mockOnLocationSelected).toHaveBeenCalledWith({
       location: { latitude: 37.75, longitude: -122.41, address: 'Market Street San Francisco CA' },
+    }));
+  });
+
+  // Fix round 1 (#3): an older geocode that resolves late must not overwrite the newer pin's address
+  it('ignores a stale address lookup after the pin moves again', async () => {
+    const expoLocation = require('expo-location');
+    const { getByText, findByText, UNSAFE_getByProps } = render(
+      <LocationPicker
+        onLocationSelected={mockOnLocationSelected}
+        onCancel={mockOnCancel}
+      />
+    );
+    await findByText(/Address: Market Street/);
+
+    let finishOld: (v: any) => void = () => {};
+    expoLocation.reverseGeocodeAsync
+      .mockReturnValueOnce(new Promise(r => { finishOld = r; }))
+      .mockResolvedValueOnce([{ street: 'New St', city: 'San Francisco', region: 'CA' }]);
+    const drag = (latitude: number, longitude: number) =>
+      fireEvent(UNSAFE_getByProps({ draggable: true }), 'dragEnd', { nativeEvent: { coordinate: { latitude, longitude } } });
+
+    drag(37.71, -122.41);
+    drag(37.72, -122.42);
+    await findByText(/Address: New St/);
+    await act(async () => finishOld([{ street: 'Old St', city: 'San Francisco', region: 'CA' }]));
+    expect(getByText(/Address: New St/)).toBeTruthy();
+
+    fireEvent.press(getByText('Confirm Location'));
+    await waitFor(() => expect(mockOnLocationSelected).toHaveBeenCalledWith({
+      location: { latitude: 37.72, longitude: -122.42, address: 'New St San Francisco CA' },
     }));
   });
 

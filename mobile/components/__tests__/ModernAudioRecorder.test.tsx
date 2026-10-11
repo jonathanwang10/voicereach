@@ -123,3 +123,46 @@ it('returns to the idle state when stopping fails', async () => {
   expect(screen.getByText('Tap to start recording')).toBeTruthy();
   expect(screen.getByText('0:00')).toBeTruthy();
 });
+
+// Fix round 1 (#2): the stop wait shows feedback and blocks the button
+it('shows "Saving location..." and disables the button while waiting for the fix', async () => {
+  (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'granted' });
+  (Location.getCurrentPositionAsync as jest.Mock).mockReturnValue(new Promise(() => {}));
+  const onComplete = jest.fn();
+  const screen = render(<ModernAudioRecorder onRecordingComplete={onComplete} />);
+  await press(screen);
+  await tick(6_000);
+  await press(screen); // stop
+  expect(screen.getByText('Saving location...')).toBeTruthy();
+  expect(screen.getByTestId('record-button').props.accessibilityState?.disabled).toBe(true);
+  await tick(LOCATION_WAIT_MS);
+  expect(onComplete).toHaveBeenCalled();
+  expect(screen.getByText('Tap to start recording')).toBeTruthy();
+});
+
+// Fix round 1 (#4): unmounting while the recorder starts must not leave the mic on
+it('stops a recording that finishes starting after unmount', async () => {
+  let finishCreate: (v: any) => void = () => {};
+  mockCreateAsync.mockReturnValueOnce(new Promise(r => { finishCreate = r; }) as any);
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  await press(screen);
+  screen.unmount();
+  const setIntervalSpy = jest.spyOn(global, 'setInterval');
+  await act(async () => finishCreate({
+    recording: { stopAndUnloadAsync: mockStopAndUnloadAsync, getURI: () => 'file://a.m4a' },
+  }));
+  expect(mockStopAndUnloadAsync).toHaveBeenCalledTimes(1);
+  expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  expect(setIntervalSpy).not.toHaveBeenCalled(); // no duration timer started
+  setIntervalSpy.mockRestore();
+});
+
+// Fix round 1 (#6): a failed stop gets one more best-effort unload, so the next start isn't blocked
+it('retries the unload once when stopping fails', async () => {
+  mockStopAndUnloadAsync.mockRejectedValueOnce(new Error('boom'));
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  await press(screen);
+  await tick(6_000);
+  await press(screen); // stop fails
+  expect(mockStopAndUnloadAsync).toHaveBeenCalledTimes(2);
+});

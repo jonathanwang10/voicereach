@@ -152,6 +152,34 @@ describe('location (C-02, C-04)', () => {
     expect(screen.getByText('Picker initial: 37.5,-122.5')).toBeTruthy();
   });
 
+  // Fix round 1 (#1): a manual save must not wipe a voice result's pending location
+  it('keeps a pending voice result\'s location when a manual entry is saved', async () => {
+    const screen = render(<ModernRecordScreen />);
+    mockNextFix = fix('First St');
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Loc: First St');
+
+    fireEvent.press(screen.getByText('Manual Entry'));
+    fireEvent.press(screen.getByText('Stub Manual Save'));
+    fireEvent.press(screen.getByText('Voice Recording'));
+    expect(screen.getByText('Loc: First St')).toBeTruthy();
+  });
+
+  // Fix round 1 (#5): a hand-picked location belongs to one record only
+  it('does not carry a hand-picked location over to the next recording', async () => {
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Set Location'));
+    fireEvent.press(screen.getByText('Stub Pick'));
+    mockNextFix = fix('First St');
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Loc: Picked St');
+    fireEvent.press(screen.getByText('Stub Save'));
+
+    mockNextFix = fix('Second St');
+    fireEvent.press(await screen.findByText('Stub Recorder'));
+    await screen.findByText('Loc: Second St');
+  });
+
   it('clears the location after a manual save', async () => {
     const screen = render(<ModernRecordScreen />);
     fireEvent.press(screen.getByText('Set Location'));
@@ -174,6 +202,16 @@ describe('after a failed transcription (C-38)', () => {
     await screen.findByText('Stub Save');
     expect(api.transcribe).toHaveBeenCalledTimes(2);
     expect((api.transcribe as jest.Mock).mock.calls[1][0]).toBe('file:///clip.m4a');
+  });
+
+  // Fix round 1 (#5): the retry keeps the recording's own location
+  it('"Try Again" keeps the recording\'s location', async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
+    const screen = render(<ModernRecordScreen />);
+    mockNextFix = fix('First St');
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    fireEvent.press(await screen.findByText('Try Again'));
+    await screen.findByText('Loc: First St');
   });
 
   it('"Record again" discards the recording', async () => {

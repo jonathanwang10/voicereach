@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
@@ -30,6 +30,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [address, setAddress] = useState<string>('');
+  // Only the newest address lookup may set the address: an older one that
+  // resolves late would pair the old address with the new pin
+  const geocodeRequestRef = useRef(0);
 
   useEffect(() => {
     getCurrentLocation();
@@ -83,17 +86,21 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   };
 
   const updateAddress = async (latitude: number, longitude: number) => {
+    const request = ++geocodeRequestRef.current;
+    // Until the new lookup lands, Confirm geocodes the pin itself
+    setAddress('');
+    let next: string;
     try {
       const addressResponse = await Location.reverseGeocodeAsync({
         latitude,
         longitude,
       });
-
-      setAddress(formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location');
+      next = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
     } catch (err) {
       console.error('Error getting address:', err);
-      setAddress('Address unavailable');
+      next = 'Address unavailable';
     }
+    if (request === geocodeRequestRef.current) setAddress(next);
   };
 
   const handleConfirmLocation = async () => {

@@ -78,6 +78,10 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 }, ref) => {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
+  // Between the stop tap and the hand-over, while the location is awaited
+  const [isFinishing, setIsFinishing] = useState(false);
+  // False after unmount, so a start that finishes late releases the mic
+  const mountedRef = useRef(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const durationRef = useRef(0);
@@ -104,6 +108,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     clearTimer();
     stopAnimations();
     setIsRecording(false);
+    setIsFinishing(false);
     setDuration(0);
   };
 
@@ -172,9 +177,13 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }
   }, [duration, isRecording]);
 
-  useEffect(() => () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+    };
   }, []);
 
   // Start recording first; the location is captured alongside it (C-39)
@@ -198,6 +207,11 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
           bitRate: 64000,
         },
       });
+      if (!mountedRef.current) {
+        // Unmounted while starting: release the mic and start nothing else
+        recording.stopAndUnloadAsync().catch(() => {});
+        return;
+      }
       recordingRef.current = recording;
       locationRef.current = captureLocation();
       setIsRecording(true);
@@ -239,6 +253,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     const pendingLocation = locationRef.current;
     clearTimer();
     stopAnimations();
+    setIsFinishing(true);
 
     try {
       await activeRecording.stopAndUnloadAsync();
@@ -250,6 +265,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
+      // One more best-effort unload, so the next createAsync isn't blocked
+      activeRecording.stopAndUnloadAsync().catch(() => {});
       // Never leave the UI stuck on the stop button (C-61)
       resetState();
       const error = ErrorHandler.handleRecordingError(err);
@@ -336,6 +353,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
           ]}
           testID="record-button"
           onPress={isRecording ? stopRecording : startRecording}
+          disabled={isFinishing}
           activeOpacity={0.7}
         >
           {isRecording ? (
@@ -348,7 +366,11 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
       {/* Status Text */}
       <Text style={styles.statusText}>
-        {isRecording ? 'Recording in progress...' : 'Tap to start recording'}
+        {isFinishing
+          ? 'Saving location...'
+          : isRecording
+          ? 'Recording in progress...'
+          : 'Tap to start recording'}
       </Text>
 
       {/* Instructions */}

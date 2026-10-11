@@ -17,7 +17,8 @@ question. File paths are relative to the repo root.
 - **Location:** recording starts first. Alongside it, the app asks for location
   permission, reads the GPS position and reverse-geocodes it with
   `expo-location`. At stop it waits at most `LOCATION_WAIT_MS` (3 s) for that
-  fix; if the fix is late or fails, the recording goes on without a location.
+  fix, showing "Saving location..." with the button disabled; if the fix is late
+  or fails, the recording goes on without a location.
   The Record screen uses each recording's own fix unless the worker picked a
   location by hand (the picker opens at the current location, else the GPS fix,
   else a San Francisco default). Both are cleared after a save or discard.

@@ -323,8 +323,12 @@ export const ModernRecordScreen: React.FC = () => {
             <Card style={styles.manualCard} padding="large">
               <ManualEntryForm
                 // The form shows the one success toast and clears itself; the
-                // location belonged to that record, so it goes too (C-02)
-                onSave={clearLocations}
+                // location belonged to that record, so it goes too (C-02),
+                // unless a voice recording still needs it: resetRecording
+                // clears it after that one is saved or discarded
+                onSave={() => {
+                  if (!recordingUri && !transcriptionResult) clearLocations();
+                }}
                 onCancel={() => setActiveTab('record')}
                 selectedLocation={selectedLocation?.location ?? null}
               />
