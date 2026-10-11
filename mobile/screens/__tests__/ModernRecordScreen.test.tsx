@@ -7,6 +7,7 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 let mockNextFix: any;
+let mockNextUri = 'file:///clip.m4a';
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 // No AuthContext mock: the screen no longer reads auth (App only mounts it signed in),
 // so rendering it without an AuthProvider must work.
@@ -34,7 +35,7 @@ jest.mock('../../components/ModernAudioRecorder', () => {
   const { Text, TouchableOpacity } = require('react-native');
   return {
     ModernAudioRecorder: React.forwardRef(({ onRecordingComplete }: any, _ref: any) => (
-      <TouchableOpacity onPress={() => onRecordingComplete('file:///clip.m4a', mockNextFix)}>
+      <TouchableOpacity onPress={() => onRecordingComplete(mockNextUri, mockNextFix)}>
         <Text>Stub Recorder</Text>
       </TouchableOpacity>
     )),
@@ -80,6 +81,7 @@ const fix = (address: string, latitude = 37.1, longitude = -122.1) => ({ locatio
 beforeEach(() => {
   jest.clearAllMocks();
   mockNextFix = undefined;
+  mockNextUri = 'file:///clip.m4a';
   (api.transcribe as jest.Mock).mockResolvedValue(RESULT);
 });
 
@@ -251,5 +253,28 @@ describe('C-65 recorded audio', () => {
     fireEvent.press(screen.getByText('Stub Recorder'));
     await screen.findByText('Try Again');
     expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe('C-65 recorded audio: no leftovers (T14 fix round 1)', () => {
+  it('recording again after a failed transcription deletes the earlier file', async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Try Again');
+
+    mockNextUri = 'file:///clip2.m4a';
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Stub Save');
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith('file:///clip2.m4a', expect.anything());
+  });
+
+  it('leaving the screen deletes the current recording', async () => {
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Stub Save');
+    screen.unmount();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
   });
 });

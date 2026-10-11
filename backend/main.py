@@ -37,6 +37,12 @@ def configure_logging(level_name: str | None = None) -> None:
     level = logging.getLevelName((level_name or "INFO").upper())
     logging.basicConfig(level=level if isinstance(level, int) else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    pin_library_loggers()
+
+
+def pin_library_loggers() -> None:
+    """Library loggers to WARNING. Re-applied after the routers are imported, because the
+    OpenAI SDK applies OPENAI_LOG to its own logger when it is first imported."""
     for name in QUIET_LIBRARY_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
@@ -391,3 +397,6 @@ app.include_router(transcription.router)
 app.include_router(individuals.router, prefix="/api/individuals", tags=["individuals"])
 app.include_router(embeddings.router)
 app.include_router(voice_assistant.router)
+
+# The routers import the OpenAI SDK, which may have just applied OPENAI_LOG: pin again.
+pin_library_loggers()

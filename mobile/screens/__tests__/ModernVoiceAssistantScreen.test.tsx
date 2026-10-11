@@ -27,12 +27,19 @@ jest.mock('expo-file-system', () => ({
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   EncodingType: { Base64: 'base64' },
 }));
+// Test hooks for the recorder: hold prepareToRecordAsync, or make stopAndUnloadAsync fail.
+let mockPrepare: () => Promise<void> = () => Promise.resolve();
+let mockStop: () => Promise<void> = () => Promise.resolve();
+const mockRecordings: any[] = [];
 jest.mock('expo-av', () => {
   class Recording {
-    prepareToRecordAsync = jest.fn().mockResolvedValue(undefined);
+    prepareToRecordAsync = jest.fn(() => mockPrepare());
     startAsync = jest.fn().mockResolvedValue(undefined);
-    stopAndUnloadAsync = jest.fn().mockResolvedValue(undefined);
+    stopAndUnloadAsync = jest.fn(() => mockStop());
     getURI = () => 'file:///question.m4a';
+    constructor() {
+      mockRecordings.push(this);
+    }
   }
   return {
     Audio: {
@@ -96,6 +103,9 @@ afterAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   MockWebSocket.instances = [];
+  mockRecordings.length = 0;
+  mockPrepare = () => Promise.resolve();
+  mockStop = () => Promise.resolve();
 });
 
 const ALLOWED = new Set([
@@ -480,5 +490,48 @@ describe('T14: recording start, interrupted replies, late transcripts, cached fi
     const { screen } = await renderConnected();
     await askByVoice(screen);
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
+  });
+});
+
+// --- T14 fix round 1 -------------------------------------------------------------
+
+describe('T14 fix round 1: the microphone never outlives the screen', () => {
+  it('leaving the screen while the recorder is being prepared stops it and deletes its file', async () => {
+    let release: () => void = () => {};
+    mockPrepare = () => new Promise<void>(r => { release = r; });
+    const FileSystem = require('expo-file-system');
+    const { screen } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    await waitFor(() => expect(mockRecordings.length).toBe(1));
+
+    screen.unmount();
+    await act(async () => { release(); });
+
+    const rec = mockRecordings[0];
+    expect(rec.startAsync).not.toHaveBeenCalled();
+    expect(rec.stopAndUnloadAsync).toHaveBeenCalled();
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
+  });
+
+  it('leaving the screen during the permission prompt never creates a recorder', async () => {
+    let grant: (v: any) => void = () => {};
+    (Audio.requestPermissionsAsync as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
+    const { screen } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+
+    screen.unmount();
+    await act(async () => { grant({ status: 'granted' }); });
+
+    expect(mockRecordings.filter(r => r.startAsync.mock.calls.length > 0)).toHaveLength(0);
+  });
+
+  it('if stopping the recorder fails, its file is still deleted', async () => {
+    mockStop = () => Promise.reject(new Error('stop failed'));
+    const FileSystem = require('expo-file-system');
+    const { screen, ws } = await renderConnected();
+    await askByVoice(screen);
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
+    expect(ws.send).not.toHaveBeenCalled();
   });
 });

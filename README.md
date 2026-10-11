@@ -485,15 +485,23 @@ is logged.
 
 | What | Goes to | When | Kept |
 |---|---|---|---|
-| A recording: M4A audio of the worker describing the person | The backend, then OpenAI Whisper (`whisper-1`) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
+| A recording: M4A audio of the worker describing the person | The backend, then OpenAI Whisper (`whisper-1`) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded, a new recording replaces it, or the Record screen goes away (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
 | The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
-| The new person's fields, with up to 8 existing candidates' names and full `data` (medical conditions included) | OpenAI GPT-4o | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the location. | Not stored. |
+| The new person's fields, with up to 8 existing candidates' names and full `data` (medical conditions included) | OpenAI GPT-4o | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
 | A person's name and labelled fields (`build_embedding_text`) | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
 | A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
-| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`gpt-realtime`) | Each question | Phone: the recording is deleted from the cache once transcribed, or when transcription fails. OpenAI: as above. |
+| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`gpt-realtime`) | Each question | Phone: the recording is deleted from the cache once transcribed, when transcription or stopping fails, or when the screen closes while recording starts (the microphone is stopped too). OpenAI: as above. |
 | Records of the people a question names: up to 3 names × 3 people, labelled fields and urgency, each value cut to 100 characters | The OpenAI Realtime API, as a delimited reference-data item | Each question that names someone in the database | For that assistant session. |
 | Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions and embeddings. |
 | The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; the session also on the phone. |
+| The GPS position of each recording, and of a location picked by hand | The phone platform's geocoder, through `expo-location`'s `reverseGeocodeAsync` (Apple on iOS, Google Play services on Android) | Each recording, and in the location picker | The platform's own policy. |
+| The area shown on a map (location picker, profile map) | The map tile provider of `react-native-maps` (Apple Maps on iOS, Google Maps on Android) | Each map shown | Tile requests reveal the area being viewed. |
+
+A custom category of type `location` is an ordinary field: its value lives in
+`data`, so it goes to GPT-4o (extraction and duplicate checks), into the
+embedding text and into the assistant's context like any other field. Only the
+encounter's GPS position (`last_location`, the interaction's `location`) is kept
+out of those.
 
 **What is logged**
 

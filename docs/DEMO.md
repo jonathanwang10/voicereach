@@ -150,7 +150,9 @@ the assistant puts what we already know in front of the worker when they need it
   discarded. The transcript is kept with the interaction. OpenAI also sees the
   transcript, candidate records for duplicate checks and the assistant's
   context, under its API data policy. The README's "Data leaving the system"
-  table lists all of it. Server logs hold no names, transcripts or locations.
+  table lists all of it. The backend's own logs hold no names, transcripts or
+  locations, but a hosting platform or proxy in front of it may log request
+  URLs, including list-search terms (`?search=`).
 - **"Can it work offline?"** No. It needs a connection throughout.
 - **"Is it secure enough for real client data?"** Not yet. Every request needs a
   signed-in session and the database refuses direct access, but every account

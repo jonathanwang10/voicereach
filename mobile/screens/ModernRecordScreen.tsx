@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,19 @@ export const ModernRecordScreen: React.FC = () => {
 
   // Recording states
   const [recordingUri, setRecordingUri] = useState<string | null>(null);
+  // The recording file the screen currently holds. C-65: a file leaves the app's cache
+  // once it is replaced, saved, discarded or the screen goes away; until then it is
+  // kept so "Try Again" can resend it.
+  const recordingUriRef = useRef<string | null>(null);
+  const holdRecording = (uri: string | null) => {
+    const previous = recordingUriRef.current;
+    if (previous && previous !== uri) FileSystem.deleteAsync(previous, { idempotent: true }).catch(() => {});
+    recordingUriRef.current = uri;
+    setRecordingUri(uri);
+  };
+  useEffect(() => () => {
+    if (recordingUriRef.current) FileSystem.deleteAsync(recordingUriRef.current, { idempotent: true }).catch(() => {});
+  }, []);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -51,7 +64,7 @@ export const ModernRecordScreen: React.FC = () => {
   };
 
   const handleRecordingComplete = async (uri: string, location?: RecordingLocation) => {
-    setRecordingUri(uri);
+    holdRecording(uri);
     setUploadError(null);
     setTranscriptionError(null);
     // This recording's own fix, or none: never the previous recording's
@@ -118,10 +131,8 @@ export const ModernRecordScreen: React.FC = () => {
   };
 
   // Saved or discarded: the audio has done its job, so it leaves the app's cache (C-65).
-  // Kept until then so "Try Again" can resend it.
   const resetRecording = () => {
-    if (recordingUri) FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => {});
-    setRecordingUri(null);
+    holdRecording(null);
     setUploadError(null);
     setTranscriptionResult(null);
     setTranscriptionError(null);

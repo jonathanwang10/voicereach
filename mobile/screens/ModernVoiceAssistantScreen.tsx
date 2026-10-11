@@ -545,6 +545,17 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     userTextEvents(text).forEach(event => ws.send(JSON.stringify(event)));
   };
 
+  // Stop a recorder that will never be used and delete whatever it wrote to the cache.
+  const discardRecording = async (recording: Audio.Recording) => {
+    await recording.stopAndUnloadAsync().catch(() => {});
+    deleteRecordingFile(recording);
+  };
+
+  const deleteRecordingFile = (recording: Audio.Recording) => {
+    const uri = recording.getURI();
+    if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+  };
+
   const startRecording = async () => {
     if (startingRecordingRef.current) return;
     if (!isSocketOpen(wsRef.current) || !isConnected) {
@@ -553,11 +564,14 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     }
 
     startingRecordingRef.current = true;
+    let recording: Audio.Recording | null = null;
     try {
       await stopPlayback(); // don't record over a reply
       await configureAudioRecording(); // R-7: recording mode back on
+      // Left the screen during the permission prompt: never turn the mic on.
+      if (!isMountedRef.current) return;
 
-      const recording = new Audio.Recording();
+      recording = new Audio.Recording();
 
       // Optimized audio settings for faster transcription
       const recordingOptions = {
@@ -591,7 +605,11 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       } catch {
         await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.LOW_QUALITY);
       }
+      // The unmount cleanup only sees recordingRef, which isn't set yet: if the screen
+      // closed meanwhile, stop this recorder here, or nothing ever will.
+      if (!isMountedRef.current) return discardRecording(recording);
       await recording.startAsync();
+      if (!isMountedRef.current) return discardRecording(recording);
 
       recordingRef.current = recording;
       setIsRecording(true);
@@ -601,7 +619,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       setMessages(prev => [...prev, { id, role: 'user', content: RECORDING_PLACEHOLDER, timestamp: new Date() }]);
     } catch (error) {
       if (__DEV__) console.warn('Failed to start recording:', error);
-      Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      if (recording) await discardRecording(recording);
+      if (isMountedRef.current) Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
     } finally {
       startingRecordingRef.current = false;
     }
@@ -630,6 +649,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         uri = recording.getURI();
       } catch (error) {
         if (__DEV__) console.warn('Failed to stop recording:', error);
+        deleteRecordingFile(recording); // C-65: no orphaned question in the cache
       }
       if (!uri) {
         dropBubble();

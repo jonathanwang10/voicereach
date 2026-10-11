@@ -24,7 +24,8 @@ question. File paths are relative to the repo root.
   else a San Francisco default). Both are cleared after a save or discard.
 - **Retry:** if transcription fails, "Try Again" re-sends the same recording;
   "Record again" discards it. The recording is deleted from the app's cache once
-  the record is saved or discarded (`resetRecording`).
+  the record is saved or discarded, a new recording replaces it, or the Record
+  screen unmounts (`holdRecording`).
 
 ## 2. Upload (app → backend)
 
@@ -193,7 +194,9 @@ is cleared.
    closed, or Clear/Retry replaced it, while transcribing, the question goes back
    into the text box to send again. If the screen has closed meanwhile, nothing
    happens. The recorded question file is deleted from the cache once
-   transcribed, or when transcription fails. The app never sends `session.update`.
+   transcribed, or when transcription or stopping fails. If the screen closes
+   while a recording is starting, the recorder is stopped and its file deleted,
+   so the microphone never outlives the screen. The app never sends `session.update`.
    Every client frame passes the allowlist in `services/realtime_guard.py`
    (at most 1 MB; only audio-buffer append/commit/clear, a `user` message
    item, `response.create` with its overrides stripped, and `response.cancel`).

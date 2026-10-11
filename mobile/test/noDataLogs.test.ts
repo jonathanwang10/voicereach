@@ -1,8 +1,9 @@
 // R-14 (C-50): the app never logs case data, and its debug logs stay out of release builds.
 // iOS release builds still write console output to the unified log, readable from any
 // Mac the phone is plugged into. A source scan, so a new log can't slip in later:
-//   1. every console.* call is guarded on the same line: `if (__DEV__) console.warn(...)`
-//      or `__DEV__ && console.warn(...)`;
+//   1. every console.* call is guarded on the same line: `if (__DEV__) console.warn(...)`,
+//      `if (__DEV__ && ...) console.warn(...)` or `__DEV__ && console.warn(...)`
+//      (not `!__DEV__ &&`, not `if (__DEV__ || ...)`);
 //   2. no console.* call passes a data-bearing variable (names, transcripts, GPS, URIs,
 //      search terms, results...), even in development. Error objects are fine.
 import * as fs from 'fs';
@@ -18,7 +19,10 @@ const DATA_WORDS = new Set([
   'address', 'gps', 'individual', 'individuals', 'person', 'people', 'data', 'result', 'results',
   'query', 'search', 'question', 'text', 'csv', 'name', 'form', 'field', 'fields', 'categorized',
   'match', 'matches', 'body', 'payload', 'response', 'value', 'values', 'message', 'messages',
+  'event', 'profile', 'record', 'item', 'content', 'delta', 'msg', 'json', 'res', 'reply',
 ]);
+// A real guard: `if (__DEV__)`, `if (__DEV__ && ...)` or `__DEV__ &&` (not negated).
+const DEV_GUARD = /(?:if\s*\(\s*__DEV__\s*(?:\)|&&)|(?<![!\w])__DEV__\s*&&)/;
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -55,13 +59,13 @@ function argWords(args: string): string[] {
 
 export function findLogProblems(src: string, file: string): string[] {
   const problems: string[] = [];
-  const re = /\bconsole\.(log|info|warn|error|debug|trace)\s*\(/g;
+  const re = /\bconsole\.(log|info|warn|error|debug|trace|dir|table)\s*\(/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src))) {
     const lineNo = src.slice(0, m.index).split('\n').length;
     const lineStart = src.lastIndexOf('\n', m.index) + 1;
     const before = src.slice(lineStart, m.index);
-    if (!before.includes('__DEV__')) problems.push(`${file}:${lineNo} console.${m[1]} is not guarded by __DEV__`);
+    if (!DEV_GUARD.test(before)) problems.push(`${file}:${lineNo} console.${m[1]} is not guarded by __DEV__`);
     const data = argWords(callArgs(src, m.index + m[0].length - 1)).filter(w => DATA_WORDS.has(w));
     if (data.length) problems.push(`${file}:${lineNo} console.${m[1]} logs data (${[...new Set(data)].join(', ')})`);
   }
@@ -79,6 +83,13 @@ describe('the scanner itself', () => {
     ["if (__DEV__) console.log(`Searching for ${searchQuery}`);", 1],
     ["console.log('Transcription:', result.transcription);", 2],
     ["if (__DEV__) console.log('Saved',\n  individual.name);", 1],
+    ["!__DEV__ && console.warn('x', error);", 1],
+    ["if (!__DEV__) console.warn('x', error);", 1],
+    ["if (__DEV__ || verbose) console.warn('x', error);", 1],
+    ["const msg = '__DEV__'; console.warn('x', error);", 1],
+    ["console.table(rows);", 1],
+    ["if (__DEV__) console.dir(event);", 1],
+    ["if (__DEV__) console.warn('Reply failed:', res.status);", 1],
   ])('%s -> %i problem(s)', (src, n) => {
     expect(findLogProblems(src as string, 'x.ts')).toHaveLength(n as number);
   });

@@ -332,3 +332,19 @@ def test_library_loggers_stay_quiet_even_at_debug():
         assert {"httpx", "httpx2", "httpcore", "openai"} <= set(main.QUIET_LIBRARY_LOGGERS)
     finally:
         main.configure_logging("INFO")
+
+
+def test_openai_log_env_cannot_unpin_the_sdk_logger():
+    """OPENAI_LOG=debug makes the SDK set its own logger to DEBUG when it is first imported,
+    which happens after main.configure_logging (via the routers). main re-pins afterwards."""
+    import os
+    import subprocess
+    import sys
+    backend = Path(__file__).resolve().parents[1]
+    code = ("import logging, main; "
+            "print(min(logging.getLogger(n).getEffectiveLevel() for n in main.QUIET_LIBRARY_LOGGERS))")
+    env = {**os.environ, "OPENAI_LOG": "debug", "LOG_LEVEL": "DEBUG"}
+    out = subprocess.run([sys.executable, "-c", code], cwd=backend, env=env,
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr
+    assert int(out.stdout.strip().splitlines()[-1]) >= logging.WARNING
