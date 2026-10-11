@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ModernAudioRecorder } from '../components/ModernAudioRecorder';
+import { ModernAudioRecorder, RecordingLocation } from '../components/ModernAudioRecorder';
 import { TranscriptionResults } from '../components/TranscriptionResults';
 import { ManualEntryForm } from '../components/ManualEntryForm';
 import { LocationPicker } from '../components/LocationPicker';
@@ -40,30 +40,25 @@ export const ModernRecordScreen: React.FC = () => {
 
   // UI states
   const [showLocationPicker, setShowLocationPicker] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState<{
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    }
-  } | null>(null);
+  // A location picked by hand wins; otherwise each recording uses its own GPS fix.
+  // Both are cleared once a record is saved or discarded (C-02).
+  const [manualLocation, setManualLocation] = useState<RecordingLocation | null>(null);
+  const [autoLocation, setAutoLocation] = useState<RecordingLocation | null>(null);
+  const selectedLocation = manualLocation ?? autoLocation;
   const [activeTab, setActiveTab] = useState<'record' | 'manual'>('record');
 
-  const handleRecordingComplete = async (uri: string, location?: {
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    }
-  }) => {
+  const clearLocations = () => {
+    setManualLocation(null);
+    setAutoLocation(null);
+  };
+
+  const handleRecordingComplete = async (uri: string, location?: RecordingLocation) => {
     console.log('Recording completed:', uri, location);
     setRecordingUri(uri);
     setUploadError(null);
     setTranscriptionError(null);
-
-    if (location && !selectedLocation) {
-      setSelectedLocation(location);
-    }
+    // This recording's own fix, or none: never the previous recording's
+    setAutoLocation(location ?? null);
 
     await uploadAudioFile(uri);
   };
@@ -132,11 +127,18 @@ export const ModernRecordScreen: React.FC = () => {
     setUploadError(null);
     setTranscriptionResult(null);
     setTranscriptionError(null);
+    clearLocations();
     audioRecorderRef.current?.resetRecording();
   };
 
-  const handleLocationSelect = (location: any) => {
-    setSelectedLocation(location);
+  // Re-send the same recording after a failure, instead of making the worker
+  // narrate it again (C-38)
+  const retryTranscription = () => {
+    if (recordingUri) uploadAudioFile(recordingUri);
+  };
+
+  const handleLocationSelect = (location: RecordingLocation) => {
+    setManualLocation(location);
     setShowLocationPicker(false);
     Toast.show({
       type: 'success',
@@ -299,10 +301,20 @@ export const ModernRecordScreen: React.FC = () => {
                   <Button
                     variant="danger"
                     size="small"
-                    onPress={resetRecording}
+                    onPress={recordingUri ? retryTranscription : resetRecording}
                   >
                     Try Again
                   </Button>
+                  {recordingUri && (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onPress={resetRecording}
+                      style={styles.recordAgainButton}
+                    >
+                      Record again
+                    </Button>
+                  )}
                 </Card>
               )}
             </>
@@ -310,8 +322,9 @@ export const ModernRecordScreen: React.FC = () => {
             /* Manual Entry Tab */
             <Card style={styles.manualCard} padding="large">
               <ManualEntryForm
-                // The form shows the one success toast and clears itself
-                onSave={() => {}}
+                // The form shows the one success toast and clears itself; the
+                // location belonged to that record, so it goes too (C-02)
+                onSave={clearLocations}
                 onCancel={() => setActiveTab('record')}
                 selectedLocation={selectedLocation?.location ?? null}
               />
@@ -325,6 +338,7 @@ export const ModernRecordScreen: React.FC = () => {
         <LocationPicker
           onLocationSelected={handleLocationSelect}
           onCancel={() => setShowLocationPicker(false)}
+          initialLocation={selectedLocation?.location}
         />
       )}
     </SafeAreaView>
@@ -450,5 +464,8 @@ const styles = StyleSheet.create({
   // Buttons
   newRecordingButton: {
     marginTop: theme.spacing.base,
+  },
+  recordAgainButton: {
+    marginTop: theme.spacing.sm,
   },
 });

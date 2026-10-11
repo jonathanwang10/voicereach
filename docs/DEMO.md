@@ -32,13 +32,14 @@ the Record tab, so a worker can start talking straight away."
 
 **Actions:**
 1. **Record** (about 30 seconds)
-   - Tap record and point out the live timer. GPS is captured when recording
-     starts; after you stop, a "Location Set" card shows the address.
+   - Tap record and point out the live timer. Recording starts at once and GPS
+     is captured alongside it; after you stop, a "Location Set" card shows this
+     recording's address.
    - Say: "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180
      pounds. Shows signs of moderate substance abuse, been on streets 3 months.
      Needs diabetes medication."
-   - Recordings must be at least 5 seconds; the recorder warns at 1:45 and stops
-     itself at 2:00.
+   - Recordings must be at least 5 seconds; the timer turns red at 1:30, an
+     alert warns at 1:45, and the recorder stops itself at 2:00.
 2. **Processing** (about 30 seconds)
    - Explain: "The audio goes to our FastAPI backend. Whisper transcribes it,
      GPT-4o pulls out structured fields, and GPT-4o compares the result with

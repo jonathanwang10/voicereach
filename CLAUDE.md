@@ -37,8 +37,11 @@ Backend needs `backend/.env` (see `backend/.env.example`); the app needs
   Height is stored in inches; weight in pounds; both 0-300.
 - **Do not reintroduce `skin_color`.** It was removed on purpose (it was a scored
   field with different urgency values per skin tone). See `supabase/schema.sql`.
-- **Recording:** M4A/AAC, 5 s minimum, 2 min maximum, warning at 1:45, auto-stop
-  at 2:00, GPS captured at start (`mobile/components/ModernAudioRecorder.tsx`).
+- **Recording:** M4A/AAC, 5 s minimum, 2 min maximum, timer red from 1:30,
+  warning alert at 1:45, auto-stop at 2:00. Recording starts on tap; the GPS fix
+  is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s) at
+  stop (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
+  own fix unless the worker picked a location by hand.
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and
   `single_select` categories can have a weight or auto-trigger. Number →
   `min(value/300, 1) * weight`; select → `option_value * weight`; final score is

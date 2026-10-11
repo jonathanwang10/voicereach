@@ -12,58 +12,104 @@ import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { ErrorHandler } from '../utils/errorHandler';
+import { formatGeocodedAddress } from '../utils/location';
 import { theme } from '../theme';
 
 const { width } = Dimensions.get('window');
 
+export interface RecordingLocation {
+  location: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  };
+}
+
 interface AudioRecorderProps {
-  onRecordingComplete: (uri: string, location?: {
-    location: {
-      latitude: number;
-      longitude: number;
-      address: string;
-    }
-  }) => void;
-  onRecordingStart?: () => void;
-  onRecordingStop?: () => void;
+  onRecordingComplete: (uri: string, location?: RecordingLocation) => void;
 }
 
 export interface AudioRecorderRef {
   resetRecording: () => void;
 }
 
+// How long stopping waits for a GPS fix that is still on its way (C-39)
+export const LOCATION_WAIT_MS = 3000;
+
+// The GPS fix and its address, or undefined when there is none. Never throws.
+const captureLocation = async (): Promise<RecordingLocation | undefined> => {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return undefined;
+    const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+    const [address] = await Location.reverseGeocodeAsync({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+    });
+    return {
+      location: {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        address: formatGeocodedAddress(address) ?? 'Unknown Address',
+      },
+    };
+  } catch (err) {
+    console.log('Location capture failed, continuing without location:', err);
+    return undefined;
+  }
+};
+
+// The fix if it arrives within LOCATION_WAIT_MS, else undefined
+const awaitLocation = async (pending: Promise<RecordingLocation | undefined> | null) => {
+  if (!pending) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>(resolve => {
+    timer = setTimeout(() => resolve(undefined), LOCATION_WAIT_MS);
+  });
+  try {
+    return await Promise.race([pending, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
   onRecordingComplete,
-  onRecordingStart,
-  onRecordingStop,
 }, ref) => {
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const durationRef = useRef(0);
+  // Set from the first tap until the recording has started: later taps are ignored (C-39)
+  const startingRef = useRef(false);
+  // The location being captured alongside the current recording (C-39)
+  const locationRef = useRef<Promise<RecordingLocation | undefined> | null>(null);
 
   // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const clearTimer = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  // Back to the idle "Tap to start recording" state
+  const resetState = () => {
+    recordingRef.current = null;
+    locationRef.current = null;
+    clearTimer();
+    stopAnimations();
+    setIsRecording(false);
+    setDuration(0);
+  };
 
   // Expose reset function to parent
   useImperativeHandle(ref, () => ({
-    resetRecording: () => {
-      recordingRef.current = null;
-      setRecording(null);
-      setIsRecording(false);
-      setIsPaused(false);
-      setDuration(0);
-      stopAnimations();
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
+    resetRecording: resetState,
   }));
 
   // Request permissions
@@ -131,53 +177,16 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     recordingRef.current?.stopAndUnloadAsync().catch(() => {});
   }, []);
 
-  // Start recording
+  // Start recording first; the location is captured alongside it (C-39)
   const startRecording = async () => {
+    if (startingRef.current || recordingRef.current) return;
+    startingRef.current = true;
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      // Capture location when recording starts
-      let locationData: {
-        location: {
-          latitude: number;
-          longitude: number;
-          address: string;
-        }
-      } | undefined;
-
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const currentLocation = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-
-          const addressResponse = await Location.reverseGeocodeAsync({
-            latitude: currentLocation.coords.latitude,
-            longitude: currentLocation.coords.longitude,
-          });
-
-          const address = addressResponse[0];
-          const addressString = address
-            ? `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim()
-            : 'Unknown Address';
-
-          locationData = {
-            location: {
-              latitude: currentLocation.coords.latitude,
-              longitude: currentLocation.coords.longitude,
-              address: addressString,
-            }
-          };
-        }
-      } catch (locationErr) {
-        console.log('Location capture failed, continuing without location:', locationErr);
-      }
-
-      // Start recording
       const { recording } = await Audio.Recording.createAsync({
         ...Audio.RecordingOptionsPresets.LOW_QUALITY,
         android: {
@@ -190,14 +199,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
         },
       });
       recordingRef.current = recording;
-      setRecording(recording);
+      locationRef.current = captureLocation();
       setIsRecording(true);
-      setIsPaused(false);
       setDuration(0);
-      onRecordingStart?.();
-
-      // Store location data for when recording completes
-      (recording as any).locationData = locationData;
 
       // Start animations
       startPulseAnimation();
@@ -210,6 +214,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       console.error('Failed to start recording', err);
       const error = ErrorHandler.handleRecordingError(err);
       ErrorHandler.showError(error);
+    } finally {
+      startingRef.current = false;
     }
   };
 
@@ -218,39 +224,34 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     const activeRecording = recordingRef.current;
     if (!activeRecording) return;
 
+    // Check minimum recording duration
+    if (durationRef.current < 5) {
+      Alert.alert(
+        '⏱️ Too Short',
+        `Please record at least 5 seconds (${5 - durationRef.current}s more)`,
+        [{ text: 'Continue Recording', style: 'default' }]
+      );
+      return;
+    }
+
+    // Taken first, so a second tap or the 2:00 auto-stop is a no-op from here on
+    recordingRef.current = null;
+    const pendingLocation = locationRef.current;
+    clearTimer();
+    stopAnimations();
+
     try {
-      // Check minimum recording duration
-      if (durationRef.current < 5) {
-        Alert.alert(
-          '⏱️ Too Short',
-          `Please record at least 5 seconds (${5 - durationRef.current}s more)`,
-          [{ text: 'Continue Recording', style: 'default' }]
-        );
-        return;
-      }
-
-      // Clear interval
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-
-      stopAnimations();
-      recordingRef.current = null;
       await activeRecording.stopAndUnloadAsync();
       const uri = activeRecording.getURI();
-      setRecording(null);
-      setIsRecording(false);
-      setIsPaused(false);
-      setDuration(0);
-      onRecordingStop?.();
-
+      const location = await awaitLocation(pendingLocation);
+      resetState();
       if (uri) {
-        const locationData = (activeRecording as any).locationData;
-        onRecordingComplete(uri, locationData);
+        onRecordingComplete(uri, location);
       }
     } catch (err) {
       console.error('Failed to stop recording', err);
+      // Never leave the UI stuck on the stop button (C-61)
+      resetState();
       const error = ErrorHandler.handleRecordingError(err);
       ErrorHandler.showError(error);
     }
@@ -264,11 +265,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   };
 
   // Get button color
-  const getButtonColor = () => {
-    if (isRecording) return theme.colors.danger[500];
-    if (duration > 0) return theme.colors.success[500];
-    return theme.colors.primary[600];
-  };
+  const getButtonColor = () =>
+    isRecording ? theme.colors.danger[500] : theme.colors.primary[600];
 
   // Get progress color
   const getProgressColor = () => {
@@ -297,7 +295,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       <View style={styles.timerSection}>
         <Text style={[
           styles.timer,
-          duration >= 105 && styles.timerWarning
+          // Red from 1:30 (PRD); the warning alert comes at 1:45 (C-61)
+          duration >= 90 && styles.timerWarning
         ]}>
           {formatDuration(duration)}
         </Text>
@@ -337,13 +336,10 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
           ]}
           testID="record-button"
           onPress={isRecording ? stopRecording : startRecording}
-          disabled={!isRecording && duration > 0 && duration < 5}
           activeOpacity={0.7}
         >
           {isRecording ? (
             <View style={styles.stopIcon} />
-          ) : duration > 0 ? (
-            <Ionicons name="checkmark" size={48} color={theme.colors.text.inverse} />
           ) : (
             <Ionicons name="mic" size={48} color={theme.colors.text.inverse} />
           )}
@@ -352,17 +348,11 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
       {/* Status Text */}
       <Text style={styles.statusText}>
-        {isRecording
-          ? 'Recording in progress...'
-          : duration > 0
-          ? duration < 5
-          ? `Minimum 5 seconds (${5 - duration}s more)`
-          : 'Recording complete!'
-          : 'Tap to start recording'}
+        {isRecording ? 'Recording in progress...' : 'Tap to start recording'}
       </Text>
 
       {/* Instructions */}
-      {!isRecording && duration === 0 && (
+      {!isRecording && (
         <View style={styles.instructions}>
           <View style={styles.instructionItem}>
             <Ionicons name="time-outline" size={16} color={theme.colors.text.secondary} />

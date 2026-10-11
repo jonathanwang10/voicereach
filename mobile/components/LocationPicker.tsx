@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Mod
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { SF_DEFAULT_COORDINATE, formatGeocodedAddress } from '../utils/location';
 
 interface LocationPickerProps {
   onLocationSelected: (location: { 
@@ -34,7 +35,10 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     getCurrentLocation();
   }, []);
 
+  // Start the pin at the location passed in, else the GPS fix, else the SF default.
+  // A denied permission or a failed fix still opens the map (C-04).
   const getCurrentLocation = async () => {
+    let fix: Location.LocationObject | null = null;
     try {
       setIsLoading(true);
       setError(null);
@@ -43,31 +47,25 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setError('Location permission denied');
-        setIsLoading(false);
-        return;
-      }
-
-      // Get current location
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 10,
-      });
-
-      setLocation(currentLocation);
-      
-      // Set initial selected location to Fort Mason default if not provided
-      if (!initialLocation) {
-        setSelectedLocation({
-          latitude: 37.7821638619815, // Updated default location
-          longitude: -122.41033921502972,
+      } else {
+        fix = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+          timeInterval: 5000,
+          distanceInterval: 10,
         });
+        setLocation(fix);
       }
-
     } catch (err) {
       console.error('Error getting location:', err);
       setError('Failed to get current location');
     } finally {
+      if (!initialLocation) {
+        const start = fix
+          ? { latitude: fix.coords.latitude, longitude: fix.coords.longitude }
+          : SF_DEFAULT_COORDINATE;
+        setSelectedLocation(start);
+        updateAddress(start.latitude, start.longitude);
+      }
       setIsLoading(false);
     }
   };
@@ -91,12 +89,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         longitude,
       });
 
-      const address = addressResponse[0];
-      const addressString = address 
-        ? `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim()
-        : 'Unknown location';
-
-      setAddress(addressString);
+      setAddress(formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location');
     } catch (err) {
       console.error('Error getting address:', err);
       setAddress('Address unavailable');
@@ -118,10 +111,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           longitude: selectedLocation.longitude,
         });
 
-        const address = addressResponse[0];
-        finalAddress = address 
-          ? `${address.street || ''} ${address.city || ''} ${address.region || ''}`.trim()
-          : 'Unknown location';
+        finalAddress = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
       } catch (err) {
         console.error('Error getting address:', err);
         finalAddress = 'Unknown location';
@@ -142,16 +132,6 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     });
   };
 
-  const handleUseCurrentLocation = () => {
-    if (location) {
-      setSelectedLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-      updateAddress(location.coords.latitude, location.coords.longitude);
-    }
-  };
-
   if (isLoading) {
     return (
       <Modal visible={true} transparent animationType="slide">
@@ -165,29 +145,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     );
   }
 
-  if (error) {
-    return (
-      <Modal visible={true} transparent animationType="slide">
-        <SafeAreaView style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.button} onPress={getCurrentLocation}>
-              <Text style={styles.buttonText}>Try Again</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={onCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
-    );
-  }
-
-  // Always default to updated coordinates
-  const mapRegion = selectedLocation || {
-    latitude: 37.7821638619815, // Updated default location
-    longitude: -122.41033921502972,
-  };
+  const mapRegion = selectedLocation || SF_DEFAULT_COORDINATE;
 
   return (
     <Modal visible={true} animationType="slide">
@@ -222,7 +180,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
         <View style={styles.infoContainer}>
           <Text style={styles.infoText}>
-            📍 Current Location: {location ? 'Detected' : 'Not available'}
+            📍 Current Location: {location ? 'Detected' : error || 'Not available'}
           </Text>
           <Text style={styles.infoText}>
             🎯 Selected: {selectedLocation ? 'Pin placed' : 'Tap map to place pin'}
@@ -356,24 +314,5 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#666',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
 }); 

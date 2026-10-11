@@ -10,11 +10,19 @@ question. File paths are relative to the repo root.
 - **Format:** M4A with AAC at 64 kbps. iOS uses expo-av's `LOW_QUALITY` preset
   (which is AAC `.m4a`); Android overrides it with an explicit AAC/MPEG-4 config.
 - **Length:** 5 s minimum (stopping earlier shows "Too Short" and keeps
-  recording), 2 min maximum. The progress bar turns amber at 1:30 and red at
-  1:45, a warning alert appears at 1:45, and recording stops itself at 2:00.
-- **Location:** when recording starts, the app asks for location permission,
-  reads the GPS position and reverse-geocodes it with `expo-location`. If that
-  fails, recording continues without a location.
+  recording), 2 min maximum. The timer text turns red at 1:30; the progress bar
+  turns amber at 1:30 and red at 1:45; a warning alert appears at 1:45; and
+  recording stops itself at 2:00. Taps while the recorder is starting are
+  ignored.
+- **Location:** recording starts first. Alongside it, the app asks for location
+  permission, reads the GPS position and reverse-geocodes it with
+  `expo-location`. At stop it waits at most `LOCATION_WAIT_MS` (3 s) for that
+  fix; if the fix is late or fails, the recording goes on without a location.
+  The Record screen uses each recording's own fix unless the worker picked a
+  location by hand (the picker opens at the current location, else the GPS fix,
+  else a San Francisco default). Both are cleared after a save or discard.
+- **Retry:** if transcription fails, "Try Again" re-sends the same recording;
+  "Record again" discards it.
 
 ## 2. Upload (app → backend)
 

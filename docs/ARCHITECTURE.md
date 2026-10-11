@@ -176,8 +176,10 @@ it was removed on purpose and must not come back.
    person's `data` with it and logs the changed fields as an interaction.
 
 ### Audio flow
-1. Record M4A (5 s minimum, 2 min maximum; warning at 1:45, auto-stop at 2:00);
-   GPS captured at start.
+1. Record M4A (5 s minimum, 2 min maximum; timer red from 1:30, warning alert
+   at 1:45, auto-stop at 2:00). Recording starts on tap and the GPS fix is
+   captured alongside it; a location picked by hand overrides it. After a failed
+   transcription, "Try Again" re-sends the same recording.
 2. `POST /api/transcribe` with the audio as base64.
 3. Backend: Whisper → GPT-4o extraction → validation → duplicate check.
 4. The worker reviews and edits; height is converted to inches.

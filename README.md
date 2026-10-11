@@ -488,5 +488,5 @@ Listed explicitly so nobody mistakes them for finished work:
   interaction is recorded as "Demo User" (`api/individuals.py:30-34`).
 - **No offline support.** The app requires connectivity throughout.
 - Audio is M4A/AAC, **5 s** minimum and 2 min maximum per recording
-  (`mobile/components/ModernAudioRecorder.tsx:223`). `docs/PRD.md` says 10 s; the
-  code says 5.
+  (`stopRecording` in `mobile/components/ModernAudioRecorder.tsx`). `docs/PRD.md`
+  says 10 s; the code says 5.
