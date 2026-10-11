@@ -114,4 +114,5 @@ def get_display_urgency_score(individual: dict) -> int:
     """
     if individual.get('urgency_override') is not None:
         return individual['urgency_override']
-    return individual.get('urgency_score', 0)
+    score = individual.get('urgency_score')
+    return score if score is not None else 0

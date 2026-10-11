@@ -238,9 +238,10 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/` | API name (public) |
 | `POST` | `/api/transcribe` | Audio → transcript → structured fields → duplicate candidates |
 | `POST` | `/api/individuals` | Create a person, or merge into one with `merge_with_id` |
-| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`) |
+| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). `last_seen` is the latest interaction (else `created_at`), from one query; name filter is SQL, data match is in memory (fine to about 1-5k people) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
 | `GET` | `/api/individuals/{id}/interactions` | Encounter history |
+| `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings, clears the assistant cache); 404 if absent |
 | `PUT` | `/api/individuals/{id}/urgency-override` | Set or clear (`null`) the manual urgency override |
 | `POST` | `/api/individuals/check-duplicates` | Duplicate candidates for manually entered data |
 | `GET` / `POST` | `/api/categories` | Read / define collected fields |

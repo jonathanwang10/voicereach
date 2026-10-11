@@ -145,13 +145,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         # Get OpenAI API key
         api_key = os.getenv("OPENAI_API_KEY")
         print(f"🔑 OpenAI API key available: {'Yes' if api_key else 'No'}")
-        if not api_key:
-            print("❌ OpenAI API key not configured")
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "error": {"message": "OpenAI API key not configured"}
-            }))
-            return
+        # (a missing key cannot reach here: api/embeddings.py builds its OpenAI client at import)
         
         # Create ephemeral token for OpenAI Realtime API
         session_config = {

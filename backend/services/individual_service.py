@@ -19,8 +19,40 @@ from db.models import (
     SaveIndividualResponse,
     LocationData
 )
-from services.urgency_calculator import calculate_urgency_score
+from services.urgency_calculator import calculate_urgency_score, get_display_urgency_score
 from services.field_registry import normalize_individual_data
+
+
+def fetch_last_seen(supabase: Client, individual_ids: list) -> Dict[str, Dict[str, Any]]:
+    """
+    Latest interaction per person, from ONE interactions query.
+
+    Returns {id: {"last_seen": iso_str, "location": dict | None}}. People with no
+    interactions are absent; the caller falls back to their `created_at`.
+    `last_seen` is never `updated_at` (an urgency override or edit is not a sighting).
+    Demo scale: PostgREST caps a response at ~1000 rows, so with very many
+    interactions the oldest people could fall back to `created_at`.
+    """
+    ids = [str(i) for i in individual_ids]
+    if not ids:
+        return {}
+    rows = supabase.table("interactions") \
+        .select("individual_id, created_at, location") \
+        .in_("individual_id", ids) \
+        .order("created_at", desc=True) \
+        .execute().data or []
+    latest: Dict[str, Dict[str, Any]] = {}
+    for row in rows:  # newest first, so the first row per person wins
+        latest.setdefault(str(row["individual_id"]), {
+            "last_seen": row["created_at"],
+            "location": row.get("location"),
+        })
+    return latest
+
+
+def _escape_like(term: str) -> str:
+    """Escape LIKE wildcards so '%' and '_' in a search match literally."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 class IndividualService:
@@ -109,6 +141,12 @@ class IndividualService:
         """
         Save a new individual or update existing (merge).
 
+        Not transactional (two PostgREST writes). Order: individual, then interaction.
+        - New person: if the interaction insert fails, the new individual is deleted
+          (compensating action) and the error is raised, so a retry cannot duplicate them.
+        - Merge: update, then interaction. A failed interaction leaves the update in place.
+        The merge read-modify-write has no concurrency guard.
+
         Logic:
         1. Normalise `data` against the categories (raises ValueError on invalid values)
         2. Calculate urgency score from the normalised data
@@ -145,10 +183,10 @@ class IndividualService:
             existing_response = self.supabase.table("individuals") \
                 .select("*") \
                 .eq("id", str(merge_with_id)) \
-                .single() \
+                .maybe_single() \
                 .execute()
             
-            if not existing_response.data:
+            if existing_response is None or not existing_response.data:
                 raise ValueError(f"Individual not found: {merge_with_id}")
             
             existing_individual = existing_response.data
@@ -212,18 +250,26 @@ class IndividualService:
             
             individual = individual_response.data[0]
             
-            # Create interaction with all data (first interaction)
-            interaction_response = self.supabase.table("interactions") \
-                .insert({
-                    "individual_id": individual["id"],
-                    "user_id": user_id,
-                    "user_name": user_name,
-                    "transcription": transcription,
-                    "audio_url": audio_url,
-                    "location": location_dict,
-                    "changes": data  # All data for first interaction
-                }) \
-                .execute()
+            # Create interaction with all data (first interaction). If it fails,
+            # remove the person we just created so a retry does not duplicate them.
+            try:
+                interaction_response = self.supabase.table("interactions") \
+                    .insert({
+                        "individual_id": individual["id"],
+                        "user_id": user_id,
+                        "user_name": user_name,
+                        "transcription": transcription,
+                        "audio_url": audio_url,
+                        "location": location_dict,
+                        "changes": data  # All data for first interaction
+                    }) \
+                    .execute()
+            except Exception:
+                try:
+                    self.supabase.table("individuals").delete().eq("id", individual["id"]).execute()
+                except Exception:
+                    pass  # best effort; the original error is the one to surface
+                raise
             
             interaction = interaction_response.data[0]
         
@@ -233,7 +279,7 @@ class IndividualService:
             name=individual["name"],
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"],
+            display_score=get_display_urgency_score(individual),
             data=individual["data"],
             created_at=individual["created_at"],
             updated_at=individual["updated_at"],
@@ -266,123 +312,82 @@ class IndividualService:
         sort_order: str = "desc"
     ) -> SearchIndividualsResponse:
         """
-        Search individuals across all fields.
-        
-        Search strategy:
-        1. If search term: query name AND JSONB data fields
-        2. Join with interactions for last_seen
-        3. Apply sorting and pagination
+        List / search individuals.
+
+        - Name filter: escaped ILIKE in SQL. A term is also matched against the
+          JSONB `data` in Python (demo scale, fine to about 1-5k people).
+        - `last_seen`: latest interaction, else `created_at` (one interactions query).
+        - Sort, then paginate.
         """
         # Database errors propagate (the route turns them into a 500). Returning
         # an empty list here made an outage look like "no one recorded yet" (C-17).
-        # Build base query
-        query = self.supabase.table("individuals").select("*")
-        
-        # Apply search if provided
-        if search:
-            # Search in name field first (simpler approach)
-            search_term = f"%{search}%"
-            query = query.ilike("name", search_term)
-        
-        # Execute query
-        response = query.execute()
-        individuals = response.data
-        
-        # If search provided, also search in JSONB data
-        if search:
-            # Get all individuals and filter by JSONB data
-            all_response = self.supabase.table("individuals").select("*").execute()
-            all_individuals = all_response.data
-            
-            # Filter by JSONB data containing search term
-            jsonb_matches = []
-            for ind in all_individuals:
-                if ind["id"] not in [i["id"] for i in individuals]:  # Avoid duplicates
-                    data_str = str(ind.get("data", {}))
-                    if search.lower() in data_str.lower():
-                        jsonb_matches.append(ind)
-            
-            # Combine results
-            individuals.extend(jsonb_matches)
-            
-            # Remove duplicates
-            seen_ids = set()
-            unique_individuals = []
-            for ind in individuals:
-                if ind["id"] not in seen_ids:
-                    seen_ids.add(ind["id"])
-                    unique_individuals.append(ind)
-            individuals = unique_individuals
-        
-        # Get total count
+        term = search.strip() if search else ""
+        if term:
+            individuals = self.supabase.table("individuals").select("*") \
+                .ilike("name", f"%{_escape_like(term)}%").execute().data or []
+            found = {ind["id"] for ind in individuals}
+            # Also match the JSONB data (the name matches came from SQL above)
+            for ind in self.supabase.table("individuals").select("*").execute().data or []:
+                if ind["id"] not in found and term.lower() in str(ind.get("data", {})).lower():
+                    individuals.append(ind)
+        else:
+            individuals = self.supabase.table("individuals").select("*").execute().data or []
+
         total = len(individuals)
-        
-        # Apply sorting
+        reverse = sort_order == "desc"
+
+        # One interactions query: every person for the last_seen sort, else only the page
         if sort_by == "last_seen":
-            # Get last interaction for each individual
-            for ind in individuals:
-                last_interaction = self.supabase.table("interactions") \
-                    .select("created_at, location") \
-                    .eq("individual_id", ind["id"]) \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
-                    .execute()
-                
-                if last_interaction.data:
-                    ind["_last_seen"] = last_interaction.data[0]["created_at"]
-                    ind["_last_location"] = last_interaction.data[0].get("location")
-                else:
-                    ind["_last_seen"] = ind["created_at"]
-                    ind["_last_location"] = None
-            
-            # Sort by last_seen
+            seen = fetch_last_seen(self.supabase, [i["id"] for i in individuals])
             individuals.sort(
-                key=lambda x: x["_last_seen"],
-                reverse=(sort_order == "desc")
+                key=lambda x: seen.get(x["id"], {}).get("last_seen", x["created_at"]),
+                reverse=reverse
             )
         elif sort_by == "urgency_score":
-            individuals.sort(
-                key=lambda x: x["urgency_score"],
-                reverse=(sort_order == "desc")
-            )
+            individuals.sort(key=lambda x: x["urgency_score"], reverse=reverse)
         else:  # sort by name
-            individuals.sort(
-                key=lambda x: x["name"],
-                reverse=(sort_order == "desc")
-            )
-        
-        # Apply pagination
-        paginated = individuals[offset:offset + limit]
-        
-        # Format results
+            individuals.sort(key=lambda x: x["name"], reverse=reverse)
+
+        page = individuals[offset:offset + limit]
+        if sort_by != "last_seen":
+            seen = fetch_last_seen(self.supabase, [i["id"] for i in page])
+
         results = []
-        for ind in paginated:
-            # Calculate display score
-            display_score = ind["urgency_override"] if ind.get("urgency_override") is not None else ind["urgency_score"]
-            
-            # Get last location with abbreviated address
-            last_location = ind.get("_last_location")
-            if last_location and last_location.get("address"):
-                last_location["address"] = self.abbreviate_address(last_location["address"])
-            
+        for ind in page:
+            latest = seen.get(ind["id"])
+            location = (latest or {}).get("location") or ind.get("last_location")
+            last_location = None
+            if location:
+                last_location = dict(location)
+                if last_location.get("address"):
+                    last_location["address"] = self.abbreviate_address(last_location["address"])
+
             results.append(IndividualSummary(
                 id=ind["id"],
                 name=ind["name"],
                 urgency_score=ind["urgency_score"],
                 urgency_override=ind.get("urgency_override"),
-                display_score=display_score,
-                last_seen=ind.get("_last_seen", ind["created_at"]),
+                display_score=get_display_urgency_score(ind),
+                last_seen=latest["last_seen"] if latest else ind["created_at"],
                 last_location=last_location
             ))
-        
+
         return SearchIndividualsResponse(
             individuals=results,
             total=total,
             offset=offset,
             limit=limit
         )
-        
-    
+
+    async def delete_individual(self, individual_id: UUID) -> bool:
+        """Delete a person. FK cascades remove their interactions and embeddings.
+        Returns True if a row was deleted, False if there was no such person."""
+        response = self.supabase.table("individuals") \
+            .delete() \
+            .eq("id", str(individual_id)) \
+            .execute()
+        return bool(response.data)
+
     async def get_individual_by_id(self, individual_id: UUID) -> Optional[IndividualDetailResponse]:
         """Get individual details with recent interactions"""
         # maybe_single() returns None for zero rows (the only "not found"); any other
@@ -421,7 +426,7 @@ class IndividualService:
             name=individual["name"],
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"],
+            display_score=get_display_urgency_score(individual),
             data=individual["data"],
             created_at=individual["created_at"],
             updated_at=individual["updated_at"],
@@ -452,10 +457,7 @@ class IndividualService:
         """Update manual urgency score override"""
         # Update individual
         update_query = self.supabase.table("individuals") \
-            .update({
-                "urgency_override": urgency_override,
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }) \
+            .update({"urgency_override": urgency_override}) \
             .eq("id", str(individual_id))
         
         # Execute the query
@@ -476,7 +478,7 @@ class IndividualService:
         return UrgencyOverrideResponse(
             urgency_score=individual["urgency_score"],
             urgency_override=individual.get("urgency_override"),
-            display_score=individual["urgency_override"] if individual.get("urgency_override") is not None else individual["urgency_score"]
+            display_score=get_display_urgency_score(individual)
         )
     
     async def get_interactions(

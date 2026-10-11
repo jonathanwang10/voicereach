@@ -181,7 +181,7 @@ class TestIndividualService:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
         
         # Mock existing individual
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = {
             "id": merge_id,
             "name": "John Doe",
             "data": {
@@ -246,7 +246,7 @@ class TestIndividualService:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
         
         # Mock individual not found
-        mock_supabase.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = None
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = None
         
         # Test merge should fail
         with pytest.raises(ValueError) as exc:
@@ -276,7 +276,8 @@ class TestIndividualService:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = []
 
         # Mock last interaction
-        mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = [{
+        mock_supabase.table.return_value.select.return_value.in_.return_value.order.return_value.execute.return_value.data = [{
+            "individual_id": mock_supabase.table.return_value.select.return_value.ilike.return_value.execute.return_value.data[0]["id"],
             "created_at": datetime.utcnow().isoformat(),
             "location": {"latitude": 37.80808794862037, "longitude": -122.43016054168524, "address": "123 Market Street"}
         }]
@@ -307,7 +308,7 @@ class TestIndividualService:
         mock_supabase.table.return_value.select.return_value.execute.return_value.data = mock_data
         
         # Mock interactions (empty for simplicity)
-        mock_supabase.table.return_value.select.return_value.eq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase.table.return_value.select.return_value.in_.return_value.order.return_value.execute.return_value.data = []
         
         # Test pagination
         results = await service.search_individuals(limit=10, offset=10)

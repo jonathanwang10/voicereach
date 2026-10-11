@@ -3,12 +3,14 @@ Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
 import os
-from services.embedding_service import EmbeddingService
+from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
 from supabase import create_client, Client
 from pydantic import BaseModel
+from services.individual_service import IndividualService, fetch_last_seen
+from services.urgency_calculator import get_display_urgency_score
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 embedding_service = EmbeddingService()
@@ -18,7 +20,7 @@ embedding_service = EmbeddingService()
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 10
-    similarity_threshold: float = 0.15  # Lower threshold for better semantic matching
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
 
 
 class GenerateEmbeddingRequest(BaseModel):
@@ -129,7 +131,6 @@ async def semantic_search_individuals(
             
             if result.data:
                 normal_results = result.data
-                print(f"🔍 Normal search found {len(normal_results)} results")
             
             # Also search in JSONB data
             all_response = supabase.table("individuals").select("*").execute()
@@ -155,117 +156,67 @@ async def semantic_search_individuals(
                     unique_individuals.append(ind)
             normal_results = unique_individuals
         
-        # Now try embedding search for semantic matches
+        # Now semantic matches. Embedding failures (e.g. an OpenAI outage) degrade to
+        # exact matches only; the log names the error type, never the query.
         embedding_results = []
         try:
-            # Check if embeddings table exists
-            try:
-                result = supabase.table("individual_embeddings").select("id", count="exact").execute()
-                embeddings_exist = True
-                print(f"✅ Embeddings table exists")
-            except Exception as e:
-                if "relation" in str(e).lower() and "does not exist" in str(e).lower():
-                    embeddings_exist = False
-                    print(f"❌ Embeddings table doesn't exist")
-                else:
-                    print(f"❌ Error checking embeddings table: {str(e)}")
-                    raise e
-            
-            if embeddings_exist:
-                # Get all individual embeddings from database
-                print(f"🔍 Fetching embeddings from database...")
-                result = supabase.table("individual_embeddings").select("*, individuals(*)").execute()
-                print(f"📊 Raw embeddings result: {len(result.data) if result.data else 0} rows")
-                
-                if result.data and len(result.data) > 0:
-                    # Prepare embeddings for search
-                    individual_embeddings = []
-                    for row in result.data:
-                        if row.get('embedding_data') and row.get('individuals'):
-                            individual_embeddings.append((row['individual_id'], row['embedding_data']))
-                            print(f"  ✅ Added embedding for {row['individuals'].get('name', 'Unknown')}")
-                        else:
-                            print(f"  ⚠️ Skipping row - missing embedding_data or individuals: {row.keys()}")
-                    
-                    print(f"📝 Prepared {len(individual_embeddings)} embeddings for search")
-                    
-                    if individual_embeddings:
-                        print(f"🧠 Starting semantic search with threshold {request.similarity_threshold}...")
-                        # Perform semantic search
-                        search_results = await embedding_service.semantic_search(
-                            request.query, 
-                            individual_embeddings, 
-                            request.top_k,
-                            request.similarity_threshold
-                        )
-                        print(f"🔍 Semantic search returned {len(search_results)} results")
-                        
-                        # Get full individual data for results
-                        for search_result in search_results:
-                            individual_id = search_result['individual_id']
-                            similarity_score = search_result['similarity_score']
-                            print(f"  📊 Result: ID {individual_id}, Score {similarity_score}")
-                            
-                            # Find the individual data
-                            individual_data = next((row['individuals'] for row in result.data if row['individual_id'] == individual_id), None)
-                            
-                            if individual_data:
-                                embedding_results.append({
-                                    "id": individual_id,
-                                    "name": individual_data.get('name'),
-                                    "urgency_score": individual_data.get('urgency_score'),
-                                    "urgency_override": individual_data.get('urgency_override'),
-                                    "data": individual_data.get('data', {}),
-                                    "similarity_score": similarity_score,
-                                    "search_type": "semantic"
-                                })
-                                print(f"    ✅ Added to results: {individual_data.get('name')}")
-                            else:
-                                print(f"    ❌ Could not find individual data for ID {individual_id}")
-                        
-                        print(f"🧠 Embedding search found {len(embedding_results)} results")
-                    else:
-                        print("⚠️ No valid embeddings found in database")
-                else:
-                    print("⚠️ No embeddings table data found")
-            else:
-                print("⚠️ Embeddings table doesn't exist yet")
-                
+            result = supabase.table("individual_embeddings").select("*, individuals(*)").execute()
+            rows = [r for r in (result.data or []) if r.get('embedding_data') and r.get('individuals')]
+            if rows:
+                search_results = await embedding_service.semantic_search(
+                    request.query,
+                    [(r['individual_id'], r['embedding_data']) for r in rows],
+                    request.top_k,
+                    request.similarity_threshold
+                )
+                by_id = {r['individual_id']: r['individuals'] for r in rows}
+                for search_result in search_results:
+                    individual_data = by_id.get(search_result['individual_id'])
+                    if individual_data:
+                        embedding_results.append({
+                            **individual_data,
+                            "id": search_result['individual_id'],
+                            "similarity_score": search_result['similarity_score'],
+                            "search_type": "semantic"
+                        })
         except Exception as e:
-            print(f"⚠️ Embedding search failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"Embedding search failed: {type(e).__name__}")
             embedding_results = []
-        
-        # Combine and deduplicate results
-        all_results = []
+
+        # Combine and deduplicate results (exact matches first)
+        candidates = [dict(r, search_type="exact", similarity_score=1.0) for r in normal_results]
+        candidates += embedding_results
         seen_ids = set()
-        
-        # Add normal search results first (exact matches)
-        for result in normal_results:
-            if result['id'] not in seen_ids:
-                seen_ids.add(result['id'])
-                all_results.append({
-                    "id": result['id'],
-                    "name": result.get('name'),
-                    "urgency_score": result.get('urgency_score'),
-                    "urgency_override": result.get('urgency_override'),
-                    "data": result.get('data', {}),
-                    "search_type": "exact",
-                    "similarity_score": 1.0  # Exact matches get perfect score
-                })
-        
-        # Add embedding search results (semantic matches)
-        for result in embedding_results:
-            if result['id'] not in seen_ids:
-                seen_ids.add(result['id'])
-                all_results.append(result)
-        
+        unique = []
+        for r in candidates:
+            if r['id'] not in seen_ids:
+                seen_ids.add(r['id'])
+                unique.append(r)
+
+        # last_seen / address come from ONE interactions query for all results
+        latest = fetch_last_seen(supabase, [r['id'] for r in unique])
+        abbreviate = IndividualService(supabase).abbreviate_address
+        all_results = []
+        for r in unique:
+            seen = latest.get(r['id'])
+            location = (seen or {}).get("location") or r.get("last_location")
+            address = (location or {}).get("address")
+            all_results.append({
+                "id": r['id'],
+                "name": r.get('name'),
+                "urgency_score": r.get('urgency_score'),
+                "urgency_override": r.get('urgency_override'),
+                "display_score": get_display_urgency_score(r),
+                "last_seen": seen["last_seen"] if seen else r.get('created_at'),
+                "abbreviated_address": abbreviate(address) if address else None,
+                "data": r.get('data') or {},
+                "search_type": r['search_type'],
+                "similarity_score": r['similarity_score'],
+            })
+
         # Sort by relevance: exact matches first, then by similarity score
         all_results.sort(key=lambda x: (x['search_type'] != 'exact', -x.get('similarity_score', 0)))
-        
-        print(f"🎯 Combined search found {len(all_results)} total results")
-        
+
         return {
             "results": all_results,
             "query": request.query,

@@ -112,6 +112,12 @@ class UrgencyOverrideResponse(BaseModel):
     display_score: int  # What UI should show
 
 
+class DeleteIndividualResponse(BaseModel):
+    """Response after deleting an individual"""
+    id: UUID
+    deleted: bool = True
+
+
 class InteractionsResponse(BaseModel):
     """List of detailed interactions"""
     interactions: List[InteractionDetail]

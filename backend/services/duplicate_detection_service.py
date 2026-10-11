@@ -288,11 +288,11 @@ Return JSON only with the actual UUIDs as keys:
 """
 
         # Add explicit expected format with actual UUIDs
-        for i, uuid in enumerate(uuid_list, 1):
+        for i, candidate_id in enumerate(uuid_list, 1):
             if i < len(uuid_list):
-                prompt += f'    "{uuid}": confidence_score,\n'
+                prompt += f'    "{candidate_id}": confidence_score,\n'
             else:
-                prompt += f'    "{uuid}": confidence_score\n'
+                prompt += f'    "{candidate_id}": confidence_score\n'
 
         prompt += f"""}}
 
@@ -301,12 +301,12 @@ Example with ACTUAL UUIDs (use the exact UUIDs from the records above):
 """
 
         # Show example with the actual UUIDs
-        for i, uuid in enumerate(uuid_list, 1):
+        for i, candidate_id in enumerate(uuid_list, 1):
             example_confidence = 96 if i == 1 else (73 if i == 2 else 45)
             if i < len(uuid_list):
-                prompt += f'    "{uuid}": {example_confidence},\n'
+                prompt += f'    "{candidate_id}": {example_confidence},\n'
             else:
-                prompt += f'    "{uuid}": {example_confidence}\n'
+                prompt += f'    "{candidate_id}": {example_confidence}\n'
 
         prompt += "}"
 

@@ -94,7 +94,7 @@ class TestGetInteractions:
         # Mock the query
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = mock_interactions
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = mock_interactions
         
         response = client.get(
             f"/api/individuals/{individual_id}/interactions",
@@ -135,7 +135,7 @@ class TestGetInteractions:
         # Mock query with pagination
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = mock_interactions
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = mock_interactions
         
         response = client.get(
             f"/api/individuals/{individual_id}/interactions?limit=10&offset=20",
@@ -153,7 +153,7 @@ class TestGetInteractions:
         # Mock empty results
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = []
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = []
         
         response = client.get(
             f"/api/individuals/{individual_id}/interactions",
@@ -210,7 +210,7 @@ class TestGetInteractions:
         # Mock query
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = mock_interactions
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = mock_interactions
         
         response = client.get(
             f"/api/individuals/{individual_id}/interactions",
@@ -255,7 +255,7 @@ class TestGetInteractions:
         # Mock query
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = mock_interactions
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = mock_interactions
         
         response = client.get(
             f"/api/individuals/{individual_id}/interactions",

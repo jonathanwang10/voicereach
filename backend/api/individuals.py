@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query, Background
 from fastapi.responses import JSONResponse
 from uuid import UUID
 from typing import Optional
-from datetime import datetime, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -19,7 +18,8 @@ from db.models import (
     IndividualDetailResponse,
     UrgencyOverrideRequest,
     UrgencyOverrideResponse,
-    InteractionsResponse
+    InteractionsResponse,
+    DeleteIndividualResponse
 )
 from services.individual_service import IndividualService
 from services.validation_helper import validate_categorized_data
@@ -288,41 +288,54 @@ async def update_urgency_override(
     - 404 if individual not found
     """
     try:
-        # Get Supabase client
-        supabase = get_supabase_client()
-        
-        # Update the urgency_override field
-        update_result = supabase.table("individuals").update({
-            "urgency_override": request.urgency_override,
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }).eq("id", str(individual_id)).execute()
-        
-        # Check if individual was found and updated
-        if not update_result.data:
+        service = IndividualService(get_supabase_client())
+
+        try:
+            result = await service.update_urgency_override(
+                individual_id, request.urgency_override
+            )
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Individual not found: {individual_id}"
             )
-        
-        invalidate_context_cache()
 
-        # Get the updated individual data
-        individual = update_result.data[0]
-        
-        # Calculate display score
-        display_score = individual["urgency_override"] if individual["urgency_override"] is not None else individual["urgency_score"]
-        
-        return UrgencyOverrideResponse(
-            urgency_score=individual["urgency_score"],
-            urgency_override=individual["urgency_override"],
-            display_score=display_score
-        )
-        
+        invalidate_context_cache()
+        return result
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
         raise internal_error("Update urgency override", e)
+
+
+@router.delete("/{individual_id}", response_model=DeleteIndividualResponse)
+async def delete_individual(
+    individual_id: UUID,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Delete an individual. FK cascades remove their interactions and embeddings;
+    the voice-assistant context cache is invalidated so it stops serving them.
+    404 if there is no such individual.
+    """
+    try:
+        service = IndividualService(get_supabase_client())
+
+        if not await service.delete_individual(individual_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Individual not found: {individual_id}"
+            )
+
+        invalidate_context_cache()
+        return DeleteIndividualResponse(id=individual_id, deleted=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise internal_error("Delete individual", e)
 
 
 @router.get("/{individual_id}/interactions", response_model=InteractionsResponse)
@@ -343,34 +356,9 @@ async def get_interactions(
     - Supports pagination with limit/offset
     """
     try:
-        # Get Supabase client
-        supabase = get_supabase_client()
-        
-        # Query interactions for this individual
-        interactions_result = supabase.table("interactions").select("*").eq(
-            "individual_id", str(individual_id)
-        ).order(
-            "created_at", desc=True
-        ).limit(
-            limit
-        ).offset(
-            offset
-        ).execute()
-        
-        # Transform to response format
-        interactions = []
-        for interaction in interactions_result.data:
-            interactions.append({
-                "id": interaction["id"],
-                "created_at": interaction["created_at"],
-                "user_name": interaction["user_name"],
-                "transcription": interaction.get("transcription"),
-                "location": interaction.get("location"),
-                "changes": interaction.get("changes", {})
-            })
-        
-        return InteractionsResponse(interactions=interactions)
-        
+        service = IndividualService(get_supabase_client())
+        return await service.get_interactions(individual_id, limit=limit, offset=offset)
+
     except HTTPException:
         raise
     except Exception as e:

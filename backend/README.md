@@ -113,7 +113,7 @@ normalised and validated against the categories (`normalize_individual_data`
 in `services/field_registry.py`; 400 with `field: message` details on failure).
 Only the normalised data is stored: empty values are dropped, numbers are real
 numbers and select labels are canonical. A missing merge target is a 404. The
-urgency score is computed on every save. A merge **replaces** `data` with what
+urgency score is computed on every save. The save is **not transactional** (two writes: individual, then interaction): if a new person's first interaction fails to insert, the new individual is deleted again so a retry does not duplicate them; a merge updates first, then inserts the interaction, and a failure there leaves the update in place. A merge **replaces** `data` with what
 was posted and logs only the changed fields; a new person's first interaction
 logs everything. Returns `{individual, interaction}`. An embedding is generated
 in the background.
@@ -122,7 +122,10 @@ in the background.
 `offset`, `sort_by` (`last_seen`, `urgency_score`, `name`), `sort_order`
 (`asc`, `desc`). Searches the name and the JSONB data. Returns `{individuals,
 total, offset, limit}`; each entry has `display_score`, `last_seen` and an
-abbreviated `last_location`.
+abbreviated `last_location`. `last_seen` is the latest interaction's
+`created_at`, falling back to the person's `created_at` (never `updated_at`),
+fetched with one `interactions` query for the whole list. The name filter is an
+escaped `ILIKE` in SQL; data matching is in memory (fine to about 1-5k people).
 
 **`GET /api/individuals/{id}`** — Returns `{individual, recent_interactions}`
 (the last 10). 404 if not found; a database error is a 500.
@@ -133,8 +136,12 @@ abbreviated `last_location`.
 
 **`PUT /api/individuals/{id}/urgency-override`** — Body:
 `{"urgency_override": 0-100 or null}`. Returns `urgency_score`,
-`urgency_override` and `display_score`. (The app currently writes the override
-through Supabase directly instead.)
+`urgency_override` and `display_score`; 404 if absent. It no longer touches
+`updated_at`.
+
+**`DELETE /api/individuals/{id}`** — Deletes the person (FK cascades remove their
+interactions and embeddings) and clears the assistant context cache. Returns
+`{"id", "deleted": true}`; 404 if absent, 422 for a bad UUID.
 
 **`POST /api/individuals/check-duplicates`** — Body: the same field dictionary as
 `data` above. Returns `{"potential_matches": [...]}` using the same detection as

@@ -11,6 +11,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Cosine-similarity cut-off for semantic search; the one value every caller defaults to.
+DEFAULT_SIMILARITY_THRESHOLD = 0.15
+
 
 def _join(value: Any) -> str:
     """Join a multi-select list for embedding text; a plain string is used as-is
@@ -106,7 +109,7 @@ class EmbeddingService:
         query_embedding: List[float], 
         individual_embeddings: List[Tuple[str, List[float]]], 
         top_k: int = 10,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
     ) -> List[Dict[str, Any]]:
         """
         Find similar individuals using cosine similarity
@@ -149,7 +152,7 @@ class EmbeddingService:
         query: str, 
         individual_embeddings: List[Tuple[str, List[float]]], 
         top_k: int = 10,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
     ) -> List[Dict[str, Any]]:
         """
         Perform semantic search using query text and individual embeddings

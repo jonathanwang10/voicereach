@@ -259,7 +259,7 @@ class TestIndividualManagementIntegration:
         # Step 6: Get interaction history
         mock_select = MagicMock()
         mock_supabase.table.return_value.select.return_value = mock_select
-        mock_select.eq.return_value.order.return_value.limit.return_value.offset.return_value.execute.return_value.data = [
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = [
             {
                 "id": str(uuid4()),
                 "individual_id": individual_id,
