@@ -88,3 +88,31 @@ it('a failed sign-out is reported, not swallowed, and keeps the user', async () 
   expect(thrown).toBeInstanceOf(Error);
   expect(screen.getByText('user:demo@sfgov.org')).toBeTruthy();
 });
+
+// Fix round 1: a SIGNED_OUT the worker didn't ask for (another phone's sign-out, a
+// failed refresh) must not drop to the "Signed out" screen and lose work: the user
+// stays set and the app quietly signs in again.
+it('an unrequested SIGNED_OUT keeps the user and quietly signs in again', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = mount();
+  await waitFor(() => screen.getByText('user:demo@sfgov.org'));
+
+  await act(async () => { mockAuthListener?.('SIGNED_OUT', null); });
+  expect(screen.getByText('user:demo@sfgov.org')).toBeTruthy();
+  expect(latest.loading).toBe(false);
+  expect(mockAutoLogin).toHaveBeenCalledTimes(2);
+});
+
+it('a requested sign-out stays signed out when its SIGNED_OUT arrives', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  mockSignOut.mockImplementation(async () => {
+    mockAuthListener?.('SIGNED_OUT', null); // Supabase emits it before resolving
+    return { error: null };
+  });
+  const screen = mount();
+  await waitFor(() => screen.getByText('user:demo@sfgov.org'));
+
+  await act(async () => { await latest.signOut(); });
+  expect(screen.getByText('none:')).toBeTruthy();
+  expect(mockAutoLogin).toHaveBeenCalledTimes(1);
+});

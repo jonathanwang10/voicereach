@@ -336,20 +336,29 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     );
   }
 
+  // What was said; selectable so it can be copied even while the fields won't load
+  const transcriptionSection = (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Transcription</Text>
+      <View style={styles.transcriptionContainer}>
+        <Text style={styles.transcriptionText} selectable>{result.transcription}</Text>
+      </View>
+    </View>
+  );
+
   // No fields means no required-field check on Save, so never show a fieldless form
   if (categories.length === 0) {
-    return <CategoryLoadError error={loadError} onRetry={fetchCategories} onCancel={onCancel} />;
+    return (
+      <View style={styles.container}>
+        {transcriptionSection}
+        <CategoryLoadError error={loadError} onRetry={fetchCategories} onCancel={onCancel} />
+      </View>
+    );
   }
 
   return (
     <ScrollView style={styles.container}>
-      {/* Transcription Text */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Transcription</Text>
-        <View style={styles.transcriptionContainer}>
-          <Text style={styles.transcriptionText}>{result.transcription}</Text>
-        </View>
-      </View>
+      {transcriptionSection}
 
       {/* Categorized Data */}
       <View style={styles.section}>

@@ -72,8 +72,10 @@ export const autoLogin = (): Promise<AutoLoginResult> => {
   return inFlight;
 };
 
-// A real sign-out (OD-4). Returns Supabase's error rather than throwing.
+// A real sign-out of THIS device (OD-4). Every phone shares the demo account, and
+// the default 'global' scope would revoke all of its sessions, signing every other
+// phone out too. Returns Supabase's error rather than throwing.
 export const signOut = async (): Promise<{ error: Error | null }> => {
-  const { error } = await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   return { error };
 };

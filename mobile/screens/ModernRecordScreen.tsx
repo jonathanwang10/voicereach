@@ -19,14 +19,12 @@ import { LocationPicker } from '../components/LocationPicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { useAuth } from '../contexts/AuthContext';
 import { api, TranscriptionResult } from '../services/api';
 import { ErrorHandler, errorMessage } from '../utils/errorHandler';
 import { theme } from '../theme';
 import Toast from 'react-native-toast-message';
 
 export const ModernRecordScreen: React.FC = () => {
-  const { loading } = useAuth();
   const audioRecorderRef = useRef<any>(null);
 
   // Recording states
@@ -146,14 +144,6 @@ export const ModernRecordScreen: React.FC = () => {
       position: 'top',
     });
   };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary[600]} />
-      </View>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -362,12 +352,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: theme.spacing.base,
     paddingBottom: theme.spacing.xl,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.surface,
   },
 
   // Tabs

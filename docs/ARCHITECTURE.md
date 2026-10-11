@@ -302,7 +302,11 @@ blocking "Can't sign in" (with the reason) or "Signed out" screen with a
 Retry/Sign In button, and mounts `CategoryProvider` and the tabs only once
 signed in. `CategoryContext` exposes `error`, and the Categories tab and both
 forms show a failed category load with Retry. Sign Out on the Profile tab calls
-`supabase.auth.signOut()` and reports a failure; the next launch signs in again.
+`supabase.auth.signOut({ scope: 'local' })`, so only this device is signed out
+(the default global scope would revoke every phone's session on the shared demo
+account), and reports a failure; the next launch signs in again. Only a sign-out
+the worker asked for shows "Signed out": any other `SIGNED_OUT` event keeps the
+screens mounted and signs in again quietly through the shared `autoLogin`.
 
 Match-confidence colours mean the same on every screen (`confidenceColor` in
 `mobile/utils/duplicateMatches.ts`): 95 and up green, 60-94 yellow.

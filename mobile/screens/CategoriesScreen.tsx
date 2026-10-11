@@ -140,7 +140,9 @@ export default function CategoriesScreen() {
           </Text>
         </TouchableOpacity>
         <Text style={styles.exportInfo}>
-          Exports all individuals, one column for each of the {categories.length} categories
+          {categories.length > 0
+            ? `Exports all individuals, one column for each of the ${categories.length} categories`
+            : 'Exports all individuals, one column for each category'}
         </Text>
       </View>
 

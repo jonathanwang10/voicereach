@@ -60,6 +60,7 @@ describe('category load failure (C-35)', () => {
     expect(screen.getByText("Couldn't load categories")).toBeTruthy();
     expect(screen.getByText(/No connection to the server/)).toBeTruthy();
     expect(screen.queryByText(/^0 categories/)).toBeNull();
+    expect(screen.queryByText(/0 categories/)).toBeNull(); // nor in the export line
     fireEvent.press(screen.getByText('Retry'));
     expect(mockRefresh).toHaveBeenCalledTimes(1);
   });

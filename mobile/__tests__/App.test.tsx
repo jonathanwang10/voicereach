@@ -17,7 +17,10 @@ jest.mock('../services/supabase', () => ({
     },
   },
   autoLogin: (...a: any[]) => mockAutoLogin(...a),
-  signOut: jest.fn(async () => ({ error: null })),
+  signOut: jest.fn(async () => {
+    mockAuthListener?.('SIGNED_OUT', null); // Supabase emits it before resolving
+    return { error: null };
+  }),
 }));
 jest.mock('../services/api', () => ({ api: { getCategories: jest.fn(async () => []) } }));
 jest.mock('react-native-toast-message', () => {
@@ -25,12 +28,27 @@ jest.mock('react-native-toast-message', () => {
   Toast.show = jest.fn();
   return { __esModule: true, default: Toast };
 });
-jest.mock('../screens/ModernRecordScreen', () => ({ ModernRecordScreen: () => mockScreen('Record screen') }));
+let mockRecordMounts = 0;
+jest.mock('../screens/ModernRecordScreen', () => {
+  const React = require('react');
+  return {
+    ModernRecordScreen: () => {
+      React.useEffect(() => { mockRecordMounts += 1; }, []);
+      return mockScreen('Record screen');
+    },
+  };
+});
 jest.mock('../screens/ModernSearchScreen', () => ({ ModernSearchScreen: () => mockScreen('Search screen') }));
 jest.mock('../screens/ModernIndividualProfileScreen', () => ({ ModernIndividualProfileScreen: () => null }));
 jest.mock('../screens/ModernVoiceAssistantScreen', () => ({ ModernVoiceAssistantScreen: () => null }));
 jest.mock('../screens/CategoriesScreen', () => () => null);
-jest.mock('../screens/UserProfileScreen', () => () => null);
+// A stand-in Profile tab whose button calls the real AuthContext signOut
+jest.mock('../screens/UserProfileScreen', () => () => {
+  const { Text } = require('react-native');
+  const { useAuth } = require('../contexts/AuthContext');
+  const { signOut } = useAuth();
+  return <Text onPress={() => signOut()}>Profile Sign Out</Text>;
+});
 
 function mockScreen(label: string) {
   return <Text>{label}</Text>;
@@ -63,16 +81,34 @@ it('a failed sign-in blocks the app with Retry, and Retry opens the tabs', async
   expect(api.getCategories).toHaveBeenCalledTimes(1);
 });
 
-it('after signing out the app stays signed out until the worker signs in again', async () => {
+it('after the worker signs out the app stays signed out until they sign in again', async () => {
   mockAutoLogin.mockResolvedValue({ user, session });
   const screen = render(<App />);
   await waitFor(() => screen.getByText('Record screen'));
 
-  act(() => { mockAuthListener?.('SIGNED_OUT', null); });
+  // Tab screens are lazy, so the Profile stand-in is reached through its tab
+  fireEvent.press(screen.getByText('Profile'));
+  await act(async () => { fireEvent.press(await screen.findByText('Profile Sign Out')); });
   await waitFor(() => screen.getByText('Signed out'));
   expect(mockAutoLogin).toHaveBeenCalledTimes(1);
 
   fireEvent.press(screen.getByText('Sign In'));
   await waitFor(() => screen.getByText('Record screen'));
+  expect(mockAutoLogin).toHaveBeenCalledTimes(2);
+});
+
+// Fix round 1: another phone signing out (or a failed refresh) emits SIGNED_OUT
+// here. The tabs stay mounted (no lost review) and the app signs in again quietly.
+it('an unrequested SIGNED_OUT keeps the tabs mounted and signs in again quietly', async () => {
+  mockRecordMounts = 0;
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  expect(mockRecordMounts).toBe(1);
+
+  await act(async () => { mockAuthListener?.('SIGNED_OUT', null); });
+  expect(screen.getByText('Record screen')).toBeTruthy();
+  expect(screen.queryByText('Signed out')).toBeNull();
+  expect(mockRecordMounts).toBe(1);
   expect(mockAutoLogin).toHaveBeenCalledTimes(2);
 });

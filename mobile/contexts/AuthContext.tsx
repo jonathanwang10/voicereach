@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, autoLogin, signOut } from '../services/supabase';
 import { errorMessage } from '../utils/errorHandler';
@@ -35,10 +35,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // True from the worker's Sign Out until the next sign-in. Only then does a
+  // SIGNED_OUT event mean "show the Signed out screen".
+  const signedOutByUser = useRef(false);
 
   // Signs in with the demo account (or keeps the stored session). `loading` stays
   // true until this settles, so no screen mounts and starts its own sign-in.
   const signIn = async () => {
+    signedOutByUser.current = false;
     setLoading(true);
     setError(null);
     const result = await autoLogin();
@@ -65,17 +69,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(next.user);
         }
       } else if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setUser(null);
+        if (signedOutByUser.current) {
+          setSession(null);
+          setUser(null);
+        } else {
+          // Not the worker's doing (a failed refresh, a revoked session). Keep the
+          // screens mounted, so no review or edit is lost, and sign in again quietly
+          // (C-37). If that fails, the next request reports it.
+          quietSignIn();
+        }
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // Signs in again without the loading screen, so nothing unmounts
+  const quietSignIn = async () => {
+    const result = await autoLogin();
+    if (result.user && result.session && !signedOutByUser.current) {
+      setUser(result.user);
+      setSession(result.session);
+    }
+  };
+
   const handleSignOut = async () => {
+    signedOutByUser.current = true;
     const { error: signOutError } = await signOut();
-    if (signOutError) throw signOutError;
+    if (signOutError) {
+      signedOutByUser.current = false;
+      throw signOutError;
+    }
     setUser(null);
     setSession(null);
     setError(null);

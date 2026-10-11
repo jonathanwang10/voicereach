@@ -7,8 +7,8 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 let mockNextFix: any;
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
-jest.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u' }, loading: false }) }));
-jest.mock('../../services/supabase', () => ({ supabase: {} }));
+// No AuthContext mock: the screen no longer reads auth (App only mounts it signed in),
+// so rendering it without an AuthProvider must work.
 jest.mock('../../services/api', () => ({ api: { transcribe: jest.fn() } }));
 jest.mock('../../components/LocationPicker', () => {
   const { Text, TouchableOpacity, View } = require('react-native');

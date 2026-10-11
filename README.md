@@ -257,9 +257,11 @@ The app signs in as the demo user automatically and opens on the Record tab.
 If that sign-in fails (the demo user is missing, or Supabase is unreachable), it
 shows a "Can't sign in" screen with the reason and a Retry button instead of the
 tabs. The Profile tab shows the signed-in account's email and last sign-in time.
-**Sign Out** there really ends the session: the app shows a "Signed out" screen
-with a Sign In button, and it **signs in again automatically the next time it
-starts**.
+**Sign Out** there really ends the session on that device (other phones on the
+shared demo account stay signed in): the app shows a "Signed out" screen with a
+Sign In button, and it **signs in again automatically the next time it
+starts**. If the session ends any other way (a failed refresh, for example), the
+app signs in again quietly without leaving the current screen.
 
 Expo Go from the App Store may only support the latest Expo SDK; this app uses
 SDK 53, so a physical device may need a development build

@@ -418,6 +418,14 @@ describe('category load failure (C-35)', () => {
     expect(screen.getByDisplayValue('Ann')).toBeTruthy();
   });
 
+  // Fix round 1: what was said stays readable (and copyable) during the outage
+  it('keeps the transcription on screen above the retry block', async () => {
+    (api.getCategories as jest.Mock).mockRejectedValueOnce(outage);
+    const screen = render(<TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />);
+    await waitFor(() => screen.getByText('Retry'));
+    expect(screen.getByText('hello there').props.selectable).toBe(true);
+  });
+
   it('Cancel on the retry screen leaves the review', async () => {
     (api.getCategories as jest.Mock).mockRejectedValueOnce(outage);
     const onCancel = jest.fn();
@@ -457,8 +465,9 @@ describe('field labels and long text', () => {
   });
 });
 
-// C-62: a strong match is green here and in MergeUI (one helper, one meaning).
-it('colours a strong match with the shared confidence colours', async () => {
+// C-62 guard (not a regression test: this screen's colours were already right; the
+// inverted ones were MergeUI's, see MergeUI.test). Keeps both screens on one helper.
+it('guard: colours a strong match with the shared confidence colours', async () => {
   const screen = render(
     <TranscriptionResults
       result={baseResult({ potential_matches: [{ id: MATCH_ID, name: 'Anne Lee', confidence: 97 }] })}

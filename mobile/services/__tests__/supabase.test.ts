@@ -55,3 +55,11 @@ it('signOut calls supabase.auth.signOut and returns its error', async () => {
   await expect(signOut()).resolves.toEqual({ error: failure });
   expect(mockAuth.signOut).toHaveBeenCalledTimes(2);
 });
+
+// Fix round 1: every phone shares demo@sfgov.org, and the default 'global' scope
+// revokes all of its sessions, signing every other phone out too.
+it('signs out this device only (scope local)', async () => {
+  mockAuth.signOut.mockResolvedValueOnce({ error: null });
+  await signOut();
+  expect(mockAuth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+});
