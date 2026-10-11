@@ -54,7 +54,7 @@ const captureLocation = async (): Promise<RecordingLocation | undefined> => {
       },
     };
   } catch (err) {
-    console.log('Location capture failed, continuing without location:', err);
+    if (__DEV__) console.warn('Location capture failed, continuing without location:', err);
     return undefined;
   }
 };
@@ -225,7 +225,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
         setDuration((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      console.error('Failed to start recording', err);
+      if (__DEV__) console.error('Failed to start recording', err);
       const error = ErrorHandler.handleRecordingError(err);
       ErrorHandler.showError(error);
     } finally {
@@ -264,7 +264,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
         onRecordingComplete(uri, location);
       }
     } catch (err) {
-      console.error('Failed to stop recording', err);
+      if (__DEV__) console.error('Failed to stop recording', err);
       // One more best-effort unload, so the next createAsync isn't blocked
       activeRecording.stopAndUnloadAsync().catch(() => {});
       // Never leave the UI stuck on the stop button (C-61)

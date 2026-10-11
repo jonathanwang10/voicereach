@@ -399,3 +399,85 @@ describe('C-59 lifecycle', () => {
     expect(ws.close).toHaveBeenCalled();
   });
 });
+
+// --- T14 carried items ----------------------------------------------------------
+
+describe('T14: recording start, interrupted replies, late transcripts, cached files', () => {
+  it('a reply that finishes while recording is starting does not switch the audio mode to playback', async () => {
+    let grant: (v: any) => void = () => {};
+    (Audio.requestPermissionsAsync as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: sound() });
+    const { screen, ws } = await renderConnected();
+
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    streamAnswer(ws, 'a1', 'Stay back.');          // arrives while recording mode is being set up
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+
+    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
+    expect((Audio.setAudioModeAsync as jest.Mock).mock.calls.some(c => c[0].allowsRecordingIOS === false)).toBe(false);
+    expect(screen.getByText('Stay back.')).toBeTruthy(); // its text still shows
+
+    await act(async () => { grant({ status: 'granted' }); });
+    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
+  });
+
+  it("response.done drops the audio of an interrupted item, so it can't play later", async () => {
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: sound() });
+    const { ws } = await renderConnected();
+    act(() => {
+      ws.receive({ type: 'conversation.item.created', item: { id: 'a1', type: 'message', role: 'assistant' } });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) });
+      ws.receive({ type: 'response.done', response: { status: 'cancelled', output: [{ id: 'a1' }] } });
+      // A stray late done for the same item finds nothing buffered.
+      ws.receive({ type: 'response.output_audio.done', item_id: 'a1' });
+    });
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
+  });
+
+  it('a transcript that arrives after the screen closed changes nothing and sends nothing', async () => {
+    let resolve: (t: string) => void = () => {};
+    (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
+    const { screen, ws } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
+
+    screen.unmount();
+    (Toast.show as jest.Mock).mockClear();
+    await act(async () => { resolve('Where is the shelter?'); });
+
+    expect(ws.send).not.toHaveBeenCalled();
+    expect(Toast.show).not.toHaveBeenCalled();
+  });
+
+  it('a transcript for the old socket is not sent on the new one after Clear', async () => {
+    let resolve: (t: string) => void = () => {};
+    (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
+    const { screen, ws } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
+
+    await act(async () => { fireEvent.press(screen.getByLabelText('Clear conversation')); });
+    await waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
+    const ws2 = MockWebSocket.instances[1];
+    act(() => ws2.open());
+    await act(async () => { resolve('Where is the shelter?'); });
+
+    expect(ws.send).not.toHaveBeenCalled();
+    expect(ws2.send).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Where is the shelter?')).toBeTruthy();
+  });
+
+  it.each([
+    ['transcribed', () => (api.transcribeForAssistant as jest.Mock).mockResolvedValue('OK')],
+    ['failed', () => (api.transcribeForAssistant as jest.Mock).mockRejectedValue(new Error('Request timed out'))],
+  ])('the recorded question file is deleted from the cache once %s (C-65)', async (_label, arrange) => {
+    (arrange as () => void)();
+    const FileSystem = require('expo-file-system');
+    const { screen } = await renderConnected();
+    await askByVoice(screen);
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
+  });
+});

@@ -156,7 +156,7 @@ export class ErrorHandler {
 
   // Show error to user
   static showError = (error: AppError) => {
-    console.error(`[${error.code}] ${error.message}`);
+    if (__DEV__) console.error(`[${error.code}] ${error.message}`);
 
     Toast.show({
       type: 'error',
@@ -171,7 +171,7 @@ export class ErrorHandler {
 
   // Generic error handler (null-safe: some callers pass whatever was caught)
   static handleError = (error: any, context: string = 'Unknown'): AppError => {
-    console.error(`Error in ${context}:`, error);
+    if (__DEV__) console.error(`Error in ${context}:`, error);
     
     // Try to categorize the error
     if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {

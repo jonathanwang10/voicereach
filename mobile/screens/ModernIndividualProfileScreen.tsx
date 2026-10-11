@@ -80,7 +80,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
       setProfile(profileData);
       setLoadError(null);
     } catch (error: any) {
-      console.error('Error loading profile:', error);
+      if (__DEV__) console.error('Error loading profile:', error);
       if (error?.status === 404) {
         Toast.show({ type: 'error', text1: 'Individual not found' });
         navigation.goBack();

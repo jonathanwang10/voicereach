@@ -262,6 +262,9 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const isMountedRef = useRef(true);
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
+  // True while startRecording sets up the recorder (before recordingRef is set), so a reply
+  // that arrives then can't switch the audio mode to playback mid-start.
+  const startingRecordingRef = useRef(false);
 
   const nextId = (prefix: string) => `${prefix}_${Date.now()}_${++idCounterRef.current}`;
 
@@ -307,7 +310,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     await stopPlayback();
     const gen = ++playbackGenRef.current;
     const cancelled = () =>
-      gen !== playbackGenRef.current || !isMountedRef.current || isMutedRef.current || !!recordingRef.current;
+      gen !== playbackGenRef.current || !isMountedRef.current || isMutedRef.current ||
+      !!recordingRef.current || startingRecordingRef.current;
     let fileUri: string | null = null;
     try {
       if (!AudioProcessor.validatePCMData(pcm)) throw new Error('Invalid PCM data');
@@ -417,7 +421,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         if (!id) break;
         const chunks = audioChunksRef.current[id] || [];
         delete audioChunksRef.current[id];
-        if (chunks.length && !isMutedRef.current && !recordingRef.current) {
+        if (chunks.length && !isMutedRef.current && !recordingRef.current && !startingRecordingRef.current) {
           awaitingPlaybackRef.current.add(id);
           playReply(AudioProcessor.concatChunks(chunks), () => {
             awaitingPlaybackRef.current.delete(id);
@@ -436,6 +440,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         const outputIds: string[] = (event.response?.output || []).map((o: any) => o?.id).filter(Boolean);
         const ids = new Set([...outputIds, ...Object.keys(textBuffersRef.current)]);
         ids.forEach(id => {
+          // An interrupted item never gets output_audio.done: drop its buffered audio.
+          delete audioChunksRef.current[id];
           if (!awaitingPlaybackRef.current.has(id)) flushItem(id, fallback);
         });
         break;
@@ -540,11 +546,13 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   const startRecording = async () => {
+    if (startingRecordingRef.current) return;
     if (!isSocketOpen(wsRef.current) || !isConnected) {
       Alert.alert('Error', 'Voice assistant not connected');
       return;
     }
 
+    startingRecordingRef.current = true;
     try {
       await stopPlayback(); // don't record over a reply
       await configureAudioRecording(); // R-7: recording mode back on
@@ -594,6 +602,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     } catch (error) {
       if (__DEV__) console.warn('Failed to start recording:', error);
       Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+    } finally {
+      startingRecordingRef.current = false;
     }
   };
 
@@ -607,6 +617,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     const dropBubble = () => {
       if (bubbleId) setMessages(prev => removeMessage(prev, bubbleId));
     };
+    // The question belongs to this socket's conversation; Clear or Retry replaces it.
+    const startWs = wsRef.current;
 
     setIsProcessingAudio(true);
     recordingRef.current = null;
@@ -629,11 +641,20 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       // C-23: a failed or empty transcription sends nothing; never invent a question.
       let transcript = '';
+      let failure: unknown = null;
       try {
         transcript = cleanTranscript(await api.transcribeForAssistant(uri));
       } catch (e) {
+        failure = e;
+      } finally {
+        // C-65: the recorded question doesn't stay in the cache once it's been used.
+        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
+      // The screen closed while transcribing: nothing to update, nothing to send.
+      if (!isMountedRef.current) return;
+      if (failure) {
         dropBubble();
-        showApiError(e, TRANSCRIBE_FAILED);
+        showApiError(failure, TRANSCRIBE_FAILED);
         return;
       }
       if (!transcript) {
@@ -643,18 +664,21 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       }
 
       const ws = wsRef.current;
-      if (!ws || !isSocketOpen(ws)) {
-        // The socket closed while transcribing: keep the question so it can be sent after Retry.
+      if (!ws || ws !== startWs || !isSocketOpen(ws)) {
+        // The socket closed or was replaced while transcribing: keep the question so it
+        // can be sent (after Retry if needed), but never into a different conversation.
         dropBubble();
         setTextInput(transcript);
-        toast('Not sent', 'Voice assistant disconnected. Tap Retry, then send your question.');
+        toast('Not sent', ws && ws !== startWs && isSocketOpen(ws)
+          ? 'The conversation was restarted. Send your question again.'
+          : 'Voice assistant disconnected. Tap Retry, then send your question.');
         return;
       }
 
       if (bubbleId) setMessages(prev => setMessageContent(prev, bubbleId, transcript));
       sendQuestion(ws, transcript);
     } finally {
-      setIsProcessingAudio(false);
+      if (isMountedRef.current) setIsProcessingAudio(false);
     }
   };
 

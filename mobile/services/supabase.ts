@@ -45,7 +45,7 @@ const signInWithDemoAccount = async (): Promise<AutoLoginResult> => {
       password: DEMO_PASSWORD,
     });
     if (error) {
-      console.error('Auto-login failed:', error.message);
+      if (__DEV__) console.error('Auto-login failed:', error.message);
       return { error };
     }
     if (data.session && data.user) {
@@ -53,7 +53,7 @@ const signInWithDemoAccount = async (): Promise<AutoLoginResult> => {
     }
     return { error: new Error('No session created') };
   } catch (error) {
-    console.error('Auto-login error:', error);
+    if (__DEV__) console.error('Auto-login error:', error);
     return { error };
   }
 };

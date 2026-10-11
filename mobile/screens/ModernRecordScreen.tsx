@@ -23,6 +23,7 @@ import { api, TranscriptionResult } from '../services/api';
 import { ErrorHandler, errorMessage } from '../utils/errorHandler';
 import { theme } from '../theme';
 import Toast from 'react-native-toast-message';
+import * as FileSystem from 'expo-file-system';
 
 export const ModernRecordScreen: React.FC = () => {
   const audioRecorderRef = useRef<any>(null);
@@ -50,7 +51,6 @@ export const ModernRecordScreen: React.FC = () => {
   };
 
   const handleRecordingComplete = async (uri: string, location?: RecordingLocation) => {
-    console.log('Recording completed:', uri, location);
     setRecordingUri(uri);
     setUploadError(null);
     setTranscriptionError(null);
@@ -65,7 +65,6 @@ export const ModernRecordScreen: React.FC = () => {
       setIsUploading(true);
       setUploadError(null);
 
-      console.log('🎤 Starting real voice transcription...');
       Toast.show({
         type: 'info',
         text1: 'Processing Audio',
@@ -75,7 +74,7 @@ export const ModernRecordScreen: React.FC = () => {
 
       await transcribeAudio(uri);
     } catch (error) {
-      console.error('❌ Upload error:', error);
+      if (__DEV__) console.error('Upload failed:', error);
       setUploadError('Upload failed');
       Toast.show({
         type: 'error',
@@ -95,7 +94,6 @@ export const ModernRecordScreen: React.FC = () => {
 
       const result = await api.transcribe(audioUrl);
 
-      console.log('✅ Transcription completed!');
       setTranscriptionResult(result);
 
       Toast.show({
@@ -105,7 +103,7 @@ export const ModernRecordScreen: React.FC = () => {
         position: 'top',
       });
     } catch (error) {
-      console.error('❌ Transcription error:', error);
+      if (__DEV__) console.error('Transcription failed:', error);
       setTranscriptionError('Transcription failed');
       Toast.show({
         type: 'error',
@@ -119,7 +117,10 @@ export const ModernRecordScreen: React.FC = () => {
     }
   };
 
+  // Saved or discarded: the audio has done its job, so it leaves the app's cache (C-65).
+  // Kept until then so "Try Again" can resend it.
   const resetRecording = () => {
+    if (recordingUri) FileSystem.deleteAsync(recordingUri, { idempotent: true }).catch(() => {});
     setRecordingUri(null);
     setUploadError(null);
     setTranscriptionResult(null);

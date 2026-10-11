@@ -59,7 +59,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         setLocation(fix);
       }
     } catch (err) {
-      console.error('Error getting location:', err);
+      if (__DEV__) console.error('Error getting location:', err);
       setError('Failed to get current location');
     } finally {
       if (!initialLocation) {
@@ -97,7 +97,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       });
       next = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
     } catch (err) {
-      console.error('Error getting address:', err);
+      if (__DEV__) console.error('Error getting address:', err);
       next = 'Address unavailable';
     }
     if (request === geocodeRequestRef.current) setAddress(next);
@@ -120,7 +120,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
         finalAddress = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
       } catch (err) {
-        console.error('Error getting address:', err);
+        if (__DEV__) console.error('Error getting address:', err);
         finalAddress = 'Unknown location';
       }
     }

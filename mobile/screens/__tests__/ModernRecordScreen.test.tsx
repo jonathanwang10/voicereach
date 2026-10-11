@@ -2,6 +2,7 @@
 // C-02: each recording carries its own location unless one was picked by hand.
 // C-04: the picker opens at the location the screen already has.
 // C-38: "Try Again" re-transcribes the same recording; "Record again" discards it.
+// C-65: the recording leaves the app's cache once it is saved or discarded.
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
@@ -10,6 +11,7 @@ jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { sh
 // No AuthContext mock: the screen no longer reads auth (App only mounts it signed in),
 // so rendering it without an AuthProvider must work.
 jest.mock('../../services/api', () => ({ api: { transcribe: jest.fn() } }));
+jest.mock('expo-file-system', () => ({ deleteAsync: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('../../components/LocationPicker', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
@@ -68,6 +70,7 @@ jest.mock('../../components/ManualEntryForm', () => {
 import Toast from 'react-native-toast-message';
 import { ModernRecordScreen } from '../ModernRecordScreen';
 import { api } from '../../services/api';
+import * as FileSystem from 'expo-file-system';
 
 const RESULT = {
   transcription: 't', categorized_data: {}, missing_required: [], potential_matches: [], validation_errors: [],
@@ -223,5 +226,30 @@ describe('after a failed transcription (C-38)', () => {
     expect(screen.queryByText('Try Again')).toBeNull();
     expect(screen.getByText('Stub Recorder')).toBeTruthy();
     expect(api.transcribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('C-65 recorded audio', () => {
+  it('is deleted from the cache once the record is saved', async () => {
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    fireEvent.press(await screen.findByText('Stub Save'));
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
+  });
+
+  it('is deleted when it is discarded with "Record again"', async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    fireEvent.press(await screen.findByText('Record again'));
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
+  });
+
+  it('is kept while "Try Again" may still need it', async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Try Again');
+    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
   });
 });
