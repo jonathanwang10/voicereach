@@ -103,6 +103,23 @@ def test_formula_like_cells_are_neutralised(evil):
         assert cell == "'" + evil.strip()
 
 
+def test_category_labels_cannot_collide_with_fixed_or_other_headers():
+    cats = EXPORT_CATS + [
+        {"name": "urgency_score", "display_name": "Urgency Score", "type": "number"},
+        {"name": "last_seen", "display_name": "last seen", "type": "text"},
+        {"name": "hiv", "display_name": "HIV status", "type": "text"},
+    ]
+    rows = _export(_ExportDB([_person(data={"height": 60, "urgency_score": 3, "last_seen": "Pier 39",
+                                             "hiv_status": "Negative", "hiv": "Unknown"})], categories=cats))
+    header = rows[0]
+    assert len(header) == len({h.lower() for h in header})
+    record = dict(zip(header, rows[1]))
+    assert record["Urgency Score"] == "80" and record["Urgency Score (urgency_score)"] == "3"
+    assert record["Last Seen"] == "2025-01-01T00:00:00Z" and record["last seen (last_seen)"] == "Pier 39"
+    # same label twice: the later column (by creation, then key) gets its key appended
+    assert record["HIV status"] == "Unknown" and record["HIV status (hiv_status)"] == "Negative"
+
+
 def test_numbers_and_plain_text_are_not_prefixed():
     rows = _export(_ExportDB([_person(name="Ann-Marie", data={"height": 60, "hiv_status": "a=b"})]))
     record = dict(zip(rows[0], rows[1]))

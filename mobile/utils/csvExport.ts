@@ -2,9 +2,10 @@
 // share sheet so the worker chooses where it goes (Save to Files, AirDrop, Mail...).
 // The file is deleted once the sheet closes, and the contents are never logged:
 // every row is personal and medical data.
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { api } from '../services/api';
+
+type FileSystemModule = typeof import('expo-file-system');
+type SharingModule = typeof import('expo-sharing');
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -13,9 +14,24 @@ export const exportCsvFileName = (now: Date = new Date()): string =>
   `individuals_export_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
   `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`;
 
+// expo-sharing is a native module that resolves its native half when imported. A
+// dev build made before it was added has no such half, and a top-level import
+// would crash the app at launch. Loading it here turns that into an export error.
+const loadNativeModules = (): { FileSystem: FileSystemModule; Sharing: SharingModule } => {
+  try {
+    return {
+      FileSystem: require('expo-file-system') as FileSystemModule,
+      Sharing: require('expo-sharing') as SharingModule,
+    };
+  } catch {
+    throw new Error('Sharing is not available in this build of the app. Rebuild it (npx expo run:ios).');
+  }
+};
+
 // Resolves when the share sheet closes (shared or cancelled). Throws ApiError if the
 // export request fails, or an Error if sharing is unavailable or fails.
 export const shareCsvExport = async (): Promise<void> => {
+  const { FileSystem, Sharing } = loadNativeModules();
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error('Sharing is not available on this device');
   }

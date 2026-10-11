@@ -34,6 +34,23 @@ def _csv_cell(value) -> str:
     return "'" + text if text.startswith(_FORMULA_PREFIXES) else text
 
 
+_FIXED_HEADERS = ("Urgency Score", "Last Seen")
+
+
+def _unique_headers(columns):
+    """A category label that equals a fixed header, or an earlier column's header
+    (ignoring case), gets its key appended: "Urgency Score (urgency_score)". So
+    every CSV header is distinct and the computed columns are never ambiguous."""
+    taken = {h.lower() for h in _FIXED_HEADERS}
+    out = []
+    for key, header in columns:
+        if header.lower() in taken:
+            header = f"{header} ({key})"
+        taken.add(header.lower())
+        out.append((key, header))
+    return out
+
+
 @router.get("/api/export")
 async def export_csv(user_id: str = Depends(get_current_user)):
     """
@@ -57,11 +74,11 @@ async def export_csv(user_id: str = Depends(get_current_user)):
         categories = supabase.table("categories").select("*").order("created_at").execute().data or []
         individuals = supabase.table("individuals").select("*").order("created_at", desc=True).execute().data or []
         latest = fetch_last_seen(supabase, [i["id"] for i in individuals]) if individuals else {}
-        columns = export_columns(categories)
+        columns = _unique_headers(export_columns(categories))
 
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow([_csv_cell(header) for _, header in columns] + ["Urgency Score", "Last Seen"])
+        writer.writerow([_csv_cell(header) for _, header in columns] + list(_FIXED_HEADERS))
 
         for individual in individuals:
             data = individual.get("data") or {}

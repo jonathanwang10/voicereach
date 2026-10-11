@@ -275,26 +275,42 @@ def format_field_value(value: Any) -> str:
     return str(value).strip()
 
 
+def _ordered_categories(categories: list) -> List[dict]:
+    """Categories in one fixed order, whatever order the caller fetched them in:
+    `name` first, then required, then other presets, then the rest; within a group
+    by `created_at`, then by key (the seed rows share one created_at). Duplicate
+    keys keep their first row."""
+    unique: Dict[str, dict] = {}
+    for category in categories or []:
+        if category.get("name") and category["name"] not in unique:
+            unique[category["name"]] = category
+    return sorted(unique.values(), key=lambda c: (
+        c["name"] != "name", not c.get("is_required"), not c.get("is_preset"),
+        str(c.get("created_at") or ""), c["name"]))
+
+
 def build_embedding_text(individual: dict, categories: list) -> str:
     """The text embedded (and stored as `embedding_text`) for one person.
 
     "Name: Ann Lee. Height: 64; HIV status: Negative; ..." -- every non-empty
     `data` value, labelled with display_label, in category order; data keys with
-    no category follow, labelled from the key. Urgency is never included (it is
-    not something a search describes, and it changes on every override).
+    no category follow (sorted), labelled from the key. The category order is
+    _ordered_categories, so every caller gets the same text for the same person.
+    Urgency is never included (it is not something a search describes, and it
+    changes on every override).
     """
     data = individual.get("data") or {}
     parts: List[str] = []
     used = {"name"}
-    for category in categories or []:
-        key = category.get("name")
-        if not key or key in used:
+    for category in _ordered_categories(categories):
+        key = category["name"]
+        if key in used:
             continue
         used.add(key)
         text = format_field_value(data.get(key))
         if text:
             parts.append(f"{display_label(category)}: {text}")
-    for key, value in data.items():
+    for key, value in sorted(data.items(), key=lambda kv: str(kv[0])):
         if key in used or not isinstance(key, str):
             continue
         text = format_field_value(value)
@@ -305,12 +321,6 @@ def build_embedding_text(individual: dict, categories: list) -> str:
 
 
 def export_columns(categories: list) -> List[Tuple[str, str]]:
-    """[(key, header)] for every category: name first, then required, then other
-    presets, then the rest, each group in the given (creation) order."""
-    unique: Dict[str, dict] = {}
-    for category in categories or []:
-        if category.get("name") and category["name"] not in unique:
-            unique[category["name"]] = category
-    ordered = sorted(unique.values(), key=lambda c: (
-        c["name"] != "name", not c.get("is_required"), not c.get("is_preset")))
-    return [(c["name"], display_label(c)) for c in ordered]
+    """[(key, header)] for every category, in _ordered_categories order: name
+    first, then required, then other presets, then the rest (each by creation)."""
+    return [(c["name"], display_label(c)) for c in _ordered_categories(categories)]

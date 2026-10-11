@@ -260,6 +260,10 @@ SDK 53, so a physical device may need a development build
 (`npx expo run:ios --device`; the `ios/` project is checked in). The simulator
 works with `npx expo start`.
 
+**After pulling, rebuild any existing development build** (`npx expo run:ios`):
+CSV export added the native module `expo-sharing`. An older build still opens,
+but Export CSV fails with "Rebuild it" until you rebuild.
+
 ### 4. Optional: backfill embeddings
 
 The seeded demo individuals start without embeddings; new and updated

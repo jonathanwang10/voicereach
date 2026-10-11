@@ -83,7 +83,7 @@ def test_save_route_passes_normalised_data():
                      "has_transcription": False, "location": None},
     )
     supabase = MagicMock()
-    supabase.table.return_value.select.return_value.execute.return_value.data = CATEGORIES
+    supabase.table.return_value.select.return_value.order.return_value.execute.return_value.data = CATEGORIES
     with patch("api.individuals.get_supabase_client", return_value=supabase), \
          patch("api.individuals.IndividualService") as svc:
         svc.return_value.save_individual = AsyncMock(return_value=result)

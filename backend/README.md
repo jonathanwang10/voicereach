@@ -201,7 +201,9 @@ constraint (Postgres `23505`) is also a 409. Returns 201 with the category
 required fields, other presets, then custom ones, headed with the category's
 label), then "Urgency Score" (`get_display_urgency_score`: the override if set,
 including 0) and "Last Seen" (`fetch_last_seen`: the latest interaction, else
-`created_at`; never `updated_at`). Lists are comma-separated and a location is
+`created_at`; never `updated_at`). A category label that repeats one of those
+two headers or an earlier column's gets its key appended ("Urgency Score
+(urgency_score)"), so headers are distinct. Lists are comma-separated and a location is
 its address. A text cell starting with `=`, `+`, `-`, `@`, tab or CR gets a
 leading `'` so a spreadsheet won't run it as a formula. No individuals gives a
 header-only CSV (200).

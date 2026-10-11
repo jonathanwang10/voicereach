@@ -52,7 +52,7 @@ def test_embedding_text_covers_custom_and_preset_fields_in_category_order():
     assert "Additional Information: Sleeps by the library" in text
     assert "Medical Conditions: Diabetes, Asthma" in text
     assert "Last spot: Civic Center" in text         # a location reads as its address
-    assert text.index("Height") < text.index("Housing Priority") < text.index("HIV status")
+    assert text.index("Height") < text.index("HIV status") < text.index("Housing Priority")
     assert text.count("Ann Lee") == 1                # the name is not repeated as a field
     assert "Old Field: kept" in text                 # data with no category still counts
 
@@ -68,12 +68,51 @@ def test_embedding_text_skips_empty_values_and_handles_no_data():
     assert build_embedding_text({"name": "Bo"}, []) == "Name: Bo."
 
 
+def test_embedding_text_is_the_same_whatever_order_categories_arrive_in():
+    """The save path, /generate, /generate-all and the backfill each fetch categories
+    themselves; the text must not depend on the order they come back in."""
+    import random
+    stamped = [dict(c, created_at="2025-01-01T00:00:00Z") for c in CATEGORIES]   # seed rows share one
+    expected = build_embedding_text(PERSON, stamped)
+    for seed in range(5):
+        shuffled = stamped[:]
+        random.Random(seed).shuffle(shuffled)
+        assert build_embedding_text(PERSON, shuffled) == expected
+        assert export_columns(shuffled) == export_columns(stamped)
+    newer = [dict(c, created_at="2026-01-01T00:00:00Z") if c["name"] == "hiv_status" else c for c in stamped]
+    assert build_embedding_text(PERSON, newer).index("HIV status") > build_embedding_text(PERSON, newer).index("Medical")
+
+
+def test_save_path_loads_categories_in_creation_order():
+    from fastapi.testclient import TestClient
+    from main import app
+    from tests.helpers import save_response
+    calls = []
+    sb = MagicMock()
+    sb.table.return_value.select.return_value.order.side_effect = lambda *a, **k: calls.append(a) or MagicMock(
+        execute=MagicMock(return_value=MagicMock(data=CATEGORIES)))
+    saved = save_response({"individual": {"id": "00000000-0000-0000-0000-000000000009", "name": "Ann",
+                                          "data": {"name": "Ann", "height": 60, "weight": 120},
+                                          "urgency_score": 0, "urgency_override": None, "display_score": 0,
+                                          "created_at": "2025-01-01T00:00:00Z", "updated_at": "2025-01-01T00:00:00Z"},
+                           "interaction": {"id": "00000000-0000-0000-0000-00000000000a",
+                                           "individual_id": "00000000-0000-0000-0000-000000000009",
+                                           "user_name": "Demo User", "location": None,
+                                           "has_transcription": False, "created_at": "2025-01-01T00:00:00Z"}})
+    with patch("api.individuals.get_supabase_client", return_value=sb), \
+         patch("services.individual_service.IndividualService.save_individual", new=AsyncMock(return_value=saved)):
+        r = TestClient(app).post("/api/individuals", json={"data": {"name": "Ann", "height": 60, "weight": 120}})
+    assert r.status_code == 200, r.text
+    assert ("created_at",) in calls
+
+
 # --- export_columns ---------------------------------------------------------------------
 
 def test_export_columns_cover_every_category_name_first_then_presets():
     cols = export_columns(CATEGORIES)
+    # no created_at here, so each group falls back to key order
     assert [k for k, _ in cols] == ["name", "height", "additional_information",
-                                    "housing_priority", "hiv_status", "medical_conditions", "last_spot"]
+                                    "hiv_status", "housing_priority", "last_spot", "medical_conditions"]
     assert dict(cols)["hiv_status"] == "HIV status"
 
 

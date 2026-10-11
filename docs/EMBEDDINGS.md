@@ -142,8 +142,10 @@ in Python, so search time grows linearly with the number of people: fine to abou
 ### 2. Text representation
 `build_embedding_text` (`backend/services/field_registry.py`) builds one line
 per profile: the name, then each non-empty `data` value labelled with the
-category's `display_name` (else its key title-cased), in category order; data
-keys that match no category follow, labelled from the key. Lists are joined
+category's `display_name` (else its key title-cased); data keys that match no
+category follow, labelled from the key. The category order is fixed whatever
+order a caller fetched them in (name, required, other presets, then the rest,
+each by `created_at` then key), so every path builds the same text. Lists are joined
 with ", " and a location is its address. For example:
 
 ```

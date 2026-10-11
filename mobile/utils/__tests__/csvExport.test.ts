@@ -43,6 +43,9 @@ it('deletes the cached file once the share sheet closes', async () => {
   await shareCsvExport();
   const [uri] = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0];
   expect(FileSystem.deleteAsync).toHaveBeenCalledWith(uri, { idempotent: true });
+  const shared = (Sharing.shareAsync as jest.Mock).mock.invocationCallOrder[0];
+  const deleted = (FileSystem.deleteAsync as jest.Mock).mock.invocationCallOrder[0];
+  expect(deleted).toBeGreaterThan(shared);
 });
 
 it('deletes the cached file even when sharing fails, and rethrows', async () => {
@@ -64,4 +67,17 @@ it('never logs the CSV contents', async () => {
     for (const call of spy.mock.calls) expect(JSON.stringify(call)).not.toContain('Ann Lee');
     spy.mockRestore();
   }
+});
+
+// A dev build made before expo-sharing was added has no native module: importing it
+// throws. That must surface as an export error, not crash the app on launch.
+it('turns a missing native module into an export error instead of a crash', async () => {
+  jest.resetModules();
+  jest.doMock('expo-sharing', () => {
+    throw new Error("Cannot find native module 'ExpoSharing'");
+  });
+  const freshApi = require('../../services/api').api;
+  const mod = require('../csvExport');   // importing the module itself must not throw
+  await expect(mod.shareCsvExport()).rejects.toThrow(/rebuild/i);
+  expect(freshApi.exportCSV).not.toHaveBeenCalled();
 });

@@ -345,8 +345,9 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 4. Built and demoed on iOS; Android has had little testing.
 5. English only.
 6. Two-minute recording limit, enforced in the app.
-7. Semantic search embeds a fixed set of fields, stores vectors as JSONB and
-   compares them in Python.
+7. Semantic search embeds every category's field (`build_embedding_text`), but
+   stores vectors as JSONB and compares them in Python. A new category reaches
+   existing people's vectors only when they are re-saved or re-embedded.
 8. List and search endpoints load whole tables and match text in Python
    (`backend/services/search_matching.py`); fine to about 1-5k people.
 9. No audit trail beyond the interactions log.

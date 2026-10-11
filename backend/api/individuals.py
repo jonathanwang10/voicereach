@@ -110,7 +110,7 @@ async def save_individual(
                 )
         
         # Fetch categories for validation
-        categories_response = supabase.table("categories").select("*").execute()
+        categories_response = supabase.table("categories").select("*").order("created_at").execute()
         categories = categories_response.data
         
         # Validate the categorized data
