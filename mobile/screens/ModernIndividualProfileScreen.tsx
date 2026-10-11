@@ -19,6 +19,7 @@ import { api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
 import { getUrgencyScoreColor, getDisplayUrgencyScore, daysSince } from '../utils/urgencyScore';
 import { scheduleDelete, DELETE_UNDO_MS } from '../utils/delayedDelete';
+import { formatFieldValue } from '../utils/fieldValues';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -172,6 +173,9 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
 
   const renderField = (key: string, value: any, isRequired: boolean = false) => {
     if (key === 'name') return null;
+    // Empty values are skipped, not shown as "null" (C-09)
+    const text = formatFieldValue(value);
+    if (text === null) return null;
 
     const label = key.split('_').map(word =>
       word.charAt(0).toUpperCase() + word.slice(1)
@@ -181,7 +185,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
       <View key={key} style={styles.fieldItem}>
         <Text style={styles.fieldLabel}>{label}{isRequired && ' *'}</Text>
         <Text style={styles.fieldValue}>
-          {Array.isArray(value) ? value.join(', ') : String(value)}
+          {text}
         </Text>
       </View>
     );

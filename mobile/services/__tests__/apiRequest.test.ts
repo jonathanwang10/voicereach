@@ -48,13 +48,25 @@ describe('apiRequest errors', () => {
     expect(Toast.show).not.toHaveBeenCalled();
   });
 
-  it('joins the msg fields of a FastAPI 422 list', async () => {
+  it('joins a FastAPI 422 list, naming each field by its last loc element', async () => {
     (global as any).fetch = jest.fn(async () => jsonResponse(422, {
       detail: [{ loc: ['body', 'height'], msg: 'Field required', type: 'missing' },
                { loc: ['body', 'weight'], msg: 'Field required', type: 'missing' }],
     }));
     await expect(apiRequest('/x', { method: 'POST', body: '{}' }))
-      .rejects.toMatchObject({ status: 422, detail: 'Field required; Field required' });
+      .rejects.toMatchObject({ status: 422, detail: 'height: Field required; weight: Field required' });
+  });
+
+  it('skips list indexes and a bare "body" when naming a 422 field', async () => {
+    (global as any).fetch = jest.fn(async () => jsonResponse(422, {
+      detail: [{ loc: ['body', 'location', 'latitude'], msg: 'Input should be a valid number', type: 'x' },
+               { loc: ['body', 'tags', 0], msg: 'Input should be a valid string', type: 'x' },
+               { loc: ['body'], msg: 'Invalid JSON', type: 'x' },
+               { msg: 'No loc at all', type: 'x' }],
+    }));
+    await expect(apiRequest('/x', { method: 'POST', body: '{}' })).rejects.toMatchObject({
+      detail: 'latitude: Input should be a valid number; tags: Input should be a valid string; Invalid JSON; No loc at all',
+    });
   });
 
   it('uses a generic message when the body is not JSON', async () => {

@@ -153,3 +153,31 @@ describe('urgency override (C-10)', () => {
     expect((Toast.show as jest.Mock).mock.calls[0][0]).toMatchObject({ text2: 'Input should be less than or equal to 100' });
   });
 });
+
+// C-09: empty values are not rendered as "null", arrays are joined and a location
+// object shows its address instead of [object Object].
+describe('field rendering (C-09)', () => {
+  it('skips empty values, joins lists and shows a location address', async () => {
+    (api.getIndividualProfile as jest.Mock).mockResolvedValue({
+      ...profile,
+      data: {
+        height: 60,
+        behavior: null,
+        veteran_status: '',
+        medical_conditions: ['Diabetes', 'Mental Health'],
+        usual_spot: { latitude: 37.78, longitude: -122.41, address: '5th & Market' },
+        weight: 0,
+      },
+    });
+    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    await waitFor(() => screen.getByText('Ann Lee'));
+    expect(screen.queryByText('null')).toBeNull();
+    expect(screen.queryByText('Behavior')).toBeNull();
+    expect(screen.queryByText('Veteran Status')).toBeNull();
+    expect(screen.queryByText('[object Object]')).toBeNull();
+    expect(screen.getByText('Diabetes, Mental Health')).toBeTruthy();
+    expect(screen.getByText('5th & Market')).toBeTruthy();
+    // 0 is a value, not empty: the Weight row is shown
+    expect(screen.getByText('Weight *')).toBeTruthy();
+  });
+});

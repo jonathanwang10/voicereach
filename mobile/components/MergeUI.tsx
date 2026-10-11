@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { api } from '../services/api';
+import { formatFieldValue, isEmptyValue } from '../utils/fieldValues';
 
 interface PotentialMatch {
   id: string;
@@ -12,7 +13,8 @@ interface MergeUIProps {
   newData: Record<string, any>;
   potentialMatch: PotentialMatch;
   existingData?: Record<string, any>; // Will be fetched from backend
-  onMerge: (mergedData: Record<string, any>) => void;
+  // Field data only; the merge target id is passed separately (never mixed into the data)
+  onMerge: (mergedData: Record<string, any>, mergeWithId: string) => void;
   onCreateNew: (data: Record<string, any>) => void;
   onCancel: () => void;
 }
@@ -95,9 +97,9 @@ export const MergeUI: React.FC<MergeUIProps> = ({
 
       allFields.forEach(field => {
         // Prefer new data if it exists, otherwise use existing
-        if (newData[field] !== undefined && newData[field] !== null && newData[field] !== '') {
+        if (!isEmptyValue(newData[field])) {
           selection[field] = 'new';
-        } else if (fetchedExistingData[field] !== undefined && fetchedExistingData[field] !== null && fetchedExistingData[field] !== '') {
+        } else if (!isEmptyValue(fetchedExistingData[field])) {
           selection[field] = 'existing';
         } else {
           selection[field] = 'new'; // Default to new
@@ -156,11 +158,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
       return;
     }
 
-    // Add the existing individual's ID for merging (using backend's expected field name)
-    mergedData.merge_with_id = potentialMatch.id;
-    
-    console.log('🔄 Merging data:', mergedData);
-    onMerge(mergedData);
+    onMerge(mergedData, potentialMatch.id);
   };
 
   const handleCreateNew = () => {
@@ -169,13 +167,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
 
   const getFieldValue = (fieldName: string, source: 'new' | 'existing') => {
     const data = source === 'new' ? newData : fetchedExistingData;
-    const value = data[fieldName];
-    
-    if (value === undefined || value === null || value === '') {
-      return '—';
-    }
-    
-    return String(value);
+    return formatFieldValue(data[fieldName]) ?? '—';
   };
 
   const getConfidenceColor = (confidence: number) => {
@@ -188,8 +180,8 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     const newValue = getFieldValue(fieldName, 'new');
     const existingValue = getFieldValue(fieldName, 'existing');
     const selectedSource = selectedFields[fieldName];
-    const hasNewData = newData[fieldName] !== undefined && newData[fieldName] !== null && newData[fieldName] !== '';
-    const hasExistingData = fetchedExistingData[fieldName] !== undefined && fetchedExistingData[fieldName] !== null && fetchedExistingData[fieldName] !== '';
+    const hasNewData = !isEmptyValue(newData[fieldName]);
+    const hasExistingData = !isEmptyValue(fetchedExistingData[fieldName]);
 
     return (
       <View key={fieldName} style={styles.fieldRow}>

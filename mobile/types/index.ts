@@ -14,6 +14,13 @@ export interface Individual {
   };
 }
 
+// A GPS fix with its geocoded address (backend `LocationData`; address is required)
+export interface LocationData {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
 // One per-field problem from the backend normaliser (POST /api/transcribe `validation_errors`)
 export interface FieldError {
   field: string;

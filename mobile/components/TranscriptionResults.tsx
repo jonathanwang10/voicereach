@@ -1,8 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { TranscriptionResult, api } from '../services/api';
-import { parseHeightToInches } from '../utils/height';
+import { errorMessage, showApiError } from '../utils/errorHandler';
+import {
+  coerceFieldData,
+  coerceFieldValue,
+  formatFieldValue,
+  isEmptyValue,
+  toggleMultiSelect,
+  validateFieldValue,
+} from '../utils/fieldValues';
 import { MergeUI } from './MergeUI';
 
 interface Category {
@@ -43,6 +51,13 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Per-field problems: the backend's validation_errors from /api/transcribe, then the
+  // client-side checks on Save (C-16). Editing a field clears its message.
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(() =>
+    Object.fromEntries((result.validation_errors ?? []).map(e => [e.field, e.message]))
+  );
+  // The backend's reason when the save is rejected, shown in the form (C-16)
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Fetch categories from API on component mount
   useEffect(() => {
@@ -101,29 +116,37 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       ...prev,
       [fieldName]: value,
     }));
+    if (fieldErrors[fieldName]) {
+      setFieldErrors(prev => {
+        const { [fieldName]: _cleared, ...rest } = prev;
+        return rest;
+      });
+    }
   };
 
   const [isSaving, setIsSaving] = useState(false);
 
-  const toSavePayload = (fields: Record<string, any>) => {
-    const payload: Record<string, any> = { ...fields, transcription: result.transcription };
-    if (location) payload.location = location;
-    const heightKey = Object.keys(payload).find(k => k.trim().toLowerCase() === 'height');
-    if (heightKey && payload[heightKey] !== '' && payload[heightKey] != null) {
-      const inches = parseHeightToInches(payload[heightKey]);
-      if (inches !== null) payload[heightKey] = inches;
-    }
-    return payload;
-  };
+  // Real types (numbers, height in inches, matched labels, multi-select arrays) with
+  // empty fields dropped, so nothing is saved or shown as "null" (C-09, C-14)
+  const toFields = (fields: Record<string, any>) => coerceFieldData(fields, categories);
+  // Stable across renders so MergeUI's initial selection is computed from one object
+  const mergeNewData = useMemo(() => toFields(categorizedData), [categorizedData, categories]);
+
+  const save = (fields: Record<string, any>, mergeWithId?: string) =>
+    api.saveIndividual({
+      data: toFields(fields),
+      merge_with_id: mergeWithId ?? null,
+      location: location ?? null,
+      transcription: result.transcription,
+    });
 
   const handleSave = async () => {
     if (isSaving) return;
+    setSaveError(null);
     
     // Validate required fields using categories
     const requiredFields = categories.filter(cat => cat.is_required).map(cat => cat.name);
-    const missingFields = requiredFields.filter(field => 
-      !categorizedData[field] || categorizedData[field] === ''
-    );
+    const missingFields = requiredFields.filter(field => isEmptyValue(categorizedData[field]));
 
     if (missingFields.length > 0) {
       Alert.alert(
@@ -131,6 +154,18 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         `Please fill in: ${missingFields.join(', ')}`,
         [{ text: 'OK' }]
       );
+      return;
+    }
+
+    // Same per-field checks as manual entry, shown next to each field (C-15, C-16)
+    const invalid: Record<string, string> = {};
+    categories.forEach(category => {
+      const message = validateFieldValue(category, categorizedData[category.name]);
+      if (message) invalid[category.name] = message;
+    });
+    if (Object.keys(invalid).length > 0) {
+      setFieldErrors(invalid);
+      Alert.alert('Validation Error', 'Please fix the errors before saving.');
       return;
     }
 
@@ -161,25 +196,23 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
       // No meaningful match (< 60% or no matches), save as new
       console.log('🎤 Voice Transcription - No matches found, saving as new individual');
-      const saveData = toSavePayload(categorizedData);
-      await api.saveIndividual(saveData);
+      await save(categorizedData);
       Toast.show({
         type: 'success',
         text1: 'Success',
         text2: 'Data saved successfully!'
       });
-      onSave(saveData);
+      onSave(toFields(categorizedData));
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'An error occurred');
+      setSaveError(errorMessage(error));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleMerge = async (mergedData: Record<string, any>) => {
+  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string) => {
     try {
-      const saveData = toSavePayload(mergedData);
-      await api.saveIndividual(saveData);
+      await save(mergedData, mergeWithId);
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -189,18 +222,13 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       setSelectedMatch(null);
       onSave(mergedData);
     } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error.message || 'An error occurred'
-      });
+      showApiError(error, 'Save failed');
     }
   };
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      const saveData = toSavePayload(data);
-      await api.saveIndividual(saveData);
+      await save(data);
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -210,11 +238,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       setSelectedMatch(null);
       onSave(data);
     } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error.message || 'An error occurred'
-      });
+      showApiError(error, 'Save failed');
     }
   };
 
@@ -228,7 +252,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   };
 
   const isFieldMissing = (fieldName: string) => {
-    return isFieldRequired(fieldName) && (!categorizedData[fieldName] || categorizedData[fieldName] === '');
+    return isFieldRequired(fieldName) && isEmptyValue(categorizedData[fieldName]);
   };
 
   const renderField = (fieldName: string, value: any) => {
@@ -242,7 +266,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
           </Text>
           <TextInput
             style={styles.fieldInput}
-            value={String(value || '')}
+            value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
             onChangeText={(text) => handleFieldChange(fieldName, text)}
             placeholder={
               fieldName.toLowerCase().includes('additional information')
@@ -257,13 +281,14 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     
     const isRequired = isFieldRequired(fieldName);
     const isMissing = isFieldMissing(fieldName);
+    const fieldError = isMissing ? null : fieldErrors[fieldName];
 
     return (
       <View key={fieldName} style={styles.fieldContainer}>
         <Text style={[
           styles.fieldLabel,
           isRequired && styles.requiredLabel,
-          isMissing && styles.missingLabel
+          (isMissing || !!fieldError) && styles.missingLabel
         ]}>
           {formatCategoryName(fieldName)}
           {isRequired && ' *'}
@@ -281,7 +306,12 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
                   <TouchableOpacity
                     key={optionLabel}
                     style={styles.presetOptionButton}
-                    onPress={() => handleFieldChange(fieldName, optionLabel)}
+                    onPress={() => handleFieldChange(
+                      fieldName,
+                      category.type === 'multi_select'
+                        ? toggleMultiSelect(coerceFieldValue(category, value), optionLabel)
+                        : optionLabel
+                    )}
                   >
                     <Text style={styles.presetOptionText}>{optionLabel}</Text>
                   </TouchableOpacity>
@@ -295,9 +325,9 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         <TextInput
           style={[
             styles.fieldInput,
-            isMissing && styles.missingInput
+            (isMissing || !!fieldError) && styles.missingInput
           ]}
-          value={String(value || '')}
+          value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
           onChangeText={(text) => handleFieldChange(fieldName, text)}
           placeholder={
             fieldName.trim().toLowerCase() === 'height' 
@@ -315,6 +345,9 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         {isMissing && (
           <Text style={styles.errorText}>This field is required</Text>
         )}
+        {!!fieldError && (
+          <Text style={styles.errorText}>{fieldError}</Text>
+        )}
       </View>
     );
   };
@@ -329,7 +362,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     
     return (
       <MergeUI
-        newData={categorizedData}
+        newData={mergeNewData}
         potentialMatch={selectedMatch}
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}
@@ -380,7 +413,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
             <View style={styles.subsection}>
               <Text style={styles.subsectionTitle}>Essential Information</Text>
               {essentialCategories
-                .map(category => renderField(category.name, categorizedData[category.name] || ''))
+                .map(category => renderField(category.name, categorizedData[category.name]))
                 .filter(Boolean)}
             </View>
           );
@@ -398,7 +431,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
             <View style={styles.subsection}>
               <Text style={styles.subsectionTitle}>Other Information</Text>
               {otherCategories
-                .map(category => renderField(category.name, categorizedData[category.name] || ''))
+                .map(category => renderField(category.name, categorizedData[category.name]))
                 .filter(Boolean)}
             </View>
           );
@@ -443,6 +476,10 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         </View>
         ) : null;
       })()}
+
+      {saveError && (
+        <Text style={[styles.errorText, styles.saveErrorText]}>{saveError}</Text>
+      )}
 
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
@@ -537,6 +574,10 @@ const styles = StyleSheet.create({
     color: '#dc3545',
     fontSize: 12,
     marginTop: 4,
+  },
+  saveErrorText: {
+    fontSize: 14,
+    paddingHorizontal: 20,
   },
   matchContainer: {
     backgroundColor: '#fff3cd',

@@ -355,6 +355,9 @@ names are stripped. Height goes through `parse_height_inches`: a bare numeric
 small number GPT returns for height (e.g. `6`) is converted from feet in
 `categorize_transcription`, where it first enters.
 Keys that match no category are kept, after the same cleaning.
+The app sends the same shapes (`mobile/utils/fieldValues.ts`): typed numbers,
+height already in inches, canonical labels and multi-select arrays, with empty
+fields left out, and its screens skip empty values rather than showing "null".
 
 **Duplicate detection — the code and the spec disagree here.** The backend
 gathers candidates by exact name, partial name and a match on the data values

@@ -2,10 +2,12 @@ import { supabase, autoLogin } from './supabase';
 import { getApiUrl } from '../config/api';
 import { showApiError } from '../utils/errorHandler';
 import { daysSince } from '../utils/urgencyScore';
-import { SearchResult, IndividualProfile, Interaction, FieldError } from '../types';
+import { stripEmpty } from '../utils/fieldValues';
+import { SearchResult, IndividualProfile, Interaction, FieldError, LocationData } from '../types';
 
 // The one error type every backend call throws (C-16). `detail` is the backend's
-// `detail` (a FastAPI 422 list is joined), or a generic message when there is none.
+// `detail` (a FastAPI 422 list is joined as "field: msg; field: msg"), or a generic
+// message when there is none.
 // Callers show it once (utils/errorHandler.showApiError); the transport never toasts.
 export class ApiError extends Error {
   status: number; // HTTP status; 0 = network failure, timeout or no session
@@ -121,14 +123,20 @@ const genericMessage = (status: number): string => {
   return `Request failed (${status}).`;
 };
 
+// FastAPI 422 item -> "height: Field required". The field is the last string in `loc`
+// (list indexes are skipped; a bare "body" means the whole request, so no prefix).
+const format422Item = (d: unknown): string => {
+  if (!d || typeof d !== 'object' || typeof (d as any).msg !== 'string') return '';
+  const loc = Array.isArray((d as any).loc) ? (d as any).loc : [];
+  const field = [...loc].reverse().find((part: unknown) => typeof part === 'string');
+  return field && field !== 'body' ? `${field}: ${(d as any).msg}` : (d as any).msg;
+};
+
 const parseDetail = (detail: unknown): string => {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
     // FastAPI 422: [{loc, msg, type}, ...]
-    return detail
-      .map(d => (d && typeof d === 'object' && typeof (d as any).msg === 'string' ? (d as any).msg : ''))
-      .filter(Boolean)
-      .join('; ');
+    return detail.map(format422Item).filter(Boolean).join('; ');
   }
   return '';
 };
@@ -186,7 +194,13 @@ export interface TranscriptionResult {
   validation_errors: FieldError[];
 }
 
-// Mock transcription function removed - app now uses real API only
+// POST /api/individuals. `data` is category fields only; the rest travel at the root.
+export interface SaveIndividualRequest {
+  data: Record<string, any>;
+  merge_with_id?: string | null;
+  location?: LocationData | null;
+  transcription?: string | null;
+}
 
 // API functions for your app
 export const api = {
@@ -211,72 +225,23 @@ export const api = {
     }, { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
   },
 
-  // Save individual (create new or update existing)
-  saveIndividual: async (data: any) => {
-    try {
-      console.log('💾 Saving individual via backend API...');
+  // Save a new person, or merge into `merge_with_id`. `data` holds category fields
+  // only; it is never destructured, so a category called "location" or "id" is just
+  // a field. Empty values are stripped so nothing is stored or shown as null (C-09).
+  // Throws ApiError (a 400's detail names the field: "weight: ..."); the caller shows it.
+  saveIndividual: async (req: SaveIndividualRequest): Promise<{ id: string; individual: any }> => {
+    const body: Record<string, any> = { data: stripEmpty(req.data) };
+    if (req.merge_with_id) body.merge_with_id = req.merge_with_id;
+    if (req.location) body.location = req.location;
+    if (req.transcription) body.transcription = req.transcription;
 
-      // Extract merge-related fields and location
-      const {
-        existing_individual_id,  // Old field name for backward compatibility
-        merge_with_id,            // New field name expected by backend
-        location,
-        transcription,
-        audio_url,
-        // These should not be in the categorized data
-        id,
-        urgency_score,
-        urgency_override,
-        data: existingData,
-        ...categorizedData
-      } = data;
-
-      // Determine the merge ID (support both field names)
-      const mergeId = merge_with_id || existing_individual_id || null;
-
-      // Build the request body according to backend expectations
-      const requestBody: any = {
-        data: categorizedData,  // All the categorized fields
-        ...(location && { location }),  // Add location if present
-        ...(transcription && { transcription }),  // Add transcription if present
-        ...(audio_url && { audio_url }),  // Add audio_url if present
-      };
-
-      // Add merge_with_id at root level if merging
-      if (mergeId) {
-        requestBody.merge_with_id = mergeId;
-      } else {
-        console.log('➕ Creating new individual');
-      }
-
-
-      // Call the backend API endpoint
-      const response = await apiRequest('/api/individuals', {
-        method: 'POST',
-        body: JSON.stringify(requestBody),
-      });
-
-
-      // Extract the individual ID from the response
-      const individualId = response.individual?.id || response.id;
-
-      if (!individualId) {
-        throw new Error('No ID returned from backend');
-      }
-
-      return {
-        id: individualId,
-        success: true,
-        message: mergeId
-          ? 'Individual data merged successfully'
-          : 'New individual saved successfully',
-        data: response.individual
-      };
-    } catch (error: any) {
-      console.error('❌ Save individual error:', error);
-      // Rethrow untouched: an ApiError already carries the backend detail (C-16)
-      throw error;
-    }
+    const response = await apiRequest('/api/individuals', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    const id = response?.individual?.id;
+    if (!id) throw new ApiError(0, 'The server did not confirm the save. Please try again.', 'http');
+    return { id, individual: response.individual };
   },
 
   // TASK 4: Search & Category Management APIs

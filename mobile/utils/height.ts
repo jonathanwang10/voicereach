@@ -1,43 +1,51 @@
+// Height parsing for the app, matching backend field_registry.parse_height_inches.
+//
+// The backend treats a NUMERIC height as inches and only a bare numeric STRING from
+// 1 to 9 as feet, so the app converts here and always sends inches as a number.
+// - a number is already inches (values from /api/transcribe are normalised);
+// - a bare numeric string: 1-9 (including decimals like "5.5") is feet, else inches;
+// - "5'10", "5′10″", "5 ft 10", "5 feet 10 inches", "5.5 feet", "5, 10";
+// - "70 in", "70 inches" (an explicit inch unit is never feet);
+// - "178 cm", "1.78 m".
+// Returns inches rounded to 0.1, or null if the text is not a height.
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+const bareHeight = (n: number) => (n >= 1 && n < 10 ? n * 12 : n);
+
+const NUM = '(\\d+(?:\\.\\d+)?)';
+const FEET_INCHES = new RegExp(`^${NUM}\\s*(?:'|ft|feet|foot)\\s*,?\\s*(?:${NUM}\\s*(?:"|in|inch|inches)?)?$`);
+const FEET_COMMA_INCHES = new RegExp(`^(\\d)\\s*,\\s*${NUM}$`);
+const INCHES = new RegExp(`^${NUM}\\s*(?:"|in|inch|inches)$`);
+const CM = new RegExp(`^${NUM}\\s*(?:cm|centimeters?|centimetres?)$`);
+const METERS = new RegExp(`^${NUM}\\s*(?:m|meters?|metres?)$`);
+
 export const parseHeightToInches = (raw: any): number | null => {
-  if (raw === undefined || raw === null) return null;
-  const value = String(raw).trim().toLowerCase();
+  if (typeof raw === 'number') return Number.isFinite(raw) ? round1(raw) : null;
+  if (typeof raw !== 'string') return null;
+  const value = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[′’‘]/g, "'")
+    .replace(/[″”“]/g, '"');
   if (value.length === 0) return null;
 
-  // Formats: 5'10, 5’10, 5′10, 5' 10", 5 ft 10 in
-  // Accept feet markers: ' (ASCII), ’ (U+2019), ′ (U+2032)
-  // Accept inch markers: " (ASCII), ” (U+201D), ″ (U+2033), or words in/inches
-  const feetInchesRegex = /^(?:\s*)(\d+)(?:\s*)(?:['’′]|ft|feet)(?:\s*)(?:(\d{1,2})(?:\s*)(?:["”″]|in|inches)?)?(?:\s*)$/;
-  const feetMatch = value.match(feetInchesRegex);
-  if (feetMatch) {
-    const feet = parseInt(feetMatch[1], 10) || 0;
-    const inches = feetMatch[2] ? parseInt(feetMatch[2], 10) : 0;
-    const total = feet * 12 + inches;
-    return Number.isFinite(total) ? total : null;
+  if (/^\d+(?:\.\d+)?$/.test(value)) return round1(bareHeight(parseFloat(value)));
+
+  const feetInches = value.match(FEET_INCHES) || value.match(FEET_COMMA_INCHES);
+  if (feetInches) {
+    const inches = feetInches[2] ? parseFloat(feetInches[2]) : 0;
+    if (inches >= 12) return null; // "5'13" is a typo, not 5 feet
+    return round1(parseFloat(feetInches[1]) * 12 + inches);
   }
 
-  // Plain inches: 70, 70in
-  const inchesRegex = /^(?:\s*)(\d{1,3})(?:\s*)(?:["”″]|in|inches)?(?:\s*)$/;
-  const inchesMatch = value.match(inchesRegex);
-  if (inchesMatch) {
-    const total = parseInt(inchesMatch[1], 10);
-    return Number.isFinite(total) ? total : null;
-  }
+  const inches = value.match(INCHES);
+  if (inches) return round1(parseFloat(inches[1]));
 
-  // Meters/centimeters: 1.78m, 178cm
-  const metersRegex = /^\s*(\d+(?:\.\d+)?)\s*m\s*$/;
-  const metersMatch = value.match(metersRegex);
-  if (metersMatch) {
-    const meters = parseFloat(metersMatch[1]);
-    const total = Math.round(meters * 39.3701);
-    return Number.isFinite(total) ? total : null;
-  }
-  const cmRegex = /^\s*(\d{2,3})\s*cm\s*$/;
-  const cmMatch = value.match(cmRegex);
-  if (cmMatch) {
-    const cm = parseInt(cmMatch[1], 10);
-    const total = Math.round(cm * 0.393701);
-    return Number.isFinite(total) ? total : null;
-  }
+  const cm = value.match(CM);
+  if (cm) return round1(parseFloat(cm[1]) / 2.54);
+
+  const meters = value.match(METERS);
+  if (meters) return round1((parseFloat(meters[1]) * 100) / 2.54);
 
   return null;
 };

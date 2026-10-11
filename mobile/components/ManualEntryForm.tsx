@@ -2,7 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { api } from '../services/api';
-import { parseHeightToInches } from '../utils/height';
+import { errorMessage, showApiError } from '../utils/errorHandler';
+import {
+  coerceFieldData,
+  coerceFieldValue,
+  formatFieldValue,
+  toggleMultiSelect,
+  validateFieldValue,
+} from '../utils/fieldValues';
+import { LocationData } from '../types';
 import { MergeUI } from './MergeUI';
 
 interface Category {
@@ -39,6 +47,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // The backend's reason when a save is rejected, shown in the form (C-16)
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -113,9 +123,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       .join(' ');
   };
 
-  // Helper to normalize category names for comparison
-  const normalizeKey = (name: string) => name.trim().toLowerCase().replace(/\s+|_/g, '');
-
   const handleFieldChange = (fieldName: string, value: string | string[]) => {
     setFormData(prev => ({
       ...prev,
@@ -131,56 +138,13 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     }
   };
 
-  const validateField = (category: Category, value: any): string => {
-    const label = prettyLabel(category.name);
-    
-    // Required check based on category config
-    if (category.is_required && (value === undefined || value === null || value === '')) {
-      console.log(`📋 Manual Entry - Field ${category.name} failed required validation`);
-      return `${label} is required`;
-    }
-
-    // Number validation (with special handling for height)
-    if (category.type === 'number' && value !== undefined && value !== null && value !== '') {
-      const key = category.name.trim().toLowerCase();
-      let numValue: number;
-      if (key === 'height') {
-        const parsed = parseHeightToInches(value);
-        if (parsed === null) {
-          return `${label} must be in inches or x'y format`;
-        }
-        numValue = parsed;
-      } else {
-        numValue = Number(value);
-      }
-      if (Number.isNaN(numValue) || numValue < 0) {
-        return `${label} must be a positive number`;
-      }
-      if ((key === 'height' || key === 'weight') && numValue > 300) {
-        return `${label} must be 300 or less`;
-      }
-      if (key === 'age' && numValue > 120) {
-        return `${label} must be 120 or less`;
-      }
-    }
-
-    // Select validation
-    if (category.type === 'select' && Array.isArray(category.options) && value) {
-      if (!category.options.includes(value)) {
-        return `Please select a valid ${label.toLowerCase()}`;
-      }
-    }
-
-    return '';
-  };
-
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     let isValid = true;
 
-    // Validate all fields
+    // Same checks as voice review (utils/fieldValues), mirroring the backend (C-15)
     categories.forEach(category => {
-      const error = validateField(category, formData[category.name]);
+      const error = validateFieldValue(category, formData[category.name]);
       if (error) {
         newErrors[category.name] = error;
         isValid = false;
@@ -191,117 +155,73 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     return isValid;
   };
 
+  const currentLocation = (): LocationData | null =>
+    selectedLocation
+      ? {
+          latitude: selectedLocation.latitude,
+          longitude: selectedLocation.longitude,
+          address: selectedLocation.address || 'Unknown Address',
+        }
+      : null;
+
   const handleSave = async () => {
     if (isSaving) return;
-    
-    console.log('📋 Manual Entry - Starting save process...');
-    
-    const validationResult = validateForm();
-    
-    if (validationResult) {
-      setIsSaving(true);
-      
-      try {
-        
-        // Name field debug confirmed working - formData.Name contains the correct value
-        
-        // Convert empty strings to null for optional fields, but keep essential fields as empty strings
-        const essentialFields = ['Name', 'Height', 'Weight', 'Age'];
-        const cleanData = Object.keys(formData).reduce((acc, key) => {
-          if (essentialFields.includes(key)) {
-            // Keep essential fields even if empty (don't convert to null)
-            acc[key] = formData[key] || '';
-          } else {
-            // Convert empty strings to null for optional fields
-            acc[key] = formData[key] === '' ? null : formData[key];
-          }
-          return acc;
-        }, {} as Record<string, any>);
-        
+    setSaveError(null);
 
-        // Convert height to inches (number) for backend validation
-        const heightKey = Object.keys(cleanData).find(k => k.trim().toLowerCase() === 'height');
-        if (heightKey && cleanData[heightKey] !== undefined && cleanData[heightKey] !== null && cleanData[heightKey] !== '') {
-          const heightInInches = parseHeightToInches(cleanData[heightKey]);
-          if (heightInInches !== null) {
-            cleanData[heightKey] = heightInInches; // Send as number, not string
-          }
-        }
-
-        // Add location data if available
-        if (selectedLocation) {
-          cleanData.location = {
-            latitude: selectedLocation.latitude,
-            longitude: selectedLocation.longitude,
-            address: selectedLocation.address || 'Unknown Address',
-          };
-        }
-
-
-        // Check for potential duplicates using sophisticated matching
-        console.log('📋 Manual Entry - Checking for duplicates...');
-        const potentialMatches = await api.checkDuplicates(cleanData);
-        
-        
-        // Filter out invalid/mock IDs from potential matches
-        const validMatches = potentialMatches.filter(match => {
-          const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id);
-          if (!isValidUUID) {
-            console.warn('⚠️ Filtering out invalid ID from potential matches:', match.id);
-          }
-          return isValidUUID;
-        });
-        
-        if (validMatches.length > 0) {
-          // Show merge UI for any match found
-          const bestMatch = validMatches.reduce((best, current) => 
-            current.confidence > best.confidence ? current : best
-          );
-          
-          setSelectedMatch(bestMatch);
-          const { location: _location, ...fieldsOnly } = cleanData;
-          setPendingData(fieldsOnly);
-          setShowMergeUI(true);
-          setIsSaving(false);
-          return;
-        }
-
-        // No meaningful match, save as new
-        console.log('📋 Manual Entry - No duplicates detected, saving individual...');
-        const saveResult = await api.saveIndividual(cleanData);
-        Toast.show({
-          type: 'success',
-          text1: 'Success',
-          text2: 'Data saved successfully!'
-        });
-        onSave(cleanData);
-        
-      } catch (error: any) {
-        Alert.alert('Error', error.message || 'An error occurred');
-      } finally {
-        setIsSaving(false);
-      }
-    } else {
+    if (!validateForm()) {
       Alert.alert('Validation Error', 'Please fix the errors before saving.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Real types (numbers, height in inches, matched labels, multi-select arrays);
+      // empty fields are not sent at all (C-09, C-14)
+      const fields = coerceFieldData(formData, categories);
+
+      // Check for potential duplicates using sophisticated matching
+      const potentialMatches = await api.checkDuplicates(fields);
+
+      // Filter out invalid/mock IDs from potential matches
+      const validMatches = potentialMatches.filter(match =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id)
+      );
+
+      if (validMatches.length > 0) {
+        // Show merge UI for any match found
+        const bestMatch = validMatches.reduce((best, current) =>
+          current.confidence > best.confidence ? current : best
+        );
+
+        setSelectedMatch(bestMatch);
+        setPendingData(fields);
+        setShowMergeUI(true);
+        setIsSaving(false);
+        return;
+      }
+
+      // No meaningful match, save as new
+      await api.saveIndividual({ data: fields, location: currentLocation() });
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Data saved successfully!'
+      });
+      onSave(fields);
+    } catch (error: any) {
+      setSaveError(errorMessage(error));
+    } finally {
+      setIsSaving(false);
     }
   };
 
-
-  const withLocation = (data: Record<string, any>) => {
-    if (data.location || !selectedLocation) return data;
-    return {
-      ...data,
-      location: {
-        latitude: selectedLocation.latitude,
-        longitude: selectedLocation.longitude,
-        address: selectedLocation.address || 'Unknown Address',
-      },
-    };
-  };
-
-  const handleMerge = async (mergedData: Record<string, any>) => {
+  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string) => {
     try {
-      await api.saveIndividual(withLocation(mergedData));
+      await api.saveIndividual({
+        data: coerceFieldData(mergedData, categories),
+        merge_with_id: mergeWithId,
+        location: currentLocation(),
+      });
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -311,17 +231,13 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       setSelectedMatch(null);
       onSave(mergedData);
     } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error.message || 'An error occurred'
-      });
+      showApiError(error, 'Save failed');
     }
   };
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      await api.saveIndividual(withLocation(data));
+      await api.saveIndividual({ data: coerceFieldData(data, categories), location: currentLocation() });
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -331,11 +247,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       setSelectedMatch(null);
       onSave(data);
     } catch (error: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error.message || 'An error occurred'
-      });
+      showApiError(error, 'Save failed');
     }
   };
 
@@ -373,7 +285,12 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
                   <TouchableOpacity
                     key={optionLabel}
                     style={styles.presetOptionButton}
-                    onPress={() => handleFieldChange(category.name, optionLabel)}
+                    onPress={() => handleFieldChange(
+                      category.name,
+                      category.type === 'multi_select'
+                        ? toggleMultiSelect(coerceFieldValue(category, value), optionLabel)
+                        : optionLabel
+                    )}
                   >
                     <Text style={styles.presetOptionText}>{optionLabel}</Text>
                   </TouchableOpacity>
@@ -389,7 +306,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
             styles.fieldInput,
             error && styles.errorInput
           ]}
-          value={String(value || '')}
+          value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
           onChangeText={(text) => handleFieldChange(category.name, text)}
           placeholder={
             category.name.trim().toLowerCase() === 'height' 
@@ -506,6 +423,10 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         })()}
       </View>
 
+      {saveError && (
+        <Text style={[styles.errorText, styles.saveErrorText]}>{saveError}</Text>
+      )}
+
       {/* Action Buttons */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
@@ -613,6 +534,10 @@ const styles = StyleSheet.create({
     color: '#dc3545',
     fontSize: 12,
     marginTop: 4,
+  },
+  saveErrorText: {
+    fontSize: 14,
+    paddingHorizontal: 20,
   },
   buttonContainer: {
     flexDirection: 'row',

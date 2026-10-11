@@ -73,14 +73,24 @@ never uses that path.
 `mobile/components/TranscriptionResults.tsx`.
 
 - The worker sees the transcript and an editable form of the extracted fields.
-  Save is blocked until every required category has a value.
+  Any `validation_errors` from `/api/transcribe` appear under their fields. Save
+  is blocked until every required category has a value and every value passes
+  the same checks as manual entry (`validateFieldValue` in
+  `mobile/utils/fieldValues.ts`, mirroring the backend normaliser).
+- Quick options set a single-select value; for a multi-select they toggle the
+  option in or out of the list.
 - If there is a match, Save opens `MergeUI`, which loads the existing profile and
   shows the fields side by side, defaulting each to the new value. The worker
-  can merge (the payload gets `merge_with_id`), create a new person anyway, or
-  cancel. There is no automatic merge at any confidence.
+  can merge (`MergeUI` hands back the chosen fields and the target id
+  separately, and the request carries `merge_with_id` at its root), create a new
+  person anyway, or cancel. There is no automatic merge at any confidence.
 - With no match, Save creates a new person.
-- Before saving, height is converted to inches (`mobile/utils/height.ts`), and
-  the transcript and recording location are attached.
+- Before saving, values are given their real types (`coerceFieldData`: numbers,
+  height in inches via `mobile/utils/height.ts` with a bare 1-9 meaning feet,
+  canonical select labels, multi-select arrays) and empty fields are dropped.
+  `api.saveIndividual({data, merge_with_id, location, transcription})` sends the
+  fields in `data` and the rest at the root. If the backend rejects the save, its
+  reason is shown in the form.
 
 Manual entry (`ManualEntryForm.tsx`) follows the same path, except duplicates
 come from `POST /api/individuals/check-duplicates`.

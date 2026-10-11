@@ -251,8 +251,9 @@ In the app, `services/api.ts` has one transport. `authedFetch` adds the bearer
 token, aborts after 30 s (transcribe 120 s, assistant transcribe 60 s), on a 401
 refreshes the session (falling back to `autoLogin`) and retries once, and retries
 a network failure once for GET only. `apiRequest` adds JSON parsing and throws a
-single `ApiError` (`status`, `detail`, `kind`) carrying the backend `detail`. It
-never toasts; the caller shows the error once (`showApiError` in
+single `ApiError` (`status`, `detail`, `kind`) carrying the backend `detail` (a
+422 list becomes "height: Field required; weight: ...", each `msg` prefixed with
+the last name in its `loc`). It never toasts; the caller shows the error once (`showApiError` in
 `utils/errorHandler.ts`, or its own inline state). Reads throw instead of
 returning `null` or `[]`, so an outage shows "Couldn't load — tap to retry" on
 Search and a retry view on a profile, and only a real 404 means "not found".
@@ -279,11 +280,20 @@ Every backend call and the assistant WebSocket handshake use this token.
 - **Recording reaches 2:00:** it stops and submits on its own.
 - **Missing required fields:** the review form blocks Save and lists them; the
   backend rejects them as well (422 from the request model).
-- **Height formats:** "70", "5'10", "5 ft 10 in", "178cm" are all converted to
-  inches before saving.
+- **Height formats:** "70", "70.5", "5'10", "5 ft 10 in", "5.5 feet", "5, 10",
+  "178cm" are all converted to inches before saving, and a bare 1-9 ("6", "5.5")
+  means feet (`mobile/utils/height.ts`, matching the backend's
+  `parse_height_inches`).
+- **Field values:** both forms send typed values (`mobile/utils/fieldValues.ts`):
+  numbers as numbers, select labels in the category's case, multi-selects as
+  arrays (a quick option toggles membership). Empty fields are not sent, and
+  screens skip empty values instead of showing "null".
 - **Several duplicate matches:** only the best one is returned and shown.
 - **Create new despite a match:** allowed from the merge UI.
-- **Failed save:** an error is shown and the form keeps its data.
+- **Failed save:** the backend's reason (for example "weight: Value 400 exceeds
+  maximum of 300") is shown in the form, which keeps its data; problems found by
+  `/api/transcribe` (`validation_errors`) or the client checks are shown under
+  their fields.
 - **No connection:** requests fail with one error message (Search shows "Couldn't
   load — tap to retry"); there is no offline mode.
 

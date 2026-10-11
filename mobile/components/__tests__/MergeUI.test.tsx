@@ -117,15 +117,16 @@ describe('MergeUI', () => {
     const mergeButton = getByText('Merge');
     fireEvent.press(mergeButton);
     
+    // The merge target travels separately; the field data holds only fields (C-09/T7)
     expect(mockOnMerge).toHaveBeenCalledWith(
-      expect.objectContaining({
-        merge_with_id: '550e8400-e29b-41d4-a716-446655440000',
+      {
         name: 'John Doe',
         age: 45,
         height: 72,
         weight: 180,
-            medical_conditions: 'Diabetes',
-      })
+        medical_conditions: 'Diabetes',
+      },
+      '550e8400-e29b-41d4-a716-446655440000'
     );
   });
 
@@ -144,4 +145,20 @@ describe('MergeUI', () => {
     const confidenceText = getByText('90%');
     expect(confidenceText).toBeTruthy();
   });
-}); 
+
+  it('shows lists joined and empty values as a dash, never "null"', () => {
+    const { getByText, queryByText, getAllByText } = render(
+      <MergeUI
+        newData={{ name: 'John Doe', medical_conditions: ['Diabetes', 'Mental Health'], notes: null }}
+        potentialMatch={mockPotentialMatch}
+        existingData={{ name: 'John Smith', medical_conditions: ['Diabetes'], notes: '' }}
+        onMerge={mockOnMerge}
+        onCreateNew={mockOnCreateNew}
+        onCancel={mockOnCancel}
+      />
+    );
+    expect(getByText('Diabetes, Mental Health')).toBeTruthy();
+    expect(queryByText('null')).toBeNull();
+    expect(getAllByText('—').length).toBeGreaterThan(0);
+  });
+});

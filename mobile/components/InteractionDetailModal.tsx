@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Interaction } from '../types';
+import { formatFieldValue } from '../utils/fieldValues';
 
 interface InteractionDetailModalProps {
   visible: boolean;
@@ -22,6 +23,11 @@ export default function InteractionDetailModal({
   onClose,
 }: InteractionDetailModalProps) {
   if (!interaction) return null;
+
+  // Empty values are skipped, lists joined, a location shows its address (C-09)
+  const changedFields = Object.entries(interaction.data ?? {})
+    .map(([key, value]) => [key, formatFieldValue(value)] as const)
+    .filter((entry): entry is readonly [string, string] => entry[1] !== null);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -95,22 +101,17 @@ export default function InteractionDetailModal({
             )}
 
             {/* Additional Data */}
-            {Object.keys(interaction.data ?? {}).length > 0 && (
+            {changedFields.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Additional Data</Text>
-                {Object.entries(interaction.data ?? {}).map(([key, value]) => (
+                {changedFields.map(([key, text]) => (
                   <View key={key} style={styles.infoRow}>
                     <Text style={styles.label}>
                       {key.split('_').map(word => 
                         word.charAt(0).toUpperCase() + word.slice(1)
                       ).join(' ')}:
                     </Text>
-                    <Text style={styles.value}>
-                      {typeof value === 'boolean' 
-                        ? (value ? 'Yes' : 'No')
-                        : String(value)
-                      }
-                    </Text>
+                    <Text style={styles.value}>{text}</Text>
                   </View>
                 ))}
               </View>
