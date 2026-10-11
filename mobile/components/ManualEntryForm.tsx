@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
-import { api } from '../services/api';
+import { api, DuplicateMatch } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
+import { bestMergeableMatch, confirmSaveAsNew } from '../utils/duplicateMatches';
 import {
   coerceFieldData,
   coerceFieldValue,
@@ -54,11 +55,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [showMergeUI, setShowMergeUI] = useState(false);
   const [pendingData, setPendingData] = useState<Record<string, any>>({});
-  const [selectedMatch, setSelectedMatch] = useState<{
-    id: string;
-    confidence: number;
-    name: string;
-  } | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
 
   // Fetch categories from API on component mount
   useEffect(() => {
@@ -97,12 +94,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       
       setCategories(sortedCategories);
       
-      // Initialize form data with empty values for all categories
-      const initialData: Record<string, any> = {};
-      sortedCategories?.forEach((cat: Category) => {
-        initialData[cat.name] = '';
-      });
-      setFormData(initialData);
+      setFormData(emptyForm(sortedCategories));
       
     } catch (error) {
       console.error('Failed to fetch categories:', error);
@@ -114,6 +106,21 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
 
   // Parse height strings like 5'10, 5 ft 10 in, 70, 70in, 1.78m (optional) into inches
   // height utils moved to ../utils/height
+
+  // One empty value per category field
+  const emptyForm = (cats: Category[]): Record<string, any> =>
+    Object.fromEntries(cats.map(cat => [cat.name, '']));
+
+  // After a successful save the form starts over, so the same person can't be
+  // saved twice by tapping Save again (C-13)
+  const resetForm = () => {
+    setFormData(emptyForm(categories));
+    setErrors({});
+    setSaveError(null);
+    setPendingData({});
+    setShowMergeUI(false);
+    setSelectedMatch(null);
+  };
 
   // Helper to format a category name for display
   const prettyLabel = (name: string) => {
@@ -129,6 +136,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       [fieldName]: value,
     }));
 
+    // Any edit makes the last save rejection stale
+    setSaveError(null);
     // Clear error when user starts typing
     if (errors[fieldName]) {
       setErrors(prev => ({
@@ -179,24 +188,21 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       // empty fields are not sent at all (C-09, C-14)
       const fields = coerceFieldData(formData, categories);
 
-      // Check for potential duplicates using sophisticated matching
-      const potentialMatches = await api.checkDuplicates(fields);
+      // Check for potential duplicates. If the check fails, ask before saving as
+      // new: a failure must never read as "no match" (C-08).
+      let potentialMatches: DuplicateMatch[] = [];
+      try {
+        potentialMatches = await api.checkDuplicates(fields);
+      } catch {
+        if (!(await confirmSaveAsNew())) return;
+      }
 
-      // Filter out invalid/mock IDs from potential matches
-      const validMatches = potentialMatches.filter(match =>
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id)
-      );
-
-      if (validMatches.length > 0) {
-        // Show merge UI for any match found
-        const bestMatch = validMatches.reduce((best, current) =>
-          current.confidence > best.confidence ? current : best
-        );
-
+      // A real, live person (not one whose delete is pending) opens the merge UI
+      const bestMatch = bestMergeableMatch(potentialMatches);
+      if (bestMatch) {
         setSelectedMatch(bestMatch);
         setPendingData(fields);
         setShowMergeUI(true);
-        setIsSaving(false);
         return;
       }
 
@@ -207,6 +213,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         text1: 'Success',
         text2: 'Data saved successfully!'
       });
+      resetForm();
       onSave(fields);
     } catch (error: any) {
       setSaveError(errorMessage(error));
@@ -227,8 +234,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         text1: 'Success',
         text2: 'Data merged successfully!'
       });
-      setShowMergeUI(false);
-      setSelectedMatch(null);
+      resetForm();
       onSave(mergedData);
     } catch (error: any) {
       showApiError(error, 'Save failed');
@@ -243,8 +249,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         text1: 'Success',
         text2: 'New individual created successfully!'
       });
-      setShowMergeUI(false);
-      setSelectedMatch(null);
+      resetForm();
       onSave(data);
     } catch (error: any) {
       showApiError(error, 'Save failed');

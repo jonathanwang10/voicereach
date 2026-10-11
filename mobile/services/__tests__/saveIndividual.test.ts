@@ -63,6 +63,14 @@ describe('api.saveIndividual', () => {
     expect(Object.keys(body).sort()).toEqual(['data']);
   });
 
+  it('a 2xx reply without an id is a bad-gateway http error, not a network one', async () => {
+    (global as any).fetch = jest.fn(async () => okResponse({ individual: {} }));
+    const err = await api.saveIndividual({ data: { name: 'Ann' } }).catch(e => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(502);
+    expect(err.kind).toBe('http');
+  });
+
   it('omits merge_with_id, location and transcription when they are null', async () => {
     const fetchMock = jest.fn(async () => okResponse({ individual: { id: 'x' } }));
     (global as any).fetch = fetchMock;

@@ -1,7 +1,9 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
+jest.mock('../../utils/delayedDelete', () => ({ isPendingDelete: jest.fn(() => false) }));
 jest.mock('../../services/api', () => ({
   api: {
     getCategories: jest.fn(async () => [
@@ -16,11 +18,29 @@ jest.mock('../../services/api', () => ({
         options: [{ label: 'None', value: 0 }, { label: 'Physical', value: 1 }] },
     ]),
     saveIndividual: jest.fn(async () => ({ id: 'x', individual: { id: 'x' } })),
+    checkDuplicates: jest.fn(async () => []),
+    getIndividualProfile: jest.fn(async () => ({ data: { Name: 'Anne Lee' } })),
   },
 }));
 
+import Toast from 'react-native-toast-message';
 import { TranscriptionResults } from '../TranscriptionResults';
 import { api } from '../../services/api';
+import { isPendingDelete } from '../../utils/delayedDelete';
+
+const MATCH_ID = '550e8400-e29b-41d4-a716-446655440000';
+const outage = Object.assign(new Error('Server error. Please try again.'),
+  { status: 500, detail: 'Server error. Please try again.', kind: 'http' });
+
+// Captures Alert.alert calls; `press(label)` taps that button of the last alert
+const spyAlert = () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const press = (label: string) => {
+    const buttons = (alert.mock.calls[alert.mock.calls.length - 1][2] ?? []) as any[];
+    buttons.find(b => b.text === label)?.onPress?.();
+  };
+  return { alert, press };
+};
 
 const baseResult = (overrides: any = {}): any => ({
   transcription: 'hello there',
@@ -31,7 +51,11 @@ const baseResult = (overrides: any = {}): any => ({
   ...overrides,
 });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.restoreAllMocks();
+  (isPendingDelete as jest.Mock).mockImplementation(() => false);
+});
 
 it('saves a person with no duplicate match as new, using the explicit request shape', async () => {
   const onSave = jest.fn();
@@ -134,4 +158,139 @@ it('shows the save error detail in the form (C-16)', async () => {
   fireEvent.press(getByText('Save'));
   await findByText('weight: Value 400 exceeds maximum of 300');
   expect(onSave).not.toHaveBeenCalled();
+});
+
+// --- C-05: what the worker corrected is what gets checked -----------------------------
+
+it('re-checks duplicates when the worker corrects the name, and offers the match it finds', async () => {
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([{ id: MATCH_ID, name: 'Anne Lee', confidence: 90 }]);
+  const { getByText, getByDisplayValue, findByText } = render(
+    <TranscriptionResults result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.changeText(getByDisplayValue('Ann'), 'Anne Lee');
+  fireEvent.press(getByText('Save'));
+
+  await findByText('Potential Duplicate Found');
+  expect(api.checkDuplicates).toHaveBeenCalledWith({ Name: 'Anne Lee', Height: 70, Weight: 150 });
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+it('does not re-check unedited data: the transcribe result already holds the check', async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.checkDuplicates).not.toHaveBeenCalled();
+});
+
+it('re-checks unedited data when the server says its duplicate check failed', async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult({ duplicate_check_failed: true })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
+});
+
+// --- C-08: a failed check asks; it never silently saves as new -------------------------
+
+it('asks before saving as new when the duplicate check fails, and saves on "Save as new"', async () => {
+  const { alert, press } = spyAlert();
+  (api.checkDuplicates as jest.Mock).mockRejectedValueOnce(outage);
+  const onSave = jest.fn();
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult({ duplicate_check_failed: true })} onSave={onSave} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+
+  await waitFor(() => expect(alert).toHaveBeenCalledWith(
+    'Duplicate check unavailable', 'Save as new anyway?', expect.any(Array), expect.anything()));
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+  press('Save as new');
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  expect(api.saveIndividual).toHaveBeenCalledTimes(1);
+});
+
+it('does not save when the worker cancels after a failed duplicate check', async () => {
+  const { alert, press } = spyAlert();
+  (api.checkDuplicates as jest.Mock).mockRejectedValueOnce(outage);
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult({ duplicate_check_failed: true })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(alert).toHaveBeenCalled());
+  press('Cancel');
+  await waitFor(() => expect(getByText('Save')).toBeTruthy());
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+// --- carried from Task 4: never merge into someone whose delete is pending --------------
+
+it('does not offer a match whose delayed delete is pending', async () => {
+  (isPendingDelete as jest.Mock).mockImplementation((id: string) => id === MATCH_ID);
+  const { getByText, queryByText } = render(
+    <TranscriptionResults
+      result={baseResult({ potential_matches: [{ id: MATCH_ID, name: 'Ann', confidence: 97 }] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(queryByText('Potential Duplicate Found')).toBeNull();
+  expect((api.saveIndividual as jest.Mock).mock.calls[0][0].merge_with_id ?? null).toBeNull();
+});
+
+// --- C-13: one success toast ----------------------------------------------------------
+
+it('shows exactly one success toast for a save', async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(Toast.show).toHaveBeenCalledTimes(1);
+});
+
+// --- carried from Task 7: field and save errors ----------------------------------------
+
+it('keeps the backend messages on untouched fields when Save adds client ones', async () => {
+  spyAlert();
+  const backendMsg = "Invalid option 'robot'. Must be one of: Male, Female";
+  const { getByText, getByDisplayValue, findByText } = render(
+    <TranscriptionResults
+      result={baseResult({
+        categorized_data: { Name: 'Ann', Height: 70, Weight: 150, gender: 'robot' },
+        validation_errors: [{ field: 'gender', message: backendMsg }],
+      })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.changeText(getByDisplayValue('150'), 'heavy');
+  fireEvent.press(getByText('Save'));
+  await findByText('Weight must be a number');
+  expect(getByText(backendMsg)).toBeTruthy();
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+it('clears the save error as soon as the worker edits a field', async () => {
+  (api.saveIndividual as jest.Mock).mockRejectedValueOnce(
+    Object.assign(new Error('weight: Value 400 exceeds maximum of 300'),
+      { status: 400, detail: 'weight: Value 400 exceeds maximum of 300', kind: 'http' }));
+  const { getByText, getByDisplayValue, findByText, queryByText } = render(
+    <TranscriptionResults result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await findByText('weight: Value 400 exceeds maximum of 300');
+  fireEvent.changeText(getByDisplayValue('Ann'), 'Ann B');
+  expect(queryByText('weight: Value 400 exceeds maximum of 300')).toBeNull();
 });

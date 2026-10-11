@@ -233,8 +233,9 @@ export const ModernRecordScreen: React.FC = () => {
           {/* Content based on active tab */}
           {activeTab === 'record' ? (
             <>
-              {/* Recording Section */}
-              {!transcriptionResult && (
+              {/* Recording Section. Hidden while a recording is being uploaded or
+                  transcribed, so a second one can't race the first (C-13). */}
+              {!transcriptionResult && !isUploading && !isTranscribing && (
                 <Card style={styles.recorderCard} padding="large">
                   <ModernAudioRecorder
                     ref={audioRecorderRef}
@@ -271,16 +272,8 @@ export const ModernRecordScreen: React.FC = () => {
                 <View>
                   <TranscriptionResults
                     result={transcriptionResult}
-                    onSave={(data) => {
-                      console.log('Transcription saved:', data);
-                      Toast.show({
-                        type: 'success',
-                        text1: 'Success',
-                        text2: 'Individual information has been saved',
-                        position: 'top',
-                      });
-                      resetRecording();
-                    }}
+                    // The form shows the one success toast (saved / merged / created)
+                    onSave={resetRecording}
                     onCancel={resetRecording}
                     location={selectedLocation?.location}
                   />
@@ -317,14 +310,8 @@ export const ModernRecordScreen: React.FC = () => {
             /* Manual Entry Tab */
             <Card style={styles.manualCard} padding="large">
               <ManualEntryForm
-                onSave={() => {
-                  Toast.show({
-                    type: 'success',
-                    text1: 'Entry Saved',
-                    text2: 'Individual information has been recorded',
-                    position: 'top',
-                  });
-                }}
+                // The form shows the one success toast and clears itself
+                onSave={() => {}}
                 onCancel={() => setActiveTab('record')}
                 selectedLocation={selectedLocation?.location ?? null}
               />

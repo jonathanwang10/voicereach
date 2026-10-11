@@ -1,6 +1,10 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+
+jest.mock('../../services/api', () => ({ api: { getIndividualProfile: jest.fn() } }));
+
 import { MergeUI } from '../MergeUI';
+import { api } from '../../services/api';
 
 describe('MergeUI', () => {
   const mockNewData = {
@@ -160,5 +164,68 @@ describe('MergeUI', () => {
     expect(getByText('Diabetes, Mental Health')).toBeTruthy();
     expect(queryByText('null')).toBeNull();
     expect(getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  // C-13: a double tap must not create two people or log two interactions
+  it('a double tap on Create New calls onCreateNew once while it is in flight', async () => {
+    let finish: () => void = () => {};
+    const onCreateNew = jest.fn(() => new Promise<void>(r => { finish = r; }));
+    const { getByText } = render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch} existingData={mockExistingData}
+        onMerge={mockOnMerge} onCreateNew={onCreateNew} onCancel={mockOnCancel} />
+    );
+    fireEvent.press(getByText('Create New'));
+    fireEvent.press(getByText('Create New'));
+    fireEvent.press(getByText('Merge'));
+    expect(onCreateNew).toHaveBeenCalledTimes(1);
+    expect(mockOnMerge).not.toHaveBeenCalled();
+    await act(async () => finish());
+  });
+
+  it('a double tap on Merge calls onMerge once, and the buttons work again after it settles', async () => {
+    let finish: () => void = () => {};
+    const onMerge = jest.fn(() => new Promise<void>(r => { finish = r; }));
+    const { getByText } = render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch} existingData={mockExistingData}
+        onMerge={onMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+    );
+    fireEvent.press(getByText('Merge'));
+    fireEvent.press(getByText('Merge'));
+    expect(onMerge).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    // e.g. the save failed and the parent showed the error: the worker can retry
+    fireEvent.press(getByText('Merge'));
+    expect(onMerge).toHaveBeenCalledTimes(2);
+  });
+
+  // C-19: when the matched person can't be loaded, the recording can still be saved
+  it('offers Create New when the matched person cannot be loaded', async () => {
+    (api.getIndividualProfile as jest.Mock).mockRejectedValueOnce(new Error('404'));
+    const { findByText, getByText } = render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
+        onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+    );
+    await findByText('Unable to Load Data');
+    fireEvent.press(getByText('Create New'));
+    expect(mockOnCreateNew).toHaveBeenCalledWith(mockNewData);
+  });
+
+  // C-64: the selection is built from the loaded person, so existing-only fields survive
+  it('waits for the matched person to load, then keeps their existing-only fields on Merge', async () => {
+    let load: (profile: any) => void = () => {};
+    (api.getIndividualProfile as jest.Mock).mockReturnValueOnce(new Promise(r => { load = r; }));
+    const { findByText, queryByText, getByText } = render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
+        onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+    );
+    expect(queryByText('Merge')).toBeNull();
+    expect(getByText('Loading individual data for comparison...')).toBeTruthy();
+    await act(async () => load({ data: { name: 'John Smith', medical_conditions: ['Diabetes'] } }));
+    fireEvent.press(await findByText('Merge'));
+    expect(api.getIndividualProfile).toHaveBeenCalledWith(mockPotentialMatch.id);
+    expect(mockOnMerge).toHaveBeenCalledWith(
+      { ...mockNewData, medical_conditions: ['Diabetes'] },
+      mockPotentialMatch.id
+    );
   });
 });

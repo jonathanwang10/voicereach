@@ -27,6 +27,10 @@ class TranscribeResponse(BaseModel):
     missing_required: List[str]
     potential_matches: List[Dict[str, Any]]
     validation_errors: List[Dict[str, str]] = []
+    # True when the duplicate check itself failed (e.g. the database was unreachable),
+    # so an empty potential_matches means "unknown", not "no match" (C-08). The app
+    # re-checks before saving.
+    duplicate_check_failed: bool = False
 
 
 @router.post("/api/transcribe", response_model=TranscribeResponse)
@@ -118,13 +122,15 @@ async def transcribe_audio_endpoint(
 
         duplicate_service = DuplicateDetectionService(supabase, openai_service)
 
-        # Find potential duplicates
+        # Find potential duplicates. A failure doesn't fail the transcription (the
+        # worker keeps the transcript), but it is reported, never shown as "no match".
+        duplicate_check_failed = False
         try:
             potential_matches = await duplicate_service.find_duplicates(categorized_data)
         except Exception as e:
-            # Log error but don't fail the request
-            print(f"Duplicate detection error: {str(e)}")
+            print(f"Duplicate detection error: {type(e).__name__}")
             potential_matches = []
+            duplicate_check_failed = True
         
         # 6. Return complete results
         return TranscribeResponse(
@@ -132,7 +138,8 @@ async def transcribe_audio_endpoint(
             categorized_data=categorized_data,
             missing_required=missing_required,
             potential_matches=potential_matches,
-            validation_errors=validation_result.validation_errors
+            validation_errors=validation_result.validation_errors,
+            duplicate_check_failed=duplicate_check_failed,
         )
         
     except HTTPException:

@@ -13,11 +13,23 @@ interface MergeUIProps {
   newData: Record<string, any>;
   potentialMatch: PotentialMatch;
   existingData?: Record<string, any>; // Will be fetched from backend
-  // Field data only; the merge target id is passed separately (never mixed into the data)
-  onMerge: (mergedData: Record<string, any>, mergeWithId: string) => void;
-  onCreateNew: (data: Record<string, any>) => void;
+  // Field data only; the merge target id is passed separately (never mixed into the data).
+  // While a returned promise is pending, every button is disabled (C-13).
+  onMerge: (mergedData: Record<string, any>, mergeWithId: string) => void | Promise<void>;
+  onCreateNew: (data: Record<string, any>) => void | Promise<void>;
   onCancel: () => void;
 }
+
+type Source = 'new' | 'existing';
+
+// Default choice per field: the new value when there is one, else the existing one
+const defaultSelection = (newData: Record<string, any>, existing: Record<string, any>) => {
+  const selection: Record<string, Source> = {};
+  new Set([...Object.keys(newData), ...Object.keys(existing)]).forEach(field => {
+    selection[field] = isEmptyValue(newData[field]) && !isEmptyValue(existing[field]) ? 'existing' : 'new';
+  });
+  return selection;
+};
 
 export const MergeUI: React.FC<MergeUIProps> = ({
   newData,
@@ -29,140 +41,87 @@ export const MergeUI: React.FC<MergeUIProps> = ({
 }) => {
   // Validate that potentialMatch has a valid UUID
   const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialMatch.id);
-  
-  const [fetchedExistingData, setFetchedExistingData] = useState<Record<string, any>>(existingData);
-  const [isLoadingExistingData, setIsLoadingExistingData] = useState(false);
+  const hasProvidedData = Object.keys(existingData).length > 0;
+
+  // The matched person's data, tagged with the id it belongs to. Until it is loaded
+  // for the current match, the screen shows a spinner and nothing can be merged, so
+  // the field selection is always built from the loaded person (C-64).
+  const [existing, setExisting] = useState<{ forId: string | null; data: Record<string, any> }>(() =>
+    hasProvidedData ? { forId: potentialMatch.id, data: existingData } : { forId: null, data: {} });
   const [loadError, setLoadError] = useState<string | null>(null);
-  const lastFetchedIdRef = useRef<string | null>(null);
 
-  // Fetch existing individual data if not provided
   useEffect(() => {
-    const fetchExistingData = async () => {
-      // Only fetch if no existing data provided and we have a potential match ID
-      // And we haven't already fetched for this specific ID
-      if (Object.keys(existingData).length === 0 && potentialMatch.id && lastFetchedIdRef.current !== potentialMatch.id) {
-        lastFetchedIdRef.current = potentialMatch.id;
-
-        // Skip fetching if the ID looks like a mock ID (not a valid UUID)
-        const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialMatch.id);
-
-        if (!isValidUUID) {
-          console.warn('⚠️ Skipping fetch for non-UUID ID:', potentialMatch.id);
-          // Only update if not already empty to avoid infinite re-renders
-          setFetchedExistingData(prev => Object.keys(prev).length === 0 ? prev : {});
-          setIsLoadingExistingData(false);
-          return;
-        }
-
-        setIsLoadingExistingData(true);
-        setLoadError(null);
-
-        try {
-          console.log('🔍 Fetching existing individual data for merge comparison:', potentialMatch.id);
-          const profile = await api.getIndividualProfile(potentialMatch.id);
-          
-          if (profile) {
-            console.log('✅ Fetched existing individual data:', profile.data);
-            setFetchedExistingData(profile.data || {});
-          } else {
-            console.warn('⚠️ Could not fetch existing individual data');
-            setLoadError('Could not load existing individual data');
-          }
-        } catch (error) {
-          console.error('❌ Error fetching existing individual data:', error);
-          setLoadError('Failed to load existing individual data');
-        } finally {
-          setIsLoadingExistingData(false);
-        }
-      } else {
-        // Use provided existing data
-        setFetchedExistingData(existingData);
-      }
-    };
-
-    fetchExistingData();
-  }, [potentialMatch.id]); // Remove existingData from dependencies to prevent infinite loops
-
-  // Track if initial selection has been set
-  const [selectedFields, setSelectedFields] = useState<Record<string, 'new' | 'existing'>>({});
-  const isSelectionInitializedRef = useRef(false);
-
-  // Memoize the initial field selection to prevent infinite loops
-  const initialFieldSelection = useMemo(() => {
-    if (!isLoadingExistingData) {
-      const selection: Record<string, 'new' | 'existing'> = {};
-
-      // Get all fields from both new and existing data
-      const allFields = new Set([...Object.keys(newData), ...Object.keys(fetchedExistingData)]);
-
-      allFields.forEach(field => {
-        // Prefer new data if it exists, otherwise use existing
-        if (!isEmptyValue(newData[field])) {
-          selection[field] = 'new';
-        } else if (!isEmptyValue(fetchedExistingData[field])) {
-          selection[field] = 'existing';
-        } else {
-          selection[field] = 'new'; // Default to new
-        }
+    if (!isValidUUID) return;
+    if (hasProvidedData) {
+      setExisting({ forId: potentialMatch.id, data: existingData });
+      return;
+    }
+    let cancelled = false;
+    setLoadError(null);
+    api.getIndividualProfile(potentialMatch.id)
+      .then(profile => {
+        if (!cancelled) setExisting({ forId: potentialMatch.id, data: profile?.data || {} });
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('Failed to load existing individual data');
       });
+    return () => { cancelled = true; };
+  }, [potentialMatch.id]); // existingData is not a dependency: a new {} each render would loop
 
-      return selection;
-    }
-    return {};
-  }, [newData, fetchedExistingData, isLoadingExistingData]);
+  const isLoaded = existing.forId === potentialMatch.id;
+  const fetchedExistingData = isLoaded ? existing.data : {};
+  const isLoadingExistingData = isValidUUID && !isLoaded && !loadError;
 
-  // Initialize field selection only once when data is loaded
-  useEffect(() => {
-    // Only initialize once when we have data to work with
-    if (!isSelectionInitializedRef.current && Object.keys(initialFieldSelection).length > 0) {
-      setSelectedFields(initialFieldSelection);
-      isSelectionInitializedRef.current = true;
-    }
-  }, [initialFieldSelection]);
+  // The worker's choices on top of the defaults, reset when the match changes
+  const [choices, setChoices] = useState<{ forId: string; fields: Record<string, Source> }>(
+    { forId: potentialMatch.id, fields: {} });
+  const selectedFields = useMemo(() => ({
+    ...defaultSelection(newData, fetchedExistingData),
+    ...(choices.forId === potentialMatch.id ? choices.fields : {}),
+  }), [newData, fetchedExistingData, choices, potentialMatch.id]);
 
-  // Reset the initialization flag when the potential match changes
-  useEffect(() => {
-    isSelectionInitializedRef.current = false;
-  }, [potentialMatch.id]);
-
-  const handleFieldSelection = (fieldName: string, source: 'new' | 'existing') => {
-    setSelectedFields(prev => ({
-      ...prev,
-      [fieldName]: source,
+  const handleFieldSelection = (fieldName: string, source: Source) => {
+    setChoices(prev => ({
+      forId: potentialMatch.id,
+      fields: { ...(prev.forId === potentialMatch.id ? prev.fields : {}), [fieldName]: source },
     }));
+  };
+
+  // One submit at a time: a double tap must not create two people or log two
+  // interactions (C-13). The ref blocks a second tap before the re-render lands.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const submit = async (action: () => void | Promise<void>) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      await action();
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   const handleMerge = () => {
     const mergedData: Record<string, any> = {};
-    
+
     // Combine data based on user selections
     Object.keys(selectedFields).forEach(field => {
-      const source = selectedFields[field];
-      if (source === 'new') {
-        mergedData[field] = newData[field];
-      } else if (source === 'existing') {
-        mergedData[field] = fetchedExistingData[field];
-      }
+      mergedData[field] = selectedFields[field] === 'existing' ? fetchedExistingData[field] : newData[field];
     });
-
-    // Fallback: if no fields were selected, use all new data
-    if (Object.keys(mergedData).length === 0 && Object.keys(newData).length > 0) {
-      console.warn('⚠️ No fields selected, using all new data as fallback');
-      Object.assign(mergedData, newData);
-    }
 
     // Ensure we have the merge ID
     if (!potentialMatch.id) {
-      console.error('❌ Invalid merge ID:', potentialMatch.id);
       Alert.alert('Error', 'Invalid merge target. Please try again.');
       return;
     }
 
-    onMerge(mergedData, potentialMatch.id);
+    submit(() => onMerge(mergedData, potentialMatch.id));
   };
 
   const handleCreateNew = () => {
-    onCreateNew(newData);
+    submit(() => onCreateNew(newData));
   };
 
   const getFieldValue = (fieldName: string, source: 'new' | 'existing') => {
@@ -240,7 +199,6 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   );
 
   if (!isValidUUID) {
-    console.error('❌ MergeUI received invalid ID:', potentialMatch.id);
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>
@@ -272,7 +230,16 @@ export const MergeUI: React.FC<MergeUIProps> = ({
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>Unable to Load Data</Text>
           <Text style={styles.errorText}>{loadError}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={onCancel}>
+          {/* The person may have been deleted, or the network failed: the recording
+              can still be saved as a new person (C-19) */}
+          <TouchableOpacity
+            style={[styles.retryButton, styles.errorCreateNewButton, isSubmitting && styles.disabledButton]}
+            onPress={handleCreateNew}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.retryButtonText}>Create New</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.retryButton} onPress={onCancel} disabled={isSubmitting}>
             <Text style={styles.retryButtonText}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -309,15 +276,27 @@ export const MergeUI: React.FC<MergeUIProps> = ({
       </ScrollView>
 
       <View style={styles.actionButtons}>
-        <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
+        <TouchableOpacity
+          style={[styles.cancelButton, isSubmitting && styles.disabledButton]}
+          onPress={onCancel}
+          disabled={isSubmitting}
+        >
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.createNewButton} onPress={handleCreateNew}>
+        <TouchableOpacity
+          style={[styles.createNewButton, isSubmitting && styles.disabledButton]}
+          onPress={handleCreateNew}
+          disabled={isSubmitting}
+        >
           <Text style={styles.createNewButtonText}>Create New</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.mergeButton} onPress={handleMerge}>
+        <TouchableOpacity
+          style={[styles.mergeButton, isSubmitting && styles.disabledButton]}
+          onPress={handleMerge}
+          disabled={isSubmitting}
+        >
           <Text style={styles.mergeButtonText}>Merge</Text>
         </TouchableOpacity>
       </View>
@@ -513,5 +492,12 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  errorCreateNewButton: {
+    backgroundColor: '#28a745',
+    marginBottom: 12,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 }); 

@@ -76,8 +76,10 @@ async def test_find_duplicates_non_string_name_returns_empty():
     svc = DuplicateDetectionService.__new__(DuplicateDetectionService)
     assert await svc.find_duplicates({"name": 123}) == []
 
-def test_ilike_escape():
-    assert DuplicateDetectionService._escape_ilike("a_b%c*") == r"a\_b\%c\*"
+def test_name_tokens_carry_no_wildcards_or_filter_syntax():
+    # Candidate search builds its PostgREST filter from letter/digit runs only (C-22)
+    assert DuplicateDetectionService._name_tokens("a_b%c*,name.eq.x)") == ["name"]
+    assert DuplicateDetectionService._name_tokens("Ann%") == ["ann"]
 
 
 # --- display score honours an override of 0 ---

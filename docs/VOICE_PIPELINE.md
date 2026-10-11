@@ -59,14 +59,25 @@ never uses that path.
    select options). From here on the endpoint uses only the normalised data:
    `null` and empty values are dropped and labels are canonical.
 5. **Find duplicates.** `duplicate_detection_service.find_duplicates` needs a
-   name of at least two characters. It collects up to 50 candidates: exact name
-   (case-insensitive), partial name, then a text scan of the JSONB `data` of the
-   200 most recently updated people. LIKE wildcards in the name are escaped.
-   `gpt-4o` scores the first three candidates 0-100; scores below 60 are dropped
-   and only the single best match is returned. If the LLM call fails, a simple
-   name comparison stands in. A failure here never fails the request.
+   name of at least two characters. It collects up to 50 candidates, most
+   recently updated first: one ILIKE per name token of 3+ letters/digits, ORed
+   (so "John Doe" also finds a first visit saved as "John", and "Jon Smith"
+   finds "John Smith"; a name with no 3-character token uses its 2-character
+   ones), then people among the latest 200 whose data values match the name
+   (`match_individual`, e.g. an "aka" field). Tokens are letters and digits only,
+   so no wildcard or filter syntax reaches the query. Candidates are pre-ranked
+   by name tokens matched, then height (within 12 in) and weight (within 50 lb)
+   closeness, and `gpt-4o` scores the top 8 0-100 on name, height, weight, age
+   and history (not skin colour). Scores below 60 are dropped and only the
+   single best match is returned.
+   If the LLM call fails, or its reply is empty, nested or names none of the
+   candidates, a whole-word name comparison stands in (95 same name, 80 one
+   name's words all in the other, 70 a word in common). If the candidate search
+   itself fails (database error), the request still succeeds but sets
+   `duplicate_check_failed: true` with no matches.
 6. **Respond.** `{transcription, categorized_data, missing_required,
-   validation_errors, potential_matches}`. Nothing is saved yet.
+   validation_errors, potential_matches, duplicate_check_failed}`. Nothing is
+   saved yet.
 
 ## 4. Review (app)
 
@@ -84,7 +95,21 @@ never uses that path.
   can merge (`MergeUI` hands back the chosen fields and the target id
   separately, and the request carries `merge_with_id` at its root), create a new
   person anyway, or cancel. There is no automatic merge at any confidence.
-- With no match, Save creates a new person.
+- Save first decides whether the server's check still applies. If the worker
+  changed any field (a misheard name is the common case) or the server set
+  `duplicate_check_failed`, the app runs `POST /api/individuals/check-duplicates`
+  on the data it is about to save and uses that answer instead. If that check
+  fails, it asks "Duplicate check unavailable. Save as new anyway?" and saves
+  only on "Save as new".
+- A match whose delayed delete is pending (`isPendingDelete`) is never offered.
+- With no match, Save creates a new person. One success toast confirms it.
+- In `MergeUI`, Merge, Create New and Cancel are disabled while a save is in
+  flight, so a double tap can't save twice. If the matched person can't be
+  loaded (deleted, or a network error), the error state offers Create New as
+  well as Cancel. The field choices are built from the loaded person, so their
+  existing-only fields are kept on Merge.
+- While a recording is being uploaded or transcribed, the recorder is hidden,
+  so a second recording can't race the first.
 - Before saving, values are given their real types (`coerceFieldData`: numbers,
   height in inches via `mobile/utils/height.ts` with a bare 1-9 meaning feet,
   canonical select labels, multi-select arrays) and empty fields are dropped.
@@ -93,7 +118,9 @@ never uses that path.
   reason is shown in the form.
 
 Manual entry (`ManualEntryForm.tsx`) follows the same path, except duplicates
-come from `POST /api/individuals/check-duplicates`.
+always come from `POST /api/individuals/check-duplicates` (with the same
+"Save as new anyway?" question if it fails). After a successful save the form
+is cleared.
 
 ## 5. Save
 

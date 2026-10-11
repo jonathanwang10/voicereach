@@ -2,7 +2,20 @@
 
 ## Instructions for Creating Demo Audio Files
 
-These are sample recordings for testing `/api/transcribe` manually, for example by playing one near the simulator mic. The three demo scripts to record:
+These are sample recordings for testing `/api/transcribe` manually, for example by playing one near the simulator mic. The three demo scripts to record are below; each `.txt` file next to its clip holds the same script.
+
+> **The bundled `.m4a` clips are older than the scripts.** They were recorded
+> before skin colour was removed as a field, so each clip still mentions skin
+> tone ("Light skin", "medium skin tone", "dark skin"). The `.txt` scripts no
+> longer do. The app ignores it: there is no skin-colour category, so it is
+> not extracted as a field, and duplicate detection does not compare it.
+> GPT-4o may still copy the phrase into the free-text `additional_information`
+> field, so re-record the clips from the scripts below if that matters for a demo.
+
+The expected fields below use the seeded category names and option labels in
+`supabase/schema.sql`. Height is in inches. The place named in each script is
+not a field: the app records location from GPS. Anything GPT-4o can't put in a
+category usually lands in `additional_information`, worded freely.
 
 ### 1. john-market-street.m4a
 **Script:** "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication."
@@ -12,9 +25,9 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 - age: 45
 - height: 72 (6 feet = 72 inches)
 - weight: 180
-- substance_abuse_history: "Moderate"
-- medical_conditions: "Diabetes"
-- location: "Market Street"
+- substance_abuse_history: ["Moderate"]
+- medical_conditions: ["Diabetes"]
+- additional_information: something like "On the streets 3 months"
 
 ### 2. sarah-library.m4a
 **Script:** "Sarah by the library, approximately 35, 5 foot 4, 120 pounds. Says she's in recovery, looking for shelter. Has two children staying with relatives."
@@ -24,9 +37,8 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 - age: 35
 - height: 64 (5 foot 4 = 64 inches)
 - weight: 120
-- substance_abuse_history: "In Recovery"
-- housing_status: "Looking for shelter"
-- family_info: "Two children staying with relatives"
+- substance_abuse_history: ["In Recovery"]
+- additional_information: something like "Looking for shelter; two children staying with relatives"
 
 ### 3. robert-golden-gate.m4a
 **Script:** "Robert at Golden Gate Park. 55 years old, 5 foot 10, 200 pounds. Veteran, mild substance issues. Applied for housing last week."
@@ -36,10 +48,9 @@ These are sample recordings for testing `/api/transcribe` manually, for example 
 - age: 55
 - height: 70 (5 foot 10 = 70 inches)
 - weight: 200
-- substance_abuse_history: "Mild"
-- veteran_status: "Veteran"
-- housing_status: "Applied for housing last week"
-- location: "Golden Gate Park"
+- substance_abuse_history: ["Mild"]
+- veteran_status: "Yes"
+- additional_information: something like "Applied for housing last week"
 
 ## How to Create These Audio Files
 

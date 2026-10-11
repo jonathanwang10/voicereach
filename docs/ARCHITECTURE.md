@@ -154,15 +154,24 @@ it was removed on purpose and must not come back.
    `#EF4444`.
 
 ### Duplicate detection and merging
-1. Candidates: exact name, partial name, then a match on the values (never the
-   field names) of recent records, via `match_individual` in
-   `backend/services/search_matching.py`
-   (`backend/services/duplicate_detection_service.py`).
-2. GPT-4o scores the first three 0-100. Matches below 60 are dropped; only the
-   best is returned.
-3. The app opens the same field-by-field merge UI for any match. There is no
-   automatic merge at 95% or anywhere else.
-4. The app sends the merged data with `merge_with_id`; the backend replaces the
+1. Candidates: an OR of name ILIKEs, one per name token of 3+ characters, then a
+   match on the values (never the field names) of recent records, via
+   `match_individual` in `backend/services/search_matching.py`
+   (`backend/services/duplicate_detection_service.py`). They are pre-ranked by
+   tokens matched plus height/weight closeness.
+2. GPT-4o scores the top 8 0-100. Matches below 60 are dropped; only the best is
+   returned. If the LLM fails or its reply can't be read, a whole-word name
+   comparison stands in. If the candidate search fails, `check-duplicates`
+   returns 500 and `/api/transcribe` sets `duplicate_check_failed`; the app then
+   asks "Duplicate check unavailable. Save as new anyway?" instead of saving a
+   possible duplicate silently.
+3. Voice review re-checks before saving when the worker edited any field (or the
+   server's check failed); manual entry always checks. Matches whose delayed
+   delete is pending are never offered.
+4. The app opens the same field-by-field merge UI for any match. There is no
+   automatic merge at 95% or anywhere else. Its buttons are disabled while a save
+   is in flight, and if the match can't be loaded it still offers Create New.
+5. The app sends the merged data with `merge_with_id`; the backend replaces the
    person's `data` with it and logs the changed fields as an interaction.
 
 ### Audio flow

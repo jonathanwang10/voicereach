@@ -196,7 +196,7 @@ class TestTask215EndToEnd:
                         "longitude": -122.4194,
                         "address": "123 Market Street, San Francisco, CA 94103"
                     },
-                    "transcription": "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Light skin. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication.",
+                    "transcription": "Met John near Market Street. About 45 years old, 6 feet tall, maybe 180 pounds. Shows signs of moderate substance abuse, been on streets 3 months. Needs diabetes medication.",
                     "audio_url": "https://test.supabase.co/storage/v1/object/public/audio/test/john.m4a"
                 },
                 headers={"Authorization": "Bearer test-token"}

@@ -30,6 +30,10 @@ class _Query:
         self.filters.append(("ilike", col, pattern))
         return self
 
+    def or_(self, filters):
+        self.filters.append(("or", filters))
+        return self
+
     def in_(self, col, values):
         self.filters.append(("in", col, list(values)))
         return self
@@ -52,6 +56,9 @@ class _Query:
                 if f[0] == "ilike":
                     needle = f[2].strip("%").replace("\\", "").lower()
                     rows = [r for r in rows if needle in r["name"].lower()]
+                elif f[0] == "or":  # name.ilike.*tok*,name.ilike.*tok2*
+                    needles = [p.split(".ilike.", 1)[1].strip("*").lower() for p in f[1].split(",")]
+                    rows = [r for r in rows if any(n in r["name"].lower() for n in needles)]
             return MagicMock(data=list(rows))
         if self.table == "interactions":
             ids = next((f[2] for f in self.filters if f[0] == "in"), None)

@@ -1,6 +1,5 @@
 import { supabase, autoLogin } from './supabase';
 import { getApiUrl } from '../config/api';
-import { showApiError } from '../utils/errorHandler';
 import { daysSince } from '../utils/urgencyScore';
 import { stripEmpty } from '../utils/fieldValues';
 import { SearchResult, IndividualProfile, Interaction, FieldError, LocationData } from '../types';
@@ -181,17 +180,23 @@ const toSearchResult = (item: any): SearchResult => ({
   ...(item.search_type !== undefined && { search_type: item.search_type }),
 });
 
+// One possible duplicate from the backend's check (confidence 0-100; only >= 60 is returned)
+export interface DuplicateMatch {
+  id: string;
+  name: string;
+  confidence: number;
+}
+
 // Transcription response types
 export interface TranscriptionResult {
   transcription: string;
   categorized_data: Record<string, any>;
   missing_required: string[];
-  potential_matches: Array<{
-    id: string;
-    confidence: number;
-    name: string;
-  }>;
+  potential_matches: DuplicateMatch[];
   validation_errors: FieldError[];
+  // True when the server's duplicate check failed, so an empty potential_matches
+  // means "unknown", not "no match": the app re-checks before saving (C-08)
+  duplicate_check_failed?: boolean;
 }
 
 // POST /api/individuals. `data` is category fields only; the rest travel at the root.
@@ -240,7 +245,9 @@ export const api = {
       body: JSON.stringify(body),
     });
     const id = response?.individual?.id;
-    if (!id) throw new ApiError(0, 'The server did not confirm the save. Please try again.', 'http');
+    // A 2xx without the saved record is a bad reply from the server (502), not a
+    // network failure (status 0)
+    if (!id) throw new ApiError(502, 'The server did not confirm the save. Please try again.', 'http');
     return { id, individual: response.individual };
   },
 
@@ -372,24 +379,14 @@ export const api = {
     });
   },
 
-  // Check for potential duplicates using sophisticated matching
-  checkDuplicates: async (data: Record<string, any>): Promise<Array<{id: string, name: string, confidence: number, data: any}>> => {
-    try {
-      console.log('🔍 API: Making POST request to /api/individuals/check-duplicates');
-      
-      const result = await apiRequest('/api/individuals/check-duplicates', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-      
-      const matches = result.potential_matches || [];
-      return matches;
-    } catch (error) {
-      console.error('❌ API: Duplicate check error:', error);
-      // Still returns [] (Task 8 makes this throw and asks before saving as new).
-      // apiRequest no longer toasts, so say it here or the failure would be silent.
-      showApiError(error, 'Duplicate check failed');
-      return [];
-    }
+  // Check the given fields for possible duplicates (the same LLM check /api/transcribe
+  // runs). Throws ApiError when the check fails: a failure must never read as
+  // "no match" (C-08). The caller asks before saving as new; nothing toasts here.
+  checkDuplicates: async (data: Record<string, any>): Promise<DuplicateMatch[]> => {
+    const result = await apiRequest<{ potential_matches?: DuplicateMatch[] }>('/api/individuals/check-duplicates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return result?.potential_matches ?? [];
   },
 }; 

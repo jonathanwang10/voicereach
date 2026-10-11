@@ -91,12 +91,16 @@ extracts fields with `gpt-4o`, validates, and looks for duplicates. Returns:
   "categorized_data": {"name": "John", "height": 72, "weight": 180, "...": null},
   "missing_required": [],
   "validation_errors": [{"field": "weight", "message": "Value 400 exceeds maximum of 300"}],
-  "potential_matches": [{"id": "uuid", "name": "John Doe", "confidence": 87}]
+  "potential_matches": [{"id": "uuid", "name": "John Doe", "confidence": 87}],
+  "duplicate_check_failed": false
 }
 ```
 
 Nothing is saved. `potential_matches` holds at most one match, with confidence
-≥ 60.
+≥ 60. `duplicate_check_failed` is true when the duplicate search itself failed
+(e.g. a database error): the transcript is still returned, but an empty
+`potential_matches` then means "unknown", not "no match". An LLM failure is not
+a failed check: a name comparison stands in.
 
 ### Individuals (`api/individuals.py`, mounted at `/api/individuals`)
 
@@ -153,7 +157,9 @@ interactions and embeddings) and clears the assistant context cache. Returns
 
 **`POST /api/individuals/check-duplicates`** — Body: the same field dictionary as
 `data` above. Returns `{"potential_matches": [...]}` using the same detection as
-transcription. Used by manual entry.
+transcription. Used by manual entry, and by voice review when the worker edited
+the fields or the transcribe check failed. A failed check is a 500
+(`{"detail": "Duplicate check failed"}`), never an empty list.
 
 ### Categories and export (`api/categories.py`)
 

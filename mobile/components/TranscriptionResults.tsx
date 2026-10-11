@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
-import { TranscriptionResult, api } from '../services/api';
+import { TranscriptionResult, DuplicateMatch, api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
+import { bestMergeableMatch, confirmSaveAsNew, mergeableMatches } from '../utils/duplicateMatches';
 import {
   coerceFieldData,
   coerceFieldValue,
@@ -35,6 +36,13 @@ interface TranscriptionResultsProps {
   } | null;
 }
 
+// Same fields with the same values (key order ignored)
+const sameFields = (a: Record<string, any>, b: Record<string, any>): boolean => {
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length &&
+    keys.every(k => k in b && JSON.stringify(a[k]) === JSON.stringify(b[k]));
+};
+
 export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   result,
   onSave,
@@ -44,11 +52,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   const [categorizedData, setCategorizedData] = useState<Record<string, any>>(result.categorized_data);
   const [isEditing, setIsEditing] = useState(false);
   const [showMergeUI, setShowMergeUI] = useState(false);
-  const [selectedMatch, setSelectedMatch] = useState<{
-    id: string;
-    confidence: number;
-    name: string;
-  } | null>(null);
+  const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   // Per-field problems: the backend's validation_errors from /api/transcribe, then the
@@ -116,6 +120,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       ...prev,
       [fieldName]: value,
     }));
+    // Any edit makes the last save rejection stale
+    setSaveError(null);
     if (fieldErrors[fieldName]) {
       setFieldErrors(prev => {
         const { [fieldName]: _cleared, ...rest } = prev;
@@ -164,7 +170,9 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       if (message) invalid[category.name] = message;
     });
     if (Object.keys(invalid).length > 0) {
-      setFieldErrors(invalid);
+      // Add to the messages already shown: a backend message on a field the worker
+      // hasn't touched still applies (editing a field clears its own message)
+      setFieldErrors(prev => ({ ...invalid, ...prev }));
       Alert.alert('Validation Error', 'Please fix the errors before saving.');
       return;
     }
@@ -172,30 +180,29 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     setIsSaving(true);
 
     try {
-      // Filter out invalid/mock IDs from potential matches
-      const validMatches = result.potential_matches?.filter(match => {
-        const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id);
-        if (!isValidUUID) {
-          console.warn('⚠️ Filtering out invalid ID from potential matches:', match.id);
+      // The server checked the fields it extracted. If the worker changed them
+      // (a misheard name is the usual case), or the server's check failed, check
+      // what will actually be saved (C-05, C-08).
+      const fields = toFields(categorizedData);
+      let matches: DuplicateMatch[] = result.potential_matches ?? [];
+      if (result.duplicate_check_failed || !sameFields(fields, toFields(result.categorized_data))) {
+        try {
+          matches = await api.checkDuplicates(fields);
+        } catch {
+          if (!(await confirmSaveAsNew())) return;
+          matches = [];
         }
-        return isValidUUID;
-      }) || [];
+      }
 
-      if (validMatches.length > 0) {
-        // Show merge UI for any match found
-        const bestMatch = validMatches.reduce((best, current) => 
-          current.confidence > best.confidence ? current : best
-        );
-        
-        console.log('🎤 Voice Transcription - Showing merge UI for:', bestMatch.name, `(${bestMatch.confidence}%)`);
+      // A real, live person (not one whose delete is pending) opens the merge UI
+      const bestMatch = bestMergeableMatch(matches);
+      if (bestMatch) {
         setSelectedMatch(bestMatch);
         setShowMergeUI(true);
-        setIsSaving(false);
         return;
       }
 
       // No meaningful match (< 60% or no matches), save as new
-      console.log('🎤 Voice Transcription - No matches found, saving as new individual');
       await save(categorizedData);
       Toast.show({
         type: 'success',
@@ -354,12 +361,6 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   // Show MergeUI if there's a low confidence match
   if (showMergeUI && selectedMatch) {
-    console.log('🔄 Opening MergeUI with:', {
-      newData: categorizedData,
-      selectedMatch: selectedMatch,
-      categorizedDataKeys: Object.keys(categorizedData)
-    });
-    
     return (
       <MergeUI
         newData={mergeNewData}
@@ -440,11 +441,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
       {/* Potential Matches */}
       {(() => {
-        // Filter out invalid/mock IDs for display
-        const validMatches = result.potential_matches?.filter(match => {
-          const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(match.id);
-          return isValidUUID;
-        }) || [];
+        // Only real, live people (no mock ids, no pending deletes)
+        const validMatches = mergeableMatches(result.potential_matches);
 
         return validMatches.length > 0 ? (
           <View style={styles.section}>

@@ -9,6 +9,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests.helpers import FakeSupabase
+
 
 class TestUUIDMappingFix:
     """Test UUID mapping fix for duplicate detection"""
@@ -41,8 +43,8 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.return_value = result_mock
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase = FakeSupabase(candidates)
+        service.supabase = mock_supabase
 
         # Mock OpenAI returns placeholder keys instead of actual UUIDs
         # This simulates the problem where GPT-4o returns "candidate_id_1" instead of the actual UUID
@@ -83,8 +85,8 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.return_value = result_mock
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase = FakeSupabase(candidates)
+        service.supabase = mock_supabase
 
         # Mock OpenAI returns "candidate_id_1" format (the problematic format)
         mock_openai_service.compare_individuals.return_value = {
@@ -115,8 +117,8 @@ class TestUUIDMappingFix:
         valid_uuid = str(uuid.uuid4())
         candidates = [
             {"id": valid_uuid, "name": "John Doe", "data": {}},
-            {"id": "invalid-uuid", "name": "Invalid ID", "data": {}},
-            {"id": "candidate_1", "name": "Placeholder ID", "data": {}}
+            {"id": "invalid-uuid", "name": "John Invalid", "data": {}},
+            {"id": "candidate_1", "name": "John Placeholder", "data": {}}
         ]
 
         new_data = {"name": "John", "height": 72}
@@ -125,8 +127,8 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.return_value = result_mock
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase = FakeSupabase(candidates)
+        service.supabase = mock_supabase
 
         # Mock OpenAI returns confidence for all (including invalid)
         mock_openai_service.compare_individuals.return_value = {
@@ -171,8 +173,8 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.return_value = result_mock
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase = FakeSupabase(candidates)
+        service.supabase = mock_supabase
 
         # Mock OpenAI correctly returns actual UUIDs (ideal behavior)
         mock_openai_service.compare_individuals.return_value = {
@@ -210,8 +212,8 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase.table.return_value.select.return_value.ilike.return_value.limit.return_value.execute.return_value = result_mock
-        mock_supabase.table.return_value.select.return_value.limit.return_value.execute.return_value.data = []
+        mock_supabase = FakeSupabase(candidates)
+        service.supabase = mock_supabase
 
         # Act
         matches = await service.find_duplicates(new_data)

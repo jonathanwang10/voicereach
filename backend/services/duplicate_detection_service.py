@@ -3,11 +3,20 @@ Duplicate detection service for finding similar individuals
 Uses smart search strategy and LLM-based comparison
 """
 import json
+import re
 import uuid
-from typing import List, Dict
+from typing import Dict, List, Optional
 from supabase import Client
 
 from services.search_matching import match_individual
+
+# Name tokens shorter than this are ignored when a longer one exists (C-22)
+MIN_TOKEN_LEN = 3
+# How many pre-ranked candidates the LLM compares (C-22: was 3, in retrieval order)
+MAX_LLM_CANDIDATES = 8
+# How many recent people the data-value (aka) scan looks at
+VALUE_SCAN_LIMIT = 200
+CANDIDATE_COLUMNS = "id, name, data"
 
 
 class DuplicateDetectionService:
@@ -63,8 +72,10 @@ class DuplicateDetectionService:
         if not isinstance(name, str) or len(name.strip()) < 2:
             return []
 
-        # Step 2: Search for candidates using smart strategy
+        # Step 2: Candidates by name token or data value, best ranked first (C-22).
+        # A database error propagates: the routes report it, not "no match" (C-08).
         candidates = await self._find_candidates(name, max_candidates)
+        candidates = self._rank_candidates(categorized_data, candidates)
 
         # Step 3: If we have candidates, use LLM to compare attributes
         if candidates:
@@ -74,86 +85,122 @@ class DuplicateDetectionService:
         return []
 
     @staticmethod
-    def _escape_ilike(value: str) -> str:
-        """Escape PostgREST/LIKE wildcards so user text matches literally."""
-        return value.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_").replace("*", r"\*")
+    def _name_tokens(name: str) -> List[str]:
+        """Lower-case letter/digit runs of the name, 3+ characters, de-duplicated.
+
+        Only letters and digits survive, so a token can never carry a PostgREST
+        filter character (`,` `.` `(` `)` `*`) or a LIKE wildcard. A name with no
+        3-character token ("Al", "Bo Li") falls back to its 2-character tokens.
+        """
+        words = [w for w in re.split(r"[\W_]+", name.casefold()) if w]
+        for min_len in (MIN_TOKEN_LEN, 2):
+            tokens = list(dict.fromkeys(w for w in words if len(w) >= min_len))
+            if tokens:
+                return tokens
+        return []
 
     async def _find_candidates(self, name: str, limit: int = 50) -> List[Dict]:
         """
-        Smart search strategy for finding potential matches
-        1. Exact name match first (uses index, fast)
-        2. Fuzzy search if needed
-        3. Search in JSONB data for name variations
-        4. Limit to max candidates
+        Candidate people for the LLM to compare (C-22), most recently updated first:
+        1. Name: an OR of ILIKEs, one per name token, so "John Doe" also finds a
+           first visit recorded as "John", and "Jon Smith" finds "John Smith".
+        2. Data values (e.g. an "aka" field) through the shared value-only matcher
+           (never dict keys, C-01), over the latest VALUE_SCAN_LIMIT people.
 
-        Args:
-            name: Name to search for
-            limit: Maximum number of candidates to return
-
-        Returns:
-            List of candidate individuals from database
+        A database error is raised, not swallowed: "no candidates" must mean no
+        candidates, never "the search failed" (C-08).
         """
-        if not name or len(name.strip()) < 2:
+        name = (name or "").strip()
+        tokens = self._name_tokens(name)
+        if len(name) < 2 or not tokens:
             return []
 
-        candidates = []
+        candidates: List[Dict] = []
         seen_ids = set()
-        safe = self._escape_ilike(name.strip())
 
-        try:
-            # Step 1: Exact name match (case-insensitive)
-            exact_response = self.supabase.table("individuals") \
-                .select("*") \
-                .ilike("name", safe) \
-                .limit(10) \
+        def add(rows):
+            for ind in rows or []:
+                if len(candidates) >= limit:
+                    return
+                if ind.get("id") not in seen_ids:
+                    candidates.append(ind)
+                    seen_ids.add(ind.get("id"))
+
+        name_filter = ",".join(f"name.ilike.*{token}*" for token in tokens)
+        by_name = self.supabase.table("individuals") \
+            .select(CANDIDATE_COLUMNS) \
+            .or_(name_filter) \
+            .order("updated_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        add(by_name.data)
+
+        if len(candidates) < limit:
+            recent = self.supabase.table("individuals") \
+                .select(CANDIDATE_COLUMNS) \
+                .order("updated_at", desc=True) \
+                .limit(VALUE_SCAN_LIMIT) \
                 .execute()
+            add([ind for ind in (recent.data or []) if match_individual(name, ind)])
 
-            if exact_response.data:
-                for ind in exact_response.data:
-                    if ind["id"] not in seen_ids:
-                        candidates.append(ind)
-                        seen_ids.add(ind["id"])
+        return candidates
 
-            # Step 2: Fuzzy search if we have < 10 exact matches
-            if len(candidates) < 10:
-                # Search for partial matches
-                fuzzy_response = self.supabase.table("individuals") \
-                    .select("*") \
-                    .ilike("name", f"%{safe}%") \
-                    .order("updated_at", desc=True) \
-                    .limit(limit - len(candidates)) \
-                    .execute()
+    @staticmethod
+    def _number(data: dict, key: str) -> Optional[float]:
+        """A numeric field, looked up case-insensitively ("height" or "Height")."""
+        for k, v in (data or {}).items():
+            if isinstance(k, str) and k.casefold() == key and isinstance(v, (int, float)) and not isinstance(v, bool):
+                return float(v)
+        return None
 
-                if fuzzy_response.data:
-                    for ind in fuzzy_response.data:
-                        if ind["id"] not in seen_ids:
-                            candidates.append(ind)
-                            seen_ids.add(ind["id"])
+    @classmethod
+    def _rank_candidates(cls, new_data: dict, candidates: List[Dict]) -> List[Dict]:
+        """Best candidates first: name tokens matched, plus height/weight closeness.
 
-            # Step 3: Also search the data values for name variations (e.g. an
-            # "aka" field), with the shared value-only matcher (never dict keys, C-01)
-            if len(candidates) < limit:
-                # Get more individuals to search through their data field
-                all_response = self.supabase.table("individuals") \
-                    .select("*") \
-                    .order("updated_at", desc=True) \
-                    .limit(200) \
-                    .execute()
+        Each matched token counts 1. Height (within 12 in) and weight (within 50 lb)
+        add up to 0.5 each, so closeness only orders people who match the same
+        number of tokens. Ties keep retrieval order (most recently updated first).
+        """
+        name = new_data.get("name") or new_data.get("Name") or ""
+        tokens = cls._name_tokens(name) if isinstance(name, str) else []
 
-                if all_response.data:
-                    for ind in all_response.data:
-                        if len(candidates) >= limit:
-                            break
-                        if ind["id"] not in seen_ids and match_individual(name, ind):
-                            candidates.append(ind)
-                            seen_ids.add(ind["id"])
+        def closeness(field: str, scale: float, cand_data: dict) -> float:
+            mine, theirs = cls._number(new_data, field), cls._number(cand_data, field)
+            if mine is None or theirs is None:
+                return 0.0
+            return 0.5 * max(0.0, 1 - abs(mine - theirs) / scale)
 
-        except Exception as e:
-            print(f"Error searching for candidates: {str(e)}")
-            # Return whatever candidates we found so far
-            pass
+        def score(candidate: Dict) -> float:
+            matched = sum(1 for token in tokens if match_individual(token, candidate))
+            data = candidate.get("data") if isinstance(candidate.get("data"), dict) else {}
+            return matched + closeness("height", 12, data) + closeness("weight", 50, data)
 
-        return candidates[:limit]
+        return sorted(candidates, key=score, reverse=True)
+
+    @staticmethod
+    def _score(value) -> Optional[int]:
+        """A 0-100 integer score, or None for anything that is not a number."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return min(max(int(value), 0), 100)
+
+    def _scores_by_candidate(self, response, candidates: List[Dict]) -> Dict[str, int]:
+        """Map the LLM reply onto candidate ids.
+
+        GPT should key by UUID, but sometimes uses placeholders ("candidate_1",
+        "candidate_id_1", "Record 1", "1"). Returns {} when the reply is empty,
+        None, not a dict, nested, or names none of the candidates.
+        """
+        if not isinstance(response, dict):
+            return {}
+        scores: Dict[str, int] = {}
+        for i, candidate in enumerate(candidates, 1):
+            for key in (candidate["id"], f"candidate_{i}", f"candidate_id_{i}", f"Record {i}", str(i)):
+                score = self._score(response.get(key))
+                if score is not None:
+                    scores[candidate["id"]] = score
+                    break
+        return scores
 
     async def _compare_with_llm(
         self,
@@ -161,77 +208,41 @@ class DuplicateDetectionService:
         candidates: List[Dict]
     ) -> List[Dict]:
         """
-        Use GPT-4o to intelligently compare individuals
+        Ask GPT-4o to score the top MAX_LLM_CANDIDATES candidates (already ranked).
 
-        Args:
-            new_data: Data about the new individual
-            candidates: List of candidate individuals from database
-
-        Returns:
-            List of matches with confidence scores, sorted by confidence
-            Only returns matches with confidence >= 60%
-            Per PRD 4.8: Returns only top match for MVP
+        Returns the single best match with confidence >= 60, or [] (PRD 4.8: top
+        match only). If the LLM fails or its reply can't be read (empty, None,
+        nested, or no candidate scored), falls back to name matching so an outage
+        does not silently mean "no duplicate" (C-08).
         """
         if not candidates:
             return []
 
+        top_candidates = candidates[:MAX_LLM_CANDIDATES]
+        comparison_prompt = self._build_comparison_prompt(new_data, top_candidates)
+
         try:
-            # Limit to top 3 candidates for LLM comparison to save tokens
-            top_candidates = candidates[:3]
-
-            # Create mapping of candidate positions to their actual IDs
-            # This helps handle cases where GPT returns placeholder keys
-            id_mapping = {}
-            for i, candidate in enumerate(top_candidates, 1):
-                id_mapping[f"candidate_{i}"] = candidate["id"]
-                id_mapping[f"candidate_id_{i}"] = candidate["id"]
-                id_mapping[f"Record {i}"] = candidate["id"]
-                id_mapping[str(i)] = candidate["id"]
-
-            # Build comparison prompt with explicit instructions
-            comparison_prompt = self._build_comparison_prompt(new_data, top_candidates)
-
-            # Call OpenAI service for comparison
             response = await self.openai_service.compare_individuals(comparison_prompt)
-
-            # Parse response and build matches list
-            matches = []
-
-            # Try to match responses to candidates
-            for candidate in top_candidates:
-                confidence = 0
-
-                # First try to get confidence by actual UUID
-                if candidate["id"] in response:
-                    confidence = response[candidate["id"]]
-                else:
-                    # Check if GPT returned placeholder keys instead of actual UUIDs
-                    for placeholder_key, actual_id in id_mapping.items():
-                        if actual_id == candidate["id"] and placeholder_key in response:
-                            confidence = response[placeholder_key]
-                            break
-
-                if confidence >= 60:  # Only return meaningful matches
-                    # Validate that we have a valid UUID before adding to matches
-                    if self._is_valid_uuid(candidate["id"]):
-                        matches.append({
-                            "id": candidate["id"],
-                            "name": candidate.get("name", "Unknown"),
-                            "confidence": confidence
-                        })
-                    else:
-                        print(f"Warning: Invalid UUID detected: {candidate.get('id', 'None')}")
-
-            # Sort by confidence descending
-            matches.sort(key=lambda x: x["confidence"], reverse=True)
-
-            # Return only top match for MVP (per PRD 4.8)
-            return matches[:1] if matches else []
-
         except Exception as e:
-            print(f"Error comparing individuals with LLM: {str(e)}")
-            # Fallback to simple name matching if LLM fails
-            return self._fallback_simple_matching(new_data, candidates)
+            print(f"LLM duplicate comparison failed ({type(e).__name__}); using name matching")
+            response = None
+
+        scores = self._scores_by_candidate(response, top_candidates)
+        if not scores:
+            return self._fallback_simple_matching(new_data, top_candidates)
+
+        matches = []
+        for candidate in top_candidates:
+            confidence = scores.get(candidate["id"], 0)
+            if confidence >= 60 and self._is_valid_uuid(candidate["id"]):
+                matches.append({
+                    "id": candidate["id"],
+                    "name": candidate.get("name", "Unknown"),
+                    "confidence": confidence
+                })
+
+        matches.sort(key=lambda x: x["confidence"], reverse=True)
+        return matches[:1]
 
     def _build_comparison_prompt(self, new_data: dict, candidates: List[Dict]) -> str:
         """
@@ -262,10 +273,10 @@ Existing records:
                 prompt += f"  Data: {json.dumps(candidate['data'], indent=2)}\n"
             uuid_list.append(candidate['id'])
 
-        prompt += f"""
+        prompt += """
 Analyze similarity based on:
 - Name (consider phonetic similarity, nicknames, variations)
-- Physical attributes (height, weight, skin color) if available
+- Physical attributes (height, weight) if available
 - Age or birth year if available
 - Medical conditions and history if available
 - Substance abuse history if available
@@ -282,7 +293,7 @@ For each existing record, return a confidence score 0-100 where:
 IMPORTANT: Use the EXACT UUID from each record as the JSON key, not placeholders.
 
 Return JSON only with the actual UUIDs as keys:
-{{
+{
 """
 
         # Add explicit expected format with actual UUIDs
@@ -292,10 +303,10 @@ Return JSON only with the actual UUIDs as keys:
             else:
                 prompt += f'    "{candidate_id}": confidence_score\n'
 
-        prompt += f"""}}
+        prompt += """}
 
 Example with ACTUAL UUIDs (use the exact UUIDs from the records above):
-{{
+{
 """
 
         # Show example with the actual UUIDs
@@ -316,47 +327,41 @@ Example with ACTUAL UUIDs (use the exact UUIDs from the records above):
         candidates: List[Dict]
     ) -> List[Dict]:
         """
-        Fallback to simple name matching if LLM comparison fails
+        Name-only matching, used when the LLM comparison fails or can't be read.
 
-        Args:
-            new_data: Data about the new individual
-            candidates: List of candidate individuals
-
-        Returns:
-            List with simple name-based matches
+        Scores every candidate and returns the best one (or []):
+        95 same name; 80 one name's words all appear in the other ("John" vs
+        "John Doe"); 70 at least one word in common. Whole words only, so "Al"
+        does not match "Hal".
         """
-        matches = []
-        new_name = (new_data.get("name") or new_data.get("Name", "")).lower().strip()
-
-        if not new_name:
+        new_name = new_data.get("name") or new_data.get("Name") or ""
+        if not isinstance(new_name, str):
+            return []
+        new_name = " ".join(new_name.casefold().split())
+        new_words = set(w for w in re.split(r"[\W_]+", new_name) if w)
+        if not new_words:
             return []
 
-        for candidate in candidates[:1]:  # Only top candidate for MVP
-            candidate_name = (candidate.get("name", "")).lower().strip()
-
-            if not candidate_name:
+        best = None
+        for candidate in candidates:
+            candidate_name = candidate.get("name")
+            if not isinstance(candidate_name, str) or not self._is_valid_uuid(candidate.get("id")):
+                continue
+            candidate_name = " ".join(candidate_name.casefold().split())
+            candidate_words = set(w for w in re.split(r"[\W_]+", candidate_name) if w)
+            if not candidate_words:
                 continue
 
-            # Calculate simple similarity
-            confidence = 0
             if candidate_name == new_name:
-                confidence = 95  # Exact match
-            elif new_name in candidate_name or candidate_name in new_name:
-                confidence = 80  # Partial match
+                confidence = 95
+            elif new_words <= candidate_words or candidate_words <= new_words:
+                confidence = 80
+            elif new_words & candidate_words:
+                confidence = 70
             else:
-                # Check word overlap
-                new_words = set(new_name.split())
-                candidate_words = set(candidate_name.split())
-                if new_words & candidate_words:  # Any common words
-                    confidence = 70
+                continue
 
-            if confidence >= 60:
-                # Validate UUID in fallback as well
-                if self._is_valid_uuid(candidate["id"]):
-                    matches.append({
-                        "id": candidate["id"],
-                        "name": candidate.get("name", "Unknown"),
-                        "confidence": confidence
-                    })
+            if best is None or confidence > best["confidence"]:
+                best = {"id": candidate["id"], "name": candidate.get("name", "Unknown"), "confidence": confidence}
 
-        return matches
+        return [best] if best else []

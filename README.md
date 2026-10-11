@@ -360,10 +360,16 @@ height already in inches, canonical labels and multi-select arrays, with empty
 fields left out, and its screens skip empty values rather than showing "null".
 
 **Duplicate detection — the code and the spec disagree here.** The backend
-gathers candidates by exact name, partial name and a match on the data values
-(`services/search_matching.py`; never field names),
-asks GPT-4o to score the first three 0–100, drops anything below 60
-(`services/duplicate_detection_service.py:216`), and returns only the best match.
+gathers candidates by name token (one ILIKE per word of 3+ characters, so "John
+Doe" finds "John") and by a match on the data values
+(`services/search_matching.py`; never field names), ranks them by tokens matched
+and height/weight closeness, asks GPT-4o to score the top 8 0–100, drops
+anything below 60, and returns only the best match
+(`services/duplicate_detection_service.py`). If GPT-4o fails, a name comparison
+stands in; if the search itself fails, the app is told
+(`duplicate_check_failed`, or a 500 from `check-duplicates`) and asks
+"Duplicate check unavailable. Save as new anyway?" rather than saving a possible
+duplicate silently. Voice review re-checks when the worker corrects a field.
 `docs/PRD.md` calls for an automatic merge at ≥ 95, but **that threshold is not
 implemented**: the frontend opens the same field-by-field merge UI for *every*
 surviving match (`mobile/components/TranscriptionResults.tsx:150`). The merge UI

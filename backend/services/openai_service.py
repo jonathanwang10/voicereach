@@ -317,6 +317,13 @@ Return JSON only."""
             # Try to parse as JSON
             try:
                 confidence_scores = json.loads(result)
+                if not isinstance(confidence_scores, dict):
+                    return {}
+                # GPT sometimes wraps the scores: {"scores": {"<uuid>": 90}} (C-08)
+                if len(confidence_scores) == 1:
+                    (only,) = confidence_scores.values()
+                    if isinstance(only, dict):
+                        confidence_scores = only
 
                 # Ensure all values are integers between 0-100
                 cleaned_scores = {}
