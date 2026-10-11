@@ -42,16 +42,22 @@ never uses that path.
 3. **Extract.** `categorize_transcription` sends the transcript and the category
    list to `gpt-4o` in JSON mode (`response_format={"type": "json_object"}`,
    temperature 0.3). The prompt asks for the required fields (name, height,
-   weight) and for height in inches. The reply is then cleaned per type:
-   - numbers become floats; a height given as text ("5 ft 10", `5' 10"`) is
-     parsed to inches, and a bare number under 10 is treated as feet;
+   weight) and for height in inches. Reply keys are matched to category names
+   case- and spacing-insensitively (`field_registry.category_key`, so "Name" or
+   "Housing Status" still land). The reply is then cleaned per type:
+   - numbers become floats; height goes through
+     `field_registry.parse_height_inches` ("5 ft 10", `5' 10"`, "5.5 feet",
+     "5, 10", "178 cm", "1.78 m"; a bare 1-9 is feet);
    - single-select values must match an option label (case-insensitive) or
      become `null`;
-   - multi-select values become a list, keeping only known options
-     (case-insensitive).
-4. **Validate.** `validation_helper.validate_categorized_data` returns
-   `missing_required` and `validation_errors` (height and weight outside 0-300,
-   non-numeric or non-finite numbers, unknown select options).
+   - multi-select values become a list ("Diabetes, Cancer" is split on commas),
+     keeping only known options (case-insensitive).
+4. **Normalise and validate.** `validation_helper.validate_categorized_data`
+   runs the shared `field_registry.normalize_individual_data` and returns
+   `normalized_data`, `missing_required` and `validation_errors` (height and
+   weight outside 0-300, negative, non-numeric or non-finite numbers, unknown
+   select options). From here on the endpoint uses only the normalised data:
+   `null` and empty values are dropped and labels are canonical.
 5. **Find duplicates.** `duplicate_detection_service.find_duplicates` needs a
    name of at least two characters. It collects up to 50 candidates: exact name
    (case-insensitive), partial name, then a text scan of the JSONB `data` of the
@@ -85,11 +91,13 @@ come from `POST /api/individuals/check-duplicates`.
 `backend/services/individual_service.py`).
 
 1. The request model requires `name`, `height` and `weight`. If `merge_with_id`
-   is set, that person must exist (404 otherwise). The data is validated against
-   the categories again (400 with details on failure).
+   is set, that person must exist (404 otherwise). The data is normalised and
+   validated against the categories again (400 with `field: message` details on
+   failure), and only the normalised data is saved, diffed and scored.
 2. The urgency score is computed (`urgency_calculator.py`): weighted average of
-   `number` and `single_select` fields, or 100 if an auto-trigger fires. For a
-   single-select auto-trigger that means the chosen option's value is > 0.
+   `number` and `single_select` fields over the total weight of every weighted
+   category (a missing value counts as 0), or 100 if an auto-trigger fires. For
+   a single-select auto-trigger that means the chosen option's value is > 0.
 3. **New person:** insert into `individuals`, then an `interactions` row whose
    `changes` holds the whole payload.
    **Merge:** replace the person's `data` with the posted data (fields the client

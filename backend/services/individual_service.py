@@ -20,6 +20,7 @@ from db.models import (
     LocationData
 )
 from services.urgency_calculator import calculate_urgency_score
+from services.field_registry import normalize_individual_data
 
 
 class IndividualService:
@@ -40,11 +41,15 @@ class IndividualService:
         - Include field if value changed
         - Include new fields not in old data
         - Don't include fields with same value
+        - Never include empty new values (None, "", whitespace, [])
+        Both sides should already be normalised (see save_individual).
         """
         changes = {}
-        
+
         # Check all fields in new data
         for key, new_value in new_data.items():
+            if new_value is None or new_value == [] or (isinstance(new_value, str) and not new_value.strip()):
+                continue
             if key not in old_data:
                 # New field
                 changes[key] = new_value
@@ -105,16 +110,22 @@ class IndividualService:
         Save a new individual or update existing (merge).
 
         Logic:
-        1. Calculate urgency score
-        2. If merge_with_id: update existing individual
-        3. Else: create new individual
-        4. Create interaction record with changes only
-        5. Return both records
+        1. Normalise `data` against the categories (raises ValueError on invalid values)
+        2. Calculate urgency score from the normalised data
+        3. If merge_with_id: update existing individual
+        4. Else: create new individual
+        5. Create interaction record with changes only
+        6. Return both records
         """
-        # Calculate urgency score
-        # First fetch categories to get urgency weights
+        # Fetch categories for normalisation and urgency weights
         categories_response = self.supabase.table("categories").select("*").execute()
-        categories = categories_response.data
+        categories = categories_response.data or []
+
+        # Normalise before the diff and the urgency calculation, so None/"" never
+        # reach `data` and "180" vs 180 is not recorded as a change.
+        data, errors = normalize_individual_data(data, categories)
+        if errors:
+            raise ValueError(". ".join(f"{e['field']}: {e['message']}" for e in errors))
         urgency_score = calculate_urgency_score(data, categories)
         
         # Prepare location dict if provided
@@ -142,8 +153,12 @@ class IndividualService:
             
             existing_individual = existing_response.data
             
-            # Get changes only
-            changes = self.get_changed_fields(existing_individual.get("data", {}), data)
+            # Get changes only. Older rows may hold un-normalised values ("180"),
+            # so normalise them too before comparing.
+            old_data = existing_individual.get("data") or {}
+            if isinstance(old_data, dict):
+                old_data, _ = normalize_individual_data(old_data, categories)
+            changes = self.get_changed_fields(old_data, data)
             
             # Update existing individual with location if provided
             update_data = {

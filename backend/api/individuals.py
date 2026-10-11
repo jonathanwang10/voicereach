@@ -151,11 +151,11 @@ async def save_individual(
                 detail=". ".join(error_detail)
             )
         
-        # Save individual using service
+        # Save the normalised data (types coerced, empty values dropped)
         result = await service.save_individual(
             user_id=user_id,
             user_name=user_name,
-            data=request.data,
+            data=validation_result.normalized_data,
             merge_with_id=request.merge_with_id,
             location=request.location,
             transcription=request.transcription,

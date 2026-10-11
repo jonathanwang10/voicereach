@@ -25,9 +25,12 @@ class SaveIndividualRequest(BaseModel):
     
     @field_validator('data')
     def validate_required_fields(cls, v):
-        """Ensure required fields exist per PRD"""
+        """Ensure required fields exist per PRD. A blank or whitespace-only value counts as missing."""
         required = ['name', 'height', 'weight']
-        missing = [f for f in required if f not in v or v[f] is None]
+        missing = [
+            f for f in required
+            if v.get(f) is None or (isinstance(v[f], str) and not v[f].strip())
+        ]
         if missing:
             raise ValueError(f"Missing required fields: {missing}")
         return v

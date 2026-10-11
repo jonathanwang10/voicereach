@@ -12,6 +12,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _join(value: Any) -> str:
+    """Join a multi-select list for embedding text; a plain string is used as-is
+    (joining a string would spell it out letter by letter)."""
+    if isinstance(value, list):
+        return ', '.join(map(str, value))
+    return str(value)
+
+
 class EmbeddingService:
     def __init__(self):
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -68,11 +76,11 @@ class EmbeddingService:
             
             # Medical and behavioral info
             if data.get('substance_abuse_history'):
-                text_parts.append(f"Substance abuse: {', '.join(data['substance_abuse_history'])}")
+                text_parts.append(f"Substance abuse: {_join(data['substance_abuse_history'])}")
             if data.get('medical_conditions'):
-                text_parts.append(f"Medical conditions: {', '.join(data['medical_conditions'])}")
+                text_parts.append(f"Medical conditions: {_join(data['medical_conditions'])}")
             if data.get('mental_health_issues'):
-                text_parts.append(f"Mental health: {', '.join(data['mental_health_issues'])}")
+                text_parts.append(f"Mental health: {_join(data['mental_health_issues'])}")
             if data.get('veteran_status'):
                 text_parts.append(f"Veteran status: {data['veteran_status']}")
             if data.get('housing_status'):

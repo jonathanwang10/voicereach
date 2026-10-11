@@ -71,17 +71,17 @@ class TestDangerCalculator:
         print("✅ Text fields ignored: PASS")
     
     def test_missing_values(self):
-        """Test missing values are skipped in calculation"""
+        """Missing weighted values count as 0 but stay in the denominator (OD-1)"""
         data = {"height": 90}  # weight missing
         categories = [
             {"name": "height", "type": "number", "urgency_weight": 30, "auto_trigger": False},
             {"name": "weight", "type": "number", "urgency_weight": 50, "auto_trigger": False}
         ]
-        
+
         score = calculate_urgency_score(data, categories)
-        # Only height is considered: (90/300)*30 / 30 * 100 = 0.3 * 100 = 30
-        assert score == 30
-        print(f"✅ Missing values skipped: PASS (score={score})")
+        # (90/300)*30 / (30 + 50) * 100 = 11.25
+        assert score == 11
+        print(f"✅ Missing values count as 0: PASS (score={score})")
     
     def test_all_zero_weights(self):
         """Test all zero weights returns 0 (not divide by zero)"""

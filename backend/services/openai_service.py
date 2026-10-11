@@ -10,6 +10,8 @@ from typing import Optional, Dict
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
+from services.field_registry import category_key, parse_height_inches
+
 
 class OpenAIService:
     def __init__(self):
@@ -207,24 +209,29 @@ Return JSON only."""
             # Parse JSON response
             result = response.choices[0].message.content
             extracted_data = json.loads(result) if isinstance(result, str) else result
-            
-            # Post-process the data
+            if not isinstance(extracted_data, dict):
+                extracted_data = {}
+
+            # GPT may change a key's case or spacing ("Name", "Housing Status"),
+            # so match keys on category_key, not exact spelling (C-67).
+            extracted_by_key = {}
+            for key, val in extracted_data.items():
+                ckey = category_key(key)
+                if ckey not in extracted_by_key or extracted_by_key[ckey] is None:
+                    extracted_by_key[ckey] = val
+
+            # Post-process the data. The caller still runs the shared normaliser
+            # (validate_categorized_data) on this output.
             processed_data = {}
             for cat in categories:
                 field_name = cat['name']
-                value = extracted_data.get(field_name)
-                
+                value = extracted_by_key.get(category_key(field_name))
+
                 # Handle different field types
                 if value is not None:
                     if cat['type'] == 'number':
-                        # Special handling for height field
-                        if field_name == 'height':
-                            # If it's a string, parse it
-                            if isinstance(value, str):
-                                value = self._parse_height(value)
-                            # If it's a small number (likely feet), convert to inches
-                            elif isinstance(value, (int, float)) and value < 10:
-                                value = value * 12
+                        if category_key(field_name) == 'height':
+                            value = parse_height_inches(value)
                         # Ensure it's a number
                         try:
                             value = float(value) if value is not None else None
@@ -245,8 +252,10 @@ Return JSON only."""
                                     value = None
                                     
                     elif cat['type'] == 'multi_select':
-                        # Ensure it's a list
-                        if not isinstance(value, list):
+                        # Ensure it's a list; "Diabetes, Cancer" is two items
+                        if isinstance(value, str):
+                            value = [v.strip() for v in value.split(',') if v.strip()]
+                        elif not isinstance(value, list):
                             value = [value] if value else []
                         # Validate against available options
                         if cat.get('options'):
@@ -261,40 +270,8 @@ Return JSON only."""
             raise Exception(f"Failed to categorize transcription: {str(e)}")
             
     def _parse_height(self, height_str: str) -> Optional[float]:
-        """Parse height strings to inches"""
-        if not height_str:
-            return None
-            
-        # Handle "X feet Y inches" or "X'Y"""
-        
-        match = re.search(
-            r"(\d+)\s*(?:feet|foot|ft|')\s*,?\s*(?:(\d{1,2})(?!\d)\s*(?:inches|inch|in|\")?)?",
-            height_str, re.I,
-        )
-        if match:
-            feet = int(match.group(1))
-            inches = int(match.group(2)) if match.group(2) else 0
-            if inches > 11:
-                inches = 0
-            return feet * 12 + inches
-
-        # Try just inches
-        match = re.search(r'(\d+)\s*(?:inches|inch|in)', height_str, re.I)
-        if match:
-            return int(match.group(1))
-            
-        # Try to extract any number
-        match = re.search(r'(\d+)', height_str)
-        if match:
-            num = int(match.group(1))
-            # If it's a reasonable height in inches, return it
-            if 48 <= num <= 96:  # 4-8 feet
-                return num
-            # If it looks like feet, convert
-            elif 4 <= num <= 8:
-                return num * 12
-                
-        return None
+        """Parse a height to inches (delegates to the shared field_registry parser)."""
+        return parse_height_inches(height_str)
     
     async def compare_individuals(self, comparison_prompt: str) -> Dict[str, int]:
         """

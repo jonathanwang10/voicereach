@@ -49,11 +49,12 @@ api/
   embeddings.py      /api/embeddings routes
   voice_assistant.py /api/voice-assistant helper routes
 services/
-  openai_service.py             Whisper, GPT-4o extraction, height parsing, duplicate scoring call
+  openai_service.py             Whisper, GPT-4o extraction, duplicate scoring call
+  field_registry.py             Shared field normaliser, category_key, height parsing
   duplicate_detection_service.py Candidate search + GPT-4o comparison (threshold 60)
   individual_service.py         Save / merge, search, profile, interaction history
   urgency_calculator.py         Urgency score and display score
-  validation_helper.py          Required fields and per-type validation
+  validation_helper.py          Normalise, then check required fields
   embedding_service.py          text-embedding-3-large and cosine similarity
   context_service.py            Name extraction and DB context for the assistant
 db/models.py         Pydantic request/response models
@@ -108,7 +109,10 @@ Nothing is saved. `potential_matches` holds at most one match, with confidence
 ```
 
 `data` must contain `name`, `height` and `weight` (422 otherwise), and is then
-validated against the categories (400 with details on failure). A missing merge target is a 404. The
+normalised and validated against the categories (`normalize_individual_data`
+in `services/field_registry.py`; 400 with `field: message` details on failure).
+Only the normalised data is stored: empty values are dropped, numbers are real
+numbers and select labels are canonical. A missing merge target is a 404. The
 urgency score is computed on every save. A merge **replaces** `data` with what
 was posted and logs only the changed fields; a new person's first interaction
 logs everything. Returns `{individual, interaction}`. An embedding is generated

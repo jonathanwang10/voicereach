@@ -103,8 +103,10 @@ async def transcribe_audio_endpoint(
         # 3. Categorize transcription
         categorized_data = await openai_service.categorize_transcription(transcription, categories)
         
-        # 4. Validate categorized data
+        # 4. Normalise and validate categorized data. From here on only the
+        # normalised dict is used (no None / "" values, canonical labels).
         validation_result = validate_categorized_data(categorized_data, categories)
+        categorized_data = validation_result.normalized_data
         missing_required = validation_result.missing_required
         
         # 5. Find potential duplicates using real database search and LLM comparison

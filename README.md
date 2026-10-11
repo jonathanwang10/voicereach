@@ -264,18 +264,37 @@ request bodies are in [`backend/README.md`](backend/README.md).
 ### Two rules worth knowing before changing anything
 
 **Urgency score.** Only `number` and `single_select` types may carry an urgency
-weight or an auto-trigger — enforced in `db/models.py:155-163`. Each contributing
-category adds `normalized_value * weight` to a running sum, where a number is
-`min(value / 300, 1.0)` (so it clamps above 300) and a select is its option's
-value. The result is then **normalized by the total weight** and scaled:
-`int(weighted_sum / total_weight * 100)`. Skipping that last step is the easy
-mistake — the per-category term alone is not the score. A category flagged
-`auto_trigger` pins the score to 100, but only when it actually fires: for a
-single-select, the chosen option's value must be greater than 0 (so the preset
-`behavior` field set to "None" does not trigger); for a number, the value must be
-non-zero (`services/urgency_calculator.py:7-22`). A manual override is shown
-instead of the computed score without overwriting it, and an override of 0 counts
-as an override. See `services/urgency_calculator.py`.
+weight or an auto-trigger — enforced in `CreateCategoryRequest.model_post_init`
+(`db/models.py`). Each category with a value adds `normalized_value * weight` to
+a running sum, where a number is `min(max(value, 0) / 300, 1.0)` (so it clamps
+above 300) and a select is its option's value. The result is then **normalized
+by the total weight** and scaled: `int(weighted_sum / total_weight * 100)`,
+clamped to 0–100. The total weight is the sum of `urgency_weight` over **every**
+`number`/`single_select` category with a weight above 0, whether or not the
+person has a value for it: a missing value counts as 0 rather than leaving the
+denominator. So stating a benign fact ("behavior: None") never moves the score.
+Skipping the normalization step is the easy mistake — the per-category term
+alone is not the score. A category flagged `auto_trigger` pins the score to 100,
+but only when it actually fires: for a single-select, the chosen option's value
+must be greater than 0 (so the preset `behavior` field set to "None" does not
+trigger); for a number, the value must be non-zero. A NULL weight counts as 0,
+and an empty or non-numeric value never raises. A manual override is shown
+instead of the computed score without overwriting it, and an override of 0
+counts as an override. See `calculate_urgency_score` in
+`services/urgency_calculator.py`.
+
+**Field values are normalised on the server.** `normalize_individual_data`
+(`services/field_registry.py`) runs on GPT output in `/api/transcribe` (whose
+`categorized_data` is the normalised dict, with any problems listed in
+`validation_errors`) and on every `POST /api/individuals` before the change diff
+and the urgency calculation. Keys are matched case- and spacing-insensitively to
+category names (`category_key`); `null`, `""`, whitespace and `[]` are dropped;
+numbers become `int`/`float` (negative is an error, height and weight above 300
+are errors); select labels are matched case-insensitively to the canonical label;
+a multi-select string is split on commas; names are stripped. Height goes through
+`parse_height_inches`: a bare 1–9 is feet, and "5'10", "5 ft 10", "5.5 feet",
+"5, 10", "178 cm" and "1.78 m" are understood; any other bare number is inches.
+Keys that match no category are kept, after the same cleaning.
 
 **Duplicate detection — the code and the spec disagree here.** The backend
 gathers candidates by exact name, partial name and a text scan of the JSONB data,

@@ -138,7 +138,12 @@ it was removed on purpose and must not come back.
 2. Otherwise a weighted average over categories with a weight:
    - number: `min(value / 300, 1) * weight`
    - single-select: `option_value * weight`
-   - score = `int(sum / total_weight * 100)`
+   - score = `int(sum / total_weight * 100)`, clamped to 0-100
+   - `total_weight` covers every weighted `number`/`single_select` category; a
+     missing value counts as 0 instead of dropping out of the denominator.
+   The input is the normalised data (`normalize_individual_data` in
+   `backend/services/field_registry.py`), so numbers are real numbers and select
+   labels are canonical.
 3. The display score is `urgency_override` if it is set (0 included), else the
    calculated score.
 4. Colours in the app: 0-33 green `#10B981`, 34-66 yellow `#F59E0B`, 67-100 red
@@ -179,7 +184,8 @@ backend/
 │   ├── embeddings.py          # /api/embeddings routes
 │   └── voice_assistant.py     # /api/voice-assistant helper routes
 ├── services/
-│   ├── openai_service.py      # Whisper, GPT-4o extraction, height parsing
+│   ├── openai_service.py      # Whisper, GPT-4o extraction
+│   ├── field_registry.py      # Shared field normaliser, category_key, height parsing
 │   ├── duplicate_detection_service.py
 │   ├── individual_service.py  # Save/merge, search, profile, history
 │   ├── urgency_calculator.py
