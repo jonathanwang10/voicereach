@@ -873,6 +873,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     );
   };
 
+  const statusColor = isConnected ? theme.colors.success[600] : theme.colors.danger[600];
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -891,8 +893,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Voice Assistant</Text>
           <Badge variant={isConnected ? 'success' : 'danger'} size="small">
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>
               {isConnected ? 'Connected' : 'Disconnected'}
             </Text>
           </Badge>
@@ -903,6 +905,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             variant="ghost"
             size="small"
             icon={isMuted ? 'volume-mute' : 'volume-high'}
+            accessibilityLabel={isMuted ? 'Unmute assistant voice' : 'Mute assistant voice'}
+            accessibilityRole="button"
             onPress={toggleMute}
             style={styles.headerButton}
           />
@@ -910,6 +914,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             variant="ghost"
             size="small"
             icon="refresh"
+            accessibilityLabel="Reconnect voice assistant"
+            accessibilityRole="button"
             onPress={initializeVoiceAssistant}
             style={styles.headerButton}
           />
@@ -917,6 +923,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             variant="ghost"
             size="small"
             icon="trash-outline"
+            accessibilityLabel="Clear conversation"
+            accessibilityRole="button"
             onPress={clearConversation}
             style={styles.headerButton}
           />
@@ -981,6 +989,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             multiline
             maxLength={500}
             rightIcon="send"
+            rightIconAccessibilityLabel="Send question"
             onRightIconPress={textInput.trim() && isConnected ? () => { sendTextMessage(textInput.trim()); setTextInput(''); } : undefined}
             style={styles.textInput}
           />
@@ -1009,6 +1018,11 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
               }
             }}
             disabled={!isConnected || isProcessingAudio}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isProcessingAudio ? 'Processing question' : isRecording ? 'Stop recording question' : 'Start recording question'
+            }
+            accessibilityState={{ disabled: !isConnected || isProcessingAudio, busy: isProcessingAudio }}
             activeOpacity={0.7}
           >
             {isProcessingAudio ? (
@@ -1071,11 +1085,9 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'currentColor',
   },
   statusText: {
     fontSize: theme.typography.fontSize.xs,
-    color: 'currentColor',
     marginLeft: theme.spacing.xs,
   },
   headerActions: {

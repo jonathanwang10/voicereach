@@ -17,6 +17,7 @@ interface InputProps extends TextInputProps {
   leftIcon?: keyof typeof Ionicons.glyphMap;
   rightIcon?: keyof typeof Ionicons.glyphMap;
   onRightIconPress?: () => void;
+  rightIconAccessibilityLabel?: string;
   variant?: 'outlined' | 'filled';
 }
 
@@ -27,6 +28,7 @@ export const Input: React.FC<InputProps> = ({
   leftIcon,
   rightIcon,
   onRightIconPress,
+  rightIconAccessibilityLabel,
   variant = 'outlined',
   style,
   editable = true,
@@ -73,6 +75,9 @@ export const Input: React.FC<InputProps> = ({
           <TouchableOpacity
             onPress={onRightIconPress}
             disabled={!onRightIconPress}
+            accessibilityRole="button"
+            accessibilityLabel={rightIconAccessibilityLabel}
+            accessibilityState={{ disabled: !onRightIconPress }}
             style={styles.rightIconButton}
           >
             <Ionicons
