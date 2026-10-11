@@ -327,8 +327,18 @@ first 2,000 characters of a message, looks up at most 3 names and keeps at most
 - OpenAI calls time out after 30 s with one retry; Whisper gets 60 s and no
   retry. `/api/transcribe` chains up to ~180 s of OpenAI time, so the route has
   its own 110 s deadline (504) to answer before the app's 120 s timeout.
-- Audio is never stored: it arrives inline, goes to a temp file for Whisper and
-  the file is deleted on every path (`openai_service.temp_audio_file`).
+- Audio is not stored by the backend: it arrives inline, goes to a temp file for
+  Whisper and the file is deleted on every path (`openai_service.temp_audio_file`).
+  It does leave the system: the audio goes to OpenAI, and so do transcripts,
+  duplicate candidates' records and the assistant's context. The transcript is
+  saved with the interaction. See "Data leaving the system" in the root README.
+- Logging: Python `logging` at `LOG_LEVEL` (default `INFO`), configured in
+  `main.configure_logging`. Logs carry lifecycle events, counts, ids and error
+  types only, never names, transcripts, questions, field values, GPS or a
+  person's urgency, and never exception messages. HTTP-client and SDK loggers
+  (`QUIET_LIBRARY_LOGGERS`) stay at `WARNING` because they log request URLs and
+  bodies. uvicorn's access log drops query strings (`DropQueryString`). There are
+  no `print` calls outside `scripts/`; `tests/test_no_pii_logs.py` enforces both.
 - Interactions record the user id from the token, but `user_name` is always
   "Demo User".
 - Several handlers make synchronous Supabase calls inside `async` functions, and

@@ -104,7 +104,8 @@ recording-to-save path and the assistant path step by step.
 `categories` is **schema-as-data**: each row defines a field the app collects
 (its type, whether it is required, and how heavily it weighs into the urgency
 score). `individuals` holds one row per person with the current aggregated state
-in a JSONB `data` column. `interactions` is an append-only log; its `changes`
+in a JSONB `data` column. `interactions` is the encounter log: the app only ever
+adds to it (deleting a person deletes their interactions too), and its `changes`
 column holds only what *changed* at each encounter (the whole payload on the
 first one), plus the transcript and location. `individual_embeddings` backs
 semantic search. Because fields live in `categories` rather than in columns,
@@ -228,6 +229,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
 | `RATE_LIMIT_*_PER_MIN` | Optional. Per-user limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional. How long one voice-assistant connection may stay open (default 600). |
+| `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
 
@@ -474,6 +476,44 @@ whole table, which is fine to about 1-5k people.
 On the Search tab, typing runs one search per 300 ms pause, and only the newest
 response is shown. The list loads on each focus; after the first load it
 refreshes in the background, keeping the last good list if the refresh fails.
+
+## Data leaving the system
+
+The app holds personal and medical information about people who never signed up
+for anything. This is everything that leaves the phone, where it goes, and what
+is logged.
+
+| What | Goes to | When | Kept |
+|---|---|---|---|
+| A recording: M4A audio of the worker describing the person | The backend, then OpenAI Whisper (`whisper-1`) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
+| The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
+| The new person's fields, with up to 8 existing candidates' names and full `data` (medical conditions included) | OpenAI GPT-4o | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the location. | Not stored. |
+| A person's name and labelled fields (`build_embedding_text`) | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
+| A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
+| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`gpt-realtime`) | Each question | Phone: the recording is deleted from the cache once transcribed, or when transcription fails. OpenAI: as above. |
+| Records of the people a question names: up to 3 names × 3 people, labelled fields and urgency, each value cut to 100 characters | The OpenAI Realtime API, as a delimited reference-data item | Each question that names someone in the database | For that assistant session. |
+| Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions and embeddings. |
+| The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; the session also on the phone. |
+
+**What is logged**
+
+- **Backend.** Lifecycle events, counts, ids and error types only, through
+  Python `logging` at `LOG_LEVEL` (default `INFO`). Never names, transcripts,
+  questions, field values, GPS or a person's urgency. Exception messages aren't
+  logged either, because an upstream error can echo the data that was sent.
+  - The `httpx`, `httpx2`, `httpcore`, `openai`, Supabase-client and
+    `websockets` loggers stay at `WARNING` whatever `LOG_LEVEL` says: at
+    `INFO`/`DEBUG` they log request URLs (PostgREST filters carry names) and
+    request bodies.
+  - uvicorn's access log drops query strings, so `?search=` terms aren't in it.
+  - `backend/tests/test_no_pii_logs.py` drives the save, transcribe, search,
+    context and WebSocket paths with a sentinel person and fails if any of it
+    reaches a log or stdout/stderr.
+- **Not covered.** Anything in front of the backend (a hosting platform's HTTP
+  log, a reverse proxy) may record full URLs, including `?search=` terms.
+- **Mobile.** Every `console.*` call is behind `__DEV__`, so a release build
+  writes nothing to the device log. Development builds log error objects only,
+  never case data. `mobile/test/noDataLogs.test.ts` scans the source for both.
 
 ## Testing
 

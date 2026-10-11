@@ -145,8 +145,12 @@ the assistant puts what we already know in front of the worker when they need it
 ### Q&A preparation
 
 - **"What happens to the audio?"** It's sent to the backend inline, written to a
-  temporary file for Whisper, and deleted straight after. The transcript is kept
-  with the interaction.
+  temporary file and sent to OpenAI's Whisper for transcription; the backend's
+  copy is deleted straight after, and the phone's once the record is saved or
+  discarded. The transcript is kept with the interaction. OpenAI also sees the
+  transcript, candidate records for duplicate checks and the assistant's
+  context, under its API data policy. The README's "Data leaving the system"
+  table lists all of it. Server logs hold no names, transcripts or locations.
 - **"Can it work offline?"** No. It needs a connection throughout.
 - **"Is it secure enough for real client data?"** Not yet. Every request needs a
   signed-in session and the database refuses direct access, but every account

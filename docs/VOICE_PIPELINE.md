@@ -23,7 +23,8 @@ question. File paths are relative to the repo root.
   location by hand (the picker opens at the current location, else the GPS fix,
   else a San Francisco default). Both are cleared after a save or discard.
 - **Retry:** if transcription fails, "Try Again" re-sends the same recording;
-  "Record again" discards it.
+  "Record again" discards it. The recording is deleted from the app's cache once
+  the record is saved or discarded (`resetRecording`).
 
 ## 2. Upload (app → backend)
 
@@ -188,8 +189,11 @@ is cleared.
    `input_text`, followed by `response.create`. Typed questions take the same
    route. If transcription fails or comes back empty, the app shows "Couldn't
    transcribe, please try again" and sends nothing. It only sends on an open
-   socket: if the socket closed while transcribing, the question goes back into
-   the text box to send after Retry. The app never sends `session.update`.
+   socket, and only on the socket the question was recorded for: if the socket
+   closed, or Clear/Retry replaced it, while transcribing, the question goes back
+   into the text box to send again. If the screen has closed meanwhile, nothing
+   happens. The recorded question file is deleted from the cache once
+   transcribed, or when transcription fails. The app never sends `session.update`.
    Every client frame passes the allowlist in `services/realtime_guard.py`
    (at most 1 MB; only audio-buffer append/commit/clear, a `user` message
    item, `response.create` with its overrides stripped, and `response.cancel`).
@@ -214,7 +218,11 @@ is cleared.
 5. OpenAI's reply streams back through the proxy. The app plays the audio and
    shows the transcript. When either side disconnects, the proxy stops both
    directions, closes the upstream socket and sends the app a close frame (1000
-   normal, 1011 if OpenAI dropped or failed).
+   normal, 1011 if OpenAI dropped or failed). The leftover forwarding task is
+   cancelled and awaited (`main.cancel_and_wait`). A frame the allowlist can't
+   parse, including JSON nested too deeply to decode, is dropped with an error
+   event; it never ends the session. The proxy logs only counts and error types,
+   never the question or the context.
 
    On the app side (`ModernVoiceAssistantScreen`, with the pure helpers in
    `mobile/utils/assistantMessages.ts`):
@@ -228,7 +236,11 @@ is cleared.
      not the earpiece; `configureAudioRecording()` turns recording back on when
      the next question is recorded.
    - One reply plays at a time. Mute, a new reply, starting a recording, Clear and
-     leaving the screen stop and unload it and delete its WAV file.
+     leaving the screen stop and unload it and delete its WAV file. A reply that
+     finishes while a recording is starting isn't played (its text still shows),
+     so it can't switch the audio mode back to playback mid-start.
+   - On `response.done`, audio still buffered for the response's items is
+     dropped: an interrupted item never gets `output_audio.done`.
    - The `ctx_` reference-data item is never shown. Server `error` events (such
      as `event_not_allowed`) show as a short toast.
    - Close codes get a short message (403 handshake: not signed in or not
