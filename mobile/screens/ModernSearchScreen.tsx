@@ -19,8 +19,12 @@ import { Badge } from '../components/ui/Badge';
 import { Input } from '../components/ui/Input';
 import { FadeInView } from '../components/ui/AnimatedView';
 import { theme } from '../theme';
-import { getUrgencyScoreColor, calculateDaysAgo } from '../utils/urgencyScore';
+import { formatLastSeen } from '../utils/urgencyScore';
 import { errorMessage } from '../utils/errorHandler';
+import { isPendingDelete, subscribePendingDeletes } from '../utils/delayedDelete';
+
+// The backend's display score: the override if set, else the calculated score
+const scoreOf = (r: SearchResult): number => r.display_score ?? r.urgency_override ?? r.urgency_score ?? 0;
 
 export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   navigation,
@@ -39,6 +43,18 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const clearHighlightTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Re-render when a delete is scheduled, undone or fails (OD-3)
+  const [, setPendingVersion] = useState(0);
+  const visibleResults = searchResults.filter(r => !isPendingDelete(r.id));
+
+  useEffect(() => subscribePendingDeletes(({ id, type }) => {
+    if (type === 'committed') {
+      // Gone from the backend: drop it locally instead of reloading
+      setAllIndividuals(list => list.filter(r => r.id !== id));
+      setSearchResults(list => list.filter(r => r.id !== id));
+    }
+    setPendingVersion(v => v + 1);
+  }), []);
 
   const loadAllIndividuals = async () => {
     try {
@@ -82,8 +98,8 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   }, [route?.params?.restoredId]);
 
   useEffect(() => {
-    if (!scrollTargetId || searchResults.length === 0) return;
-    const index = searchResults.findIndex(item => item.id === scrollTargetId);
+    if (!scrollTargetId || visibleResults.length === 0) return;
+    const index = visibleResults.findIndex(item => item.id === scrollTargetId);
     if (index >= 0) {
       setTimeout(() => {
         try {
@@ -175,8 +191,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   };
 
   const renderSearchResult = ({ item, index }: { item: SearchResult; index: number }) => {
-    const daysAgo = calculateDaysAgo(item.last_interaction_date);
-    const urgencyScore = item.urgency_override ?? item.urgency_score ?? 0;
+    const urgencyScore = scoreOf(item);
     const isHighlighted = highlightedId === item.id;
 
     return (
@@ -221,7 +236,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
           <View style={styles.detailRow}>
             <Ionicons name="time-outline" size={14} color={theme.colors.text.secondary} />
             <Text style={styles.detailText}>
-              Last seen {daysAgo} {daysAgo === 1 ? 'day' : 'days'} ago
+              Last seen {formatLastSeen(item.last_seen_days)}
             </Text>
           </View>
           <View style={styles.detailRow}>
@@ -268,15 +283,15 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   );
 
   const renderStats = () => {
-    if (isLoading || loadError || searchResults.length === 0) return null;
+    if (isLoading || loadError || visibleResults.length === 0) return null;
 
-    const totalResults = searchResults.length;
-    const highUrgency = searchResults.filter(r => (r.urgency_override ?? r.urgency_score ?? 0) >= 67).length;
-    const mediumUrgency = searchResults.filter(r => {
-      const score = r.urgency_override ?? r.urgency_score ?? 0;
+    const totalResults = visibleResults.length;
+    const highUrgency = visibleResults.filter(r => scoreOf(r) >= 67).length;
+    const mediumUrgency = visibleResults.filter(r => {
+      const score = scoreOf(r);
       return score >= 34 && score < 67;
     }).length;
-    const lowUrgency = searchResults.filter(r => (r.urgency_override ?? r.urgency_score ?? 0) < 34).length;
+    const lowUrgency = visibleResults.filter(r => scoreOf(r) < 34).length;
 
     return (
       <Card style={styles.statsCard} variant="filled">
@@ -342,10 +357,10 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
           </View>
         ) : loadError ? (
           renderErrorState()
-        ) : searchResults.length > 0 ? (
+        ) : visibleResults.length > 0 ? (
           <FlatList
             ref={listRef}
-            data={searchResults}
+            data={visibleResults}
             renderItem={({ item, index }) => renderSearchResult({ item, index })}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}

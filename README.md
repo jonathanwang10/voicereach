@@ -70,10 +70,23 @@ requirements.txt  Backend dependencies (pinned); requirements-dev.txt adds test 
 ```
 
 Every request carries the signed-in user's Supabase access token (see
-[Auth](#auth)). A few app features skip the backend and talk to Supabase
-directly with that session: the default Search list, the manual urgency
-override, and delete (`mobile/services/api.ts`). That is why the row-level
-security policy matters even though the backend itself uses the service key.
+[Auth](#auth)). All app data access goes through these backend routes
+(`mobile/services/api.ts`): the Search list, the manual urgency override and
+delete included. The app's Supabase client is used only to sign in, and the
+backend reads and writes the tables with the service key.
+
+**Deleting a person** (profile screen, trash icon) has a short undo window. The
+person disappears from Search at once and a "Tap to undo" toast shows for about
+5 seconds; the real `DELETE /api/individuals/{id}` is sent only when that
+window ends (`mobile/utils/delayedDelete.ts`). Undo cancels it. If the DELETE
+fails, the person reappears in Search and an error toast says so. The pending
+delete lives only in memory, so **if the app is closed or killed within those
+5 seconds, the person is not deleted.** Once sent, the delete is permanent: it
+cascades to the person's interactions and embedding.
+
+"Last seen", everywhere in the app, is the backend's `last_seen`: the latest
+interaction, else when the record was created. It is shown in whole days, with
+"today" for anything in the last 24 hours.
 
 Three separate AI capabilities, easy to confuse:
 
@@ -378,17 +391,13 @@ These are still true:
 - **The match list says "Streamlined confirmation" for matches ≥ 95%**
   (`TranscriptionResults.tsx:437`), but Save opens the same merge UI as any other
   match.
-- **Undo after delete recreates the person as a new record.** Deleting cascades
-  to their interactions, so the restored profile has a new id and no history
-  (`mobile/screens/ModernIndividualProfileScreen.tsx:107`). It also drops any
-  manual urgency override.
+- **Closing the app during the 5-second undo window cancels the delete.** The
+  pending delete is kept in memory only (see "Deleting a person" above), so the
+  person is still there on next launch and has to be deleted again.
 - **Semantic search ignores custom categories.** The text that gets embedded is
   built from a hardcoded field list (`services/embedding_service.py:50-90`).
   Embeddings are stored as JSONB and compared in Python, and list/search loads
   the whole table; pgvector would be the scalable choice.
-- **Search results from the semantic endpoint show "today" as last seen.** The
-  endpoint returns no last-seen date, so the app fills in the current time
-  (`mobile/services/api.ts:310-312`).
 - **Not yet re-verified against live services.** After the dependency upgrade,
   the OpenAI and Supabase calls were checked only offline (mocks and
   introspection). Run the curl check in [Auth](#auth) and one recording after

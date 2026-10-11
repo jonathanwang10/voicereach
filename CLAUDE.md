@@ -57,8 +57,10 @@ Backend needs `backend/.env` (see `backend/.env.example`); the app needs
 ## App structure
 
 Five tabs: Record (default), Search (pushes the individual profile), Assistant,
-Categories, Profile. API client: `mobile/services/api.ts`. Search list, urgency
-override and delete go to Supabase directly with the user's session.
+Categories, Profile. API client: `mobile/services/api.ts`. All data access goes
+through the backend; the app's Supabase client is for auth only (never call
+`supabase.from` in mobile/). Delete is delayed for an undo window
+(`mobile/utils/delayedDelete.ts`).
 
 ## Git
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import Toast from 'react-native-toast-message';
 import { IndividualProfile } from '../types';
 import { api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { getUrgencyScoreColor, getDisplayUrgencyScore } from '../utils/urgencyScore';
+import { getUrgencyScoreColor, getDisplayUrgencyScore, daysSince } from '../utils/urgencyScore';
+import { scheduleDelete, DELETE_UNDO_MS } from '../utils/delayedDelete';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -41,7 +42,6 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
   const [selectedInteraction, setSelectedInteraction] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'map'>('overview');
-  const lastDeletedRef = useRef<IndividualProfile | null>(null);
 
   const { individualId } = route.params;
 
@@ -86,62 +86,37 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
     }
   };
 
+  // Delayed delete (OD-3): hide now and go back; the real DELETE runs only after
+  // the undo window. Undo cancels it. A failed DELETE brings the person back and
+  // utils/delayedDelete tells the user.
   const confirmDelete = () => {
     if (!profile) return;
+    const { id, name } = profile;
     Alert.alert(
       'Delete Profile',
-      `Are you sure you want to delete ${profile.name}? This action cannot be undone.`,
+      `Delete ${name}? You can undo for a few seconds. After that, the profile and its interaction history are permanently deleted.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              const success = await api.deleteIndividual(profile.id);
-              if (success) {
-                lastDeletedRef.current = profile;
-                Toast.show({
-                  type: 'success',
-                  text1: 'Profile deleted',
-                  text2: 'Tap to undo',
-                  visibilityTime: 4000,
-                  onPress: async () => {
-                    try {
-                      const deleted = lastDeletedRef.current;
-                      if (!deleted) return;
-                      const result = await api.saveIndividual({ ...deleted.data, name: deleted.name });
-                      if (result?.success) {
-                        Toast.show({ type: 'success', text1: 'Restored', text2: `${deleted.name} was restored` });
-                        navigation.navigate('SearchMain', { refreshKey: Date.now(), restoredId: result.id });
-                        lastDeletedRef.current = null;
-                      } else {
-                        Toast.show({ type: 'error', text1: 'Restore failed', text2: result?.message || 'Please try again.' });
-                      }
-                    } catch (err) {
-                      Toast.show({ type: 'error', text1: 'Restore failed', text2: 'Please try again.' });
-                    }
-                  },
-                });
-                navigation.navigate('SearchMain', { refreshKey: Date.now() });
-              } else {
-                Toast.show({
-                  type: 'error',
-                  text1: 'Delete failed',
-                  text2: 'Please try again.',
-                });
-              }
-            } catch (e) {
-              console.error('Delete error:', e);
-              Toast.show({
-                type: 'error',
-                text1: 'Delete failed',
-                text2: 'Please try again.',
-              });
-            } finally {
-              setIsLoading(false);
-            }
+          onPress: () => {
+            const { cancel } = scheduleDelete(id);
+            Toast.show({
+              type: 'success',
+              text1: `${name} deleted`,
+              text2: 'Tap to undo',
+              visibilityTime: DELETE_UNDO_MS,
+              onPress: () => {
+                Toast.hide();
+                if (cancel()) {
+                  Toast.show({ type: 'success', text1: 'Delete undone', text2: `${name} was kept` });
+                } else {
+                  Toast.show({ type: 'info', text1: 'Too late to undo', text2: `${name} was already deleted` });
+                }
+              },
+            });
+            navigation.goBack();
           },
         },
       ]
@@ -167,22 +142,19 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
   const handleUrgencyOverrideChange = async (overrideValue: number | null) => {
     if (!profile) return;
 
-    const updatedProfile = {
-      ...profile,
-      urgency_override: overrideValue,
-    };
-    setProfile(updatedProfile);
+    const previous = profile;
+    setProfile({ ...profile, urgency_override: overrideValue });
 
     try {
-      const success = await api.updateUrgencyOverride(profile.id, overrideValue);
-      if (!success) {
-        setProfile(profile);
-        Toast.show({ type: 'error', text1: 'Update failed', text2: 'Could not update urgency override.' });
-      }
+      const scores = await api.updateUrgencyOverride(profile.id, overrideValue);
+      setProfile(current => current && {
+        ...current,
+        urgency_score: scores.urgency_score,
+        urgency_override: scores.urgency_override,
+      });
     } catch (error) {
-      setProfile(profile);
-      console.error('Error updating urgency override:', error);
-      Toast.show({ type: 'error', text1: 'Update failed', text2: 'Could not update urgency override.' });
+      setProfile(previous);
+      showApiError(error, 'Update failed');
     }
   };
 
@@ -253,9 +225,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
                 </View>
                 <View style={styles.statItem}>
                   <Text style={styles.statNumber}>
-                    {profile.interactions.length > 0
-                      ? Math.floor((Date.now() - new Date(profile.interactions[0].created_at).getTime()) / (1000 * 60 * 60 * 24))
-                      : 0}
+                    {daysSince(profile.last_seen)}
                   </Text>
                   <Text style={styles.statLabel}>Days Since Last</Text>
                 </View>

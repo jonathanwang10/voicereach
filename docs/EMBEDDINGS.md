@@ -109,13 +109,13 @@ GET /api/embeddings/status
 
 1. **ModernSearchScreen** calls `api.semanticSearchIndividuals()` for a typed
    query (`top_k` 20, threshold 0.15).
-2. If that fails, it falls back to `api.searchIndividuals()`, a direct Supabase
-   name query.
-3. With an empty query, the screen lists everyone via `api.searchIndividuals('')`.
-4. Results carry `similarity_score` and `search_type` (`exact` or `semantic`),
-   which the screen shows as a match percentage. The search endpoint returns no
-   last-seen date, so the app fills in the current time for these results
-   (`mobile/services/api.ts:310-312`).
+2. If that fails, it falls back to `api.searchIndividuals()`, which is
+   `GET /api/individuals?search=...` (the backend's text search).
+3. With an empty query, the screen lists everyone via `api.searchIndividuals('')`
+   (`GET /api/individuals`, most recently seen first, up to 100).
+4. Results carry `similarity_score` and `search_type`, which the screen shows as
+   a match percentage, plus `last_seen` and `display_score`. `last_seen` uses the
+   same rule as the list (latest interaction, else `created_at`).
 
 ## How it works
 

@@ -14,10 +14,18 @@ export const getDisplayUrgencyScore = (individual: { urgency_score: number; urge
     : individual.urgency_score;
 };
 
-export const calculateDaysAgo = (dateString: string): number => {
-  const lastSeen = new Date(dateString);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - lastSeen.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Whole days since `iso` (floor), so anything in the last 24 hours is 0 ("today").
+// Never negative (a slightly-ahead server clock); an unparseable date counts as 0.
+// "Last seen" itself comes from the backend: the latest interaction, else created_at.
+export const daysSince = (iso: string, now: Date = new Date()): number => {
+  const elapsed = now.getTime() - new Date(iso).getTime();
+  if (!Number.isFinite(elapsed) || elapsed < 0) return 0;
+  return Math.floor(elapsed / DAY_MS);
+};
+
+export const formatLastSeen = (days: number): string => {
+  if (days <= 0) return 'today';
+  return days === 1 ? '1 day ago' : `${days} days ago`;
 };

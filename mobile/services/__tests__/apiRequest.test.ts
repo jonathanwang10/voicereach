@@ -169,15 +169,10 @@ describe('reads throw instead of returning empty values', () => {
     expect(mockFrom).not.toHaveBeenCalled();
   });
 
-  it('searchIndividuals throws when the query fails', async () => {
-    const chain: any = {
-      select: () => chain,
-      order: () => chain,
-      or: () => chain,
-      then: (resolve: any) => resolve({ data: null, error: { message: 'FetchError: Network request failed' } }),
-    };
-    mockFrom.mockReturnValue(chain);
+  it('searchIndividuals throws when the backend fails', async () => {
+    (global as any).fetch = jest.fn(async () => jsonResponse(500, { detail: 'Search individuals failed' }));
     await expect(api.searchIndividuals('')).rejects.toBeInstanceOf(ApiError);
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 });
 

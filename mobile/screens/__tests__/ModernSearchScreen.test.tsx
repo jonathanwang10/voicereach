@@ -15,8 +15,10 @@ jest.mock('../../services/api', () => ({
 }));
 
 import { Alert } from 'react-native';
+import { act } from '@testing-library/react-native';
 import { ModernSearchScreen } from '../ModernSearchScreen';
 import { api } from '../../services/api';
+import { scheduleDelete, __resetPendingDeletesForTests } from '../../utils/delayedDelete';
 
 const ann = {
   id: 'a1', name: 'Ann Lee', urgency_score: 10, last_seen_days: 1,
@@ -26,7 +28,11 @@ const outage = Object.assign(new Error('Server error. Please try again.'), {
   status: 500, detail: 'Server error. Please try again.', kind: 'http',
 });
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  __resetPendingDeletesForTests();
+});
+afterEach(() => __resetPendingDeletesForTests());
 
 it('shows a retry state when loading fails, and retries on tap', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -75,4 +81,48 @@ it('shows the retry state when both searches fail', async () => {
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
   await waitFor(() => getByText("Couldn't load — tap to retry"));
   expect(queryByText('No Results Found')).toBeNull();
+});
+
+// OD-3: a person whose delete is pending is hidden; Undo brings them back.
+describe('pending deletes', () => {
+  const bob = { ...ann, id: 'b2', name: 'Bob Day' };
+
+  it('hides a pending delete that is already scheduled when the list loads', async () => {
+    scheduleDelete('a1');
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob]);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Bob Day'));
+    expect(queryByText('Ann Lee')).toBeNull();
+  });
+
+  it('hides on schedule and shows again on Undo, without reloading', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob]);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    const calls = (api.searchIndividuals as jest.Mock).mock.calls.length;
+
+    let handle: { cancel: () => boolean } = { cancel: () => false };
+    act(() => { handle = scheduleDelete('a1'); });
+    expect(queryByText('Ann Lee')).toBeNull();
+    expect(getByText('Bob Day')).toBeTruthy();
+
+    act(() => { handle.cancel(); });
+    expect(getByText('Ann Lee')).toBeTruthy();
+    expect((api.searchIndividuals as jest.Mock).mock.calls.length).toBe(calls);
+  });
+});
+
+// C-32: anything seen in the last 24 hours is "today", never "1 day ago".
+it('shows "Last seen today" for 0 days', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([{ ...ann, last_seen_days: 0 }]);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('Last seen today'));
+});
+
+it('shows the display score (override) on the row', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([
+    { ...ann, urgency_score: 10, urgency_override: null, display_score: 88 },
+  ]);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('88'));
 });

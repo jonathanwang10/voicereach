@@ -25,12 +25,13 @@ export interface SearchResult {
   name: string;
   urgency_score: number;
   urgency_override?: number | null;
-  last_seen_days: number;
-  last_interaction_date: string;
-  last_seen?: string;
+  display_score?: number; // backend: override if set, else the calculated score
+  last_seen: string; // ISO, from the backend: latest interaction, else created_at
+  last_seen_days: number; // whole days since last_seen (floor; 0 = today)
+  last_interaction_date: string; // compat alias of last_seen
   abbreviated_address?: string;
   similarity_score?: number; // Optional field for embedding search results
-  search_type?: 'exact' | 'semantic'; // Type of search match
+  search_type?: 'exact' | 'value' | 'semantic'; // Type of search match
 }
 
 export interface Interaction {
@@ -59,6 +60,7 @@ export interface IndividualProfile {
   updated_at: string;
   interactions: Interaction[];
   total_interactions: number;
+  last_seen: string; // latest interaction, else created_at (same rule as the list)
   last_interaction_date?: string;
   last_location?: {
     latitude: number;

@@ -97,8 +97,9 @@ individual_embeddings (
 
 Row-level security is enabled on all four tables with one policy each: the
 `authenticated` role may read and write every row. The backend's service key
-bypasses RLS; the app's direct queries (search list, urgency override, delete)
-run as the signed-in demo user.
+bypasses RLS. The app no longer queries tables directly: its Supabase client is
+used only to sign in, and every read and write goes through the backend routes
+below.
 
 ## API structure
 
@@ -110,8 +111,9 @@ All routes except `GET /health` and `GET /` need
 - **Individuals:** `POST /api/individuals` (create or merge), `GET
   /api/individuals` (list/search), `GET /api/individuals/{id}`, `GET
   /api/individuals/{id}/interactions`, `PUT
-  /api/individuals/{id}/urgency-override`, `POST
-  /api/individuals/check-duplicates`
+  /api/individuals/{id}/urgency-override`, `DELETE /api/individuals/{id}`
+  (the app sends it after a 5 s undo window, `mobile/utils/delayedDelete.ts`),
+  `POST /api/individuals/check-duplicates`
 - **Categories:** `GET` and `POST /api/categories`; `GET /api/export` (CSV)
 - **Embeddings:** `POST /api/embeddings/search`, `GET /api/embeddings/status`,
   `POST /api/embeddings/generate`, `POST /api/embeddings/generate-all`
@@ -264,8 +266,7 @@ export const getAuthToken = async () => {
 };
 ```
 
-Every backend call, the direct Supabase queries and the assistant WebSocket
-handshake use this token.
+Every backend call and the assistant WebSocket handshake use this token.
 
 ## Edge cases
 

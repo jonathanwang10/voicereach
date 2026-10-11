@@ -1,6 +1,7 @@
 import { supabase, autoLogin } from './supabase';
 import { getApiUrl } from '../config/api';
 import { showApiError } from '../utils/errorHandler';
+import { daysSince } from '../utils/urgencyScore';
 import { SearchResult, IndividualProfile, Interaction, FieldError } from '../types';
 
 // The one error type every backend call throws (C-16). `detail` is the backend's
@@ -156,14 +157,21 @@ export const apiRequest = async <T = any>(
   return (await res.json()) as T;
 };
 
-// Helper function to calculate days ago
-const calculateDaysAgo = (dateString: string): number => {
-  const lastSeen = new Date(dateString);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - lastSeen.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
-};
+// One "last seen" everywhere (C-32): the backend's `last_seen` (latest interaction,
+// else created_at), counted in whole days.
+const toSearchResult = (item: any): SearchResult => ({
+  id: item.id,
+  name: item.name,
+  urgency_score: item.urgency_score,
+  urgency_override: item.urgency_override ?? null,
+  display_score: item.display_score,
+  last_seen: item.last_seen,
+  last_seen_days: daysSince(item.last_seen),
+  last_interaction_date: item.last_seen, // compat alias
+  abbreviated_address: item.last_location?.address ?? item.abbreviated_address ?? undefined,
+  ...(item.similarity_score !== undefined && { similarity_score: item.similarity_score }),
+  ...(item.search_type !== undefined && { search_type: item.search_type }),
+});
 
 // Transcription response types
 export interface TranscriptionResult {
@@ -273,52 +281,14 @@ export const api = {
 
   // TASK 4: Search & Category Management APIs
   
-  // Search individuals
-  // Throws ApiError on failure: an outage must not look like "no one recorded yet" (C-17)
+  // Search individuals: GET /api/individuals. An empty query is the default list,
+  // most recently seen first. The backend escapes the term (no PostgREST filter
+  // built from raw input, C-41). Throws ApiError: an outage must not look like
+  // "no one recorded yet" (C-17).
   searchIndividuals: async (query: string): Promise<SearchResult[]> => {
-    await getAuthToken();
-    console.log('🔍 Searching individuals in database...');
-    
-    // Use direct Supabase query for real database
-    let supabaseQuery = supabase
-      .from('individuals')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    // Only apply search filter if query is not empty
-    if (query.trim()) {
-      supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,data->>'name'.ilike.%${query}%`);
-    } else {
-      console.log('🔍 No search query, fetching all individuals');
-    }
-
-    console.log('🔍 Executing Supabase query...');
-    const { data: individuals, error } = await supabaseQuery;
-
-    if (error || !individuals) {
-      throw new ApiError(500, "Couldn't load individuals. Please try again.", 'http');
-    }
-
-    
-    // Convert to SearchResult format
-    const searchResults: SearchResult[] = individuals.map(individual => {
-      // Calculate display score (override or calculated)
-              const displayScore = individual.urgency_override !== null && individual.urgency_override !== undefined
-        ? individual.urgency_override
-        : individual.urgency_score;
-      
-      return {
-        id: individual.id,
-        name: individual.name,
-        urgency_score: displayScore,
-        last_seen: individual.updated_at,
-        last_seen_days: calculateDaysAgo(individual.updated_at),
-        last_interaction_date: individual.updated_at,
-        abbreviated_address: "Market St & 5th" // Mock address for now
-      };
-    });
-
-    return searchResults;
+    const params = new URLSearchParams({ search: query.trim(), limit: '100' });
+    const result = await apiRequest(`/api/individuals?${params.toString()}`);
+    return (result?.individuals ?? []).map(toSearchResult);
   },
 
   // Semantic search using embeddings
@@ -333,27 +303,7 @@ export const api = {
       }),
     });
 
-    // Convert hybrid search results to SearchResult format
-    const searchResults: SearchResult[] = (result?.results ?? []).map((item: any) => {
-      // Calculate display score (override or calculated)
-      const displayScore = item.urgency_override !== null && item.urgency_override !== undefined
-        ? item.urgency_override
-        : item.urgency_score;
-      
-      return {
-        id: item.id,
-        name: item.name,
-        urgency_score: displayScore,
-        last_seen: new Date().toISOString(), // We don't have this in embedding results
-        last_seen_days: 0, // We don't have this in embedding results
-        last_interaction_date: new Date().toISOString(), // We don't have this in embedding results
-        abbreviated_address: "Market St & 5th", // Mock address for now
-        similarity_score: item.similarity_score, // Add similarity score for display
-        search_type: item.search_type // Add search type (exact/semantic)
-      };
-    });
-    
-    return searchResults;
+    return (result?.results ?? []).map(toSearchResult);
   },
 
   // Get individual profile
@@ -365,6 +315,9 @@ export const api = {
     // profile instead of showing "No interactions recorded".
     const individual = result.individual;
     const interactions = await api.getInteractions(individualId);
+    // Same rule as the list's last_seen: the latest interaction, else created_at
+    const latest = interactions.reduce<string | null>(
+      (max, i) => (!max || new Date(i.created_at) > new Date(max) ? i.created_at : max), null);
     const profile: IndividualProfile = {
       id: individual.id,
       name: individual.name,
@@ -374,6 +327,7 @@ export const api = {
       created_at: individual.created_at,
       updated_at: individual.updated_at,
       last_location: individual.last_location || null,
+      last_seen: latest ?? individual.created_at,
       interactions,
       total_interactions: interactions.length
     };
@@ -381,79 +335,26 @@ export const api = {
     return profile;
   },
 
-  // Update urgency override
-  updateUrgencyOverride: async (individualId: string, overrideValue: number | null): Promise<boolean> => {
-    await getAuthToken();
-    try {
-      console.log('⚠️ Updating urgency override in database...');
-
-      // Use direct Supabase update for real database
-      const { data, error } = await supabase
-        .from('individuals')
-        .update({
-          urgency_override: overrideValue,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', individualId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('❌ Urgency override update error:', error);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('❌ Update urgency override error:', error);
-      return false;
-    }
+  // Update urgency override (null clears it). The backend validates 0-100 and
+  // invalidates the voice assistant's cache (C-10). Throws ApiError.
+  updateUrgencyOverride: async (
+    individualId: string,
+    overrideValue: number | null
+  ): Promise<{ urgency_score: number; urgency_override: number | null; display_score: number }> => {
+    return apiRequest(`/api/individuals/${individualId}/urgency-override`, {
+      method: 'PUT',
+      body: JSON.stringify({ urgency_override: overrideValue }),
+    });
   },
 
-  // Delete individual
-  deleteIndividual: async (individualId: string): Promise<boolean> => {
-    await getAuthToken();
-    try {
-      console.log('🗑️ Deleting individual from database...');
-
-      // First attempt: delete the individual directly
-      let { error } = await supabase
-        .from('individuals')
-        .delete()
-        .eq('id', individualId);
-
-      // If there is a foreign key constraint (23503), delete dependent interactions then retry
-      if (error && (error as any).code === '23503') {
-        console.warn('⚠️ FK constraint, deleting dependent interactions first...');
-        const { error: interactionsError } = await supabase
-          .from('interactions')
-          .delete()
-          .eq('individual_id', individualId);
-
-        if (interactionsError) {
-          console.error('❌ Failed to delete dependent interactions:', interactionsError);
-          return false;
-        }
-
-        // Retry deleting the individual
-        const retry = await supabase
-          .from('individuals')
-          .delete()
-          .eq('id', individualId);
-        error = retry.error as any;
-      }
-
-      if (error) {
-        console.error('❌ Delete individual error:', error);
-        return false;
-      }
-
-      console.log('✅ Successfully deleted individual');
-      return true;
-    } catch (error) {
-      console.error('❌ Delete individual exception:', error);
-      return false;
-    }
+  // Delete individual. The backend cascades interactions and embeddings and
+  // invalidates the assistant cache. A 404 means it is already gone, so it counts
+  // as done. Throws ApiError on any other failure. Screens call this through
+  // utils/delayedDelete (undo window), not directly.
+  deleteIndividual: async (individualId: string): Promise<void> => {
+    const res = await authedFetch(`/api/individuals/${individualId}`, { method: 'DELETE' });
+    if (res.status === 404) return;
+    await throwIfNotOk(res);
   },
 
   // Get categories
