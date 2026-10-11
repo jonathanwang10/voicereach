@@ -669,7 +669,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         // can be sent (after Retry if needed), but never into a different conversation.
         dropBubble();
         setTextInput(transcript);
-        toast('Not sent', ws && ws !== startWs && isSocketOpen(ws)
+        toast('Not sent', ws && ws !== startWs
           ? 'The conversation was restarted. Send your question again.'
           : 'Voice assistant disconnected. Tap Retry, then send your question.');
         return;

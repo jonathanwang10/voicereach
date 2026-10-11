@@ -468,6 +468,7 @@ describe('T14: recording start, interrupted replies, late transcripts, cached fi
     expect(ws.send).not.toHaveBeenCalled();
     expect(ws2.send).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue('Where is the shelter?')).toBeTruthy();
+    expect(toastTexts().join('\n')).toMatch(/conversation was restarted/);
   });
 
   it.each([
