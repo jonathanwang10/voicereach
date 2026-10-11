@@ -231,6 +231,11 @@ Return JSON only."""
                 if value is not None:
                     if cat['type'] == 'number':
                         if category_key(field_name) == 'height':
+                            # GPT sometimes answers in feet (6 or 5.5). Convert that here,
+                            # where the value first enters; the shared parser treats an
+                            # int/float as inches so later normalising passes stay idempotent.
+                            if isinstance(value, (int, float)) and not isinstance(value, bool) and 1 <= value < 10:
+                                value = value * 12
                             value = parse_height_inches(value)
                         # Ensure it's a number
                         try:

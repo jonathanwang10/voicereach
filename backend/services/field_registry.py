@@ -45,19 +45,32 @@ def _bare_height(num: float) -> float:
     return num * 12 if 1 <= num < 10 else num
 
 
+# Unicode primes and curly quotes are read as ' (feet) and " (inches).
+_QUOTE_TRANSLATION = str.maketrans({"\u2032": "'", "\u2019": "'", "\u2018": "'",
+                                    "\u2033": '"', "\u201d": '"', "\u201c": '"'})
+
+
 def parse_height_inches(value: Any) -> Optional[float]:
     """Parse a height into inches.
 
-    Bare 1-9 are feet; "5'10", "5 ft 10", "5.5 feet", "5, 10", "178 cm" and
-    "1.78 m" are understood; any other bare number is inches. Returns None if
-    the value cannot be parsed.
+    An int/float is already inches and is returned unchanged (rounded to 0.1),
+    so normalising twice never turns 9 inches into 9 feet. Only a bare numeric
+    STRING with no unit ("6", "5.5") applies the 1-9-means-feet rule. "5'10",
+    "5′10″", "5 ft 10", "5.5 feet", "5, 10", "178 cm" and "1.78 m" are
+    understood; any other number is inches. Returns None if unparseable.
     """
-    num = _number(value)
-    if num is not None:
-        return round(_bare_height(num), 1)
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        num = _number(value)
+        return None if num is None else round(num, 1)
     if not isinstance(value, str) or not value.strip():
         return None
-    text = value.strip()
+    text = value.strip().translate(_QUOTE_TRANSLATION)
+
+    num = _number(text)
+    if num is not None:
+        return round(_bare_height(num), 1)
 
     # Metric: "178 cm", "180 centimeters", "1.78 m", "1.78 metres"
     match = re.search(r"(\d+(?:\.\d+)?)\s*(?:cm|centimet(?:er|re)s?)\b", text, re.I)
@@ -91,10 +104,10 @@ def parse_height_inches(value: Any) -> Optional[float]:
     if match:
         return round(float(match.group(1)), 1)
 
-    # Any other single number, e.g. "about 70"
+    # Any other single number, e.g. "about 70" (inches; only a bare string is feet)
     match = re.search(r"\d+(?:\.\d+)?", text)
     if match:
-        return round(_bare_height(float(match.group(0))), 1)
+        return round(float(match.group(0)), 1)
     return None
 
 
@@ -176,13 +189,14 @@ def _normalize_value(value: Any, category: Optional[dict]) -> Tuple[Any, Optiona
         labels = _option_labels(category)
         if not labels:
             return (items or None), None
-        result: List[str] = []
+        chosen = set()
         for item in items:
             label = _match_label(item, labels)
             if label is None:
                 return items, f"Invalid option '{item}' in selection"
-            if label not in result:
-                result.append(label)
+            chosen.add(label)
+        # Emit in the category's option order so re-ordering is never a "change"
+        result = [label for label in labels if label in chosen]
         return (result or None), None
 
     if field_type == "location":
@@ -204,10 +218,12 @@ def normalize_individual_data(data: dict, categories: list) -> Tuple[Dict[str, A
       kept as given (after the same generic cleaning).
     - None / "" / whitespace / [] are dropped; strings are stripped.
     - number: int if integral else float; < 0 is an error; height/weight > 300 is an
-      error; height is parsed with parse_height_inches (bare 1-9 = feet).
+      error; height is parsed with parse_height_inches (a bare numeric string 1-9 is
+      feet; an int/float is already inches, so normalising is idempotent).
     - single_select: case-insensitive label match -> canonical label, else an error.
     - multi_select: a string is split on ","; items matched case-insensitively to
-      canonical labels and de-duplicated; an unknown item is an error.
+      canonical labels, de-duplicated and emitted in the category's option order;
+      an unknown item is an error.
     - text/date: stripped string; location: kept as-is.
     On an error the cleaned raw value is kept in clean_data so it can be shown and fixed.
     """

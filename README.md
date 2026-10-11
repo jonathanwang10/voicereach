@@ -291,9 +291,14 @@ and the urgency calculation. Keys are matched case- and spacing-insensitively to
 category names (`category_key`); `null`, `""`, whitespace and `[]` are dropped;
 numbers become `int`/`float` (negative is an error, height and weight above 300
 are errors); select labels are matched case-insensitively to the canonical label;
-a multi-select string is split on commas; names are stripped. Height goes through
-`parse_height_inches`: a bare 1–9 is feet, and "5'10", "5 ft 10", "5.5 feet",
-"5, 10", "178 cm" and "1.78 m" are understood; any other bare number is inches.
+a multi-select string is split on commas, and the labels come back in the
+category's option order, so re-ordering a selection is never logged as a change;
+names are stripped. Height goes through `parse_height_inches`: a bare numeric
+*string* from 1 to 9 ("6", "5.5") is feet, while a JSON number is already inches
+(so normalising twice is harmless); "5'10", "5′10″", "5 ft 10", "5.5 feet",
+"5, 10", "178 cm" and "1.78 m" are understood; any other number is inches. A
+small number GPT returns for height (e.g. `6`) is converted from feet in
+`categorize_transcription`, where it first enters.
 Keys that match no category are kept, after the same cleaning.
 
 **Duplicate detection — the code and the spec disagree here.** The backend

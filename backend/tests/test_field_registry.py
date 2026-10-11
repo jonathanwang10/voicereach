@@ -30,7 +30,7 @@ def test_category_key(raw, expected):
 
 # --- parse_height_inches ---
 @pytest.mark.parametrize("raw,expected", [
-    (6, 72), (5.5, 66), ("6", 72), ("5.5 feet", 66), ("5, 10", 70), ("5'10", 70),
+    ("6", 72), ("5.5", 66), ("5.5 feet", 66), ("5, 10", 70), ("5'10", 70),
     ("5' 10\"", 70), ("5 ft 10", 70), ("5 feet 10 inches", 70), ("6 ft 180 lbs", 72),
     ("5 foot 150 pounds", 60), ("70", 70), (70, 70), ("70.5", 70.5), ("70 inches", 70),
     ("178 cm", 70.1), ("1.78 m", 70.1), ("1.78 meters", 70.1), ("180 centimeters", 70.9),
@@ -152,3 +152,32 @@ def test_validation_flags_invalid_multi_select_string():
         {"name": "Ann", "height": 65, "weight": 140, "medical_conditions": "Diabetes, Flu"}, CATEGORIES)
     assert not result.is_valid
     assert result.validation_errors[0]["field"] == "medical_conditions"
+
+
+# --- fix round 1 ---
+def test_multi_select_order_is_canonical_so_reordering_is_not_a_change():
+    """Stored ["Cancer","Diabetes"] vs new "diabetes, cancer" must not be a phantom change (C-14)."""
+    from unittest.mock import MagicMock
+    from services.individual_service import IndividualService
+    stored, _ = normalize_individual_data({"medical_conditions": ["Cancer", "Diabetes"]}, CATEGORIES)
+    new, _ = normalize_individual_data({"medical_conditions": "diabetes, cancer"}, CATEGORIES)
+    assert stored["medical_conditions"] == new["medical_conditions"] == ["Diabetes", "Cancer"]
+    assert IndividualService(MagicMock()).get_changed_fields(stored, new) == {}
+
+
+@pytest.mark.parametrize("raw", ["9 in", "20 cm", "6", "5'10", "5.5", 70, 6, "178 cm"])
+def test_height_normalisation_is_idempotent(raw):
+    once, errors = normalize_individual_data({"height": raw}, CATEGORIES)
+    twice, _ = normalize_individual_data(once, CATEGORIES)
+    assert errors == []
+    assert twice == once
+
+
+def test_numeric_height_is_already_inches():
+    assert parse_height_inches(9) == 9
+    assert parse_height_inches(7.9) == 7.9
+
+
+@pytest.mark.parametrize("raw", ["5′10″", "5’10”", "5′ 10″"])
+def test_unicode_primes_and_curly_quotes(raw):
+    assert parse_height_inches(raw) == 70

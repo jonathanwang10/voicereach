@@ -193,3 +193,15 @@ async def test_embedding_text_joins_lists_and_strings_safely():
     text = svc.generate_embedding.await_args.args[0]
     assert "Medical conditions: Diabetes" in text
     assert "Substance abuse: Mild, 3" in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gpt_height,expected", [(6, 72), (5.5, 66), ("6", 72), (70, 70), ("9 in", 9)])
+async def test_categorize_still_treats_small_gpt_numbers_as_feet(gpt_height, expected):
+    svc = OpenAIService.__new__(OpenAIService)
+    completion = MagicMock()
+    completion.choices = [MagicMock(message=MagicMock(content=json.dumps({"name": "Ann", "height": gpt_height})))]
+    svc.client = MagicMock()
+    svc.client.chat.completions.create = AsyncMock(return_value=completion)
+    result = await svc.categorize_transcription("text", CATEGORIES)
+    assert result["height"] == expected
