@@ -13,15 +13,20 @@ from urllib.parse import urlparse
 from services.field_registry import category_key, parse_height_inches
 
 
+# Fail fast instead of the SDK defaults (600 s read, 2 retries). /api/transcribe chains
+# three calls, so the worst case stays around the app's 120 s transcribe timeout.
+OPENAI_TIMEOUT_SECONDS = 30
+WHISPER_TIMEOUT_SECONDS = 60
+
+
 class OpenAIService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        self._api_key = os.getenv("OPENAI_API_KEY")
+        self.client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=OPENAI_TIMEOUT_SECONDS,
+            max_retries=1,
+        )
 
-    def _recreate_client(self):
-        """Recreate the OpenAI client to handle session expiration"""
-        self.client = AsyncOpenAI(api_key=self._api_key)
-        
     async def transcribe_audio(self, audio_url: str) -> str:
         """
         Transcribe audio from Supabase URL using OpenAI Whisper API
@@ -76,7 +81,8 @@ class OpenAIService:
                 transcript = await self.client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
-                    response_format="text"
+                    response_format="text",
+                    timeout=WHISPER_TIMEOUT_SECONDS,
                 )
                 
             # Note: Duration validation would happen on frontend
@@ -128,7 +134,8 @@ class OpenAIService:
                 transcript = await self.client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
-                    response_format="text"
+                    response_format="text",
+                    timeout=WHISPER_TIMEOUT_SECONDS,
                 )
                 
             return transcript.strip()
@@ -345,35 +352,6 @@ Return JSON only."""
                 return scores
 
         except Exception as e:
-            # Check for session expiration error
-            if "session" in str(e).lower() and "expired" in str(e).lower():
-                print("OpenAI session expired, recreating client...")
-                self._recreate_client()
-                # Try once more with new client
-                try:
-                    response = await self.client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a data comparison assistant. Compare individuals and return JSON with confidence scores."
-                            },
-                            {"role": "user", "content": comparison_prompt}
-                        ],
-                        temperature=0.3,
-                        response_format={"type": "json_object"}
-                    )
-                    result = response.choices[0].message.content
-                    scores = json.loads(result) if isinstance(result, str) else result
-                    validated_scores = {}
-                    for key, value in scores.items():
-                        if isinstance(value, (int, float)):
-                            validated_scores[key] = int(value)
-                    return validated_scores
-                except Exception as retry_error:
-                    print(f"Retry after session recreation failed: {str(retry_error)}")
-                    return {}
-
             print(f"Error in compare_individuals: {str(e)}")
             # Return empty scores on error
             return {}

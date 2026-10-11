@@ -1,10 +1,33 @@
 import { supabase, autoLogin } from './supabase';
-import { API_CONFIG, getApiUrl } from '../config/api';
-import { ErrorHandler } from '../utils/errorHandler';
-import { SearchResult, IndividualProfile } from '../types';
+import { getApiUrl } from '../config/api';
+import { showApiError } from '../utils/errorHandler';
+import { SearchResult, IndividualProfile, Interaction, FieldError } from '../types';
 
+// The one error type every backend call throws (C-16). `detail` is the backend's
+// `detail` (a FastAPI 422 list is joined), or a generic message when there is none.
+// Callers show it once (utils/errorHandler.showApiError); the transport never toasts.
+export class ApiError extends Error {
+  status: number; // HTTP status; 0 = network failure, timeout or no session
+  detail: string;
+  kind: 'http' | 'network' | 'timeout' | 'auth';
 
-// Every backend route and every RLS-protected table needs a signed-in session.
+  constructor(status: number, detail: string, kind: ApiError['kind']) {
+    super(detail);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+    this.kind = kind;
+    Object.setPrototypeOf(this, ApiError.prototype);
+  }
+}
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const TRANSCRIBE_TIMEOUT_MS = 120_000;
+const ASSISTANT_TRANSCRIBE_TIMEOUT_MS = 60_000;
+const NETWORK_RETRY_DELAY_MS = 500;
+const NOT_SIGNED_IN = 'Not signed in. Check that the demo user exists in Supabase (see README setup).';
+
+// Every backend route needs a signed-in session.
 export const getAuthToken = async (): Promise<string> => {
   let { data: { session } } = await supabase.auth.getSession();
   if (!session) {
@@ -12,75 +35,125 @@ export const getAuthToken = async (): Promise<string> => {
     ({ data: { session } } = await supabase.auth.getSession());
   }
   if (!session) {
-    throw new Error('Not signed in. Check that the demo user exists in Supabase (see README setup).');
+    throw new ApiError(0, NOT_SIGNED_IN, 'auth');
   }
   return session.access_token;
 };
 
-// Generic API request function with retry logic
-const apiRequest = async (
-  endpoint: string,
-  options: RequestInit = {},
-  retries: number = 1
-): Promise<any> => {
-  // Skip real API calls if disabled
-  if (!API_CONFIG.USE_REAL_API) {
-    const error = ErrorHandler.handleApiError(new Error('Real API disabled for demo'));
-    ErrorHandler.showError(error);
-    throw error;
+// After a 401: refresh the session; if that fails (refresh token expired after a long
+// idle), sign in again (C-37).
+const renewAuthToken = async (): Promise<string> => {
+  try {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data?.session?.access_token) return data.session.access_token;
+  } catch {
+    // fall through to a fresh sign-in
   }
+  await autoLogin();
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new ApiError(0, NOT_SIGNED_IN, 'auth');
+  return session.access_token;
+};
 
-  // Get fresh token for each attempt
-  const token = await getAuthToken();
+const buildHeaders = (init: RequestInit, token: string): Record<string, string> => {
+  const headers: Record<string, string> = { ...((init.headers as Record<string, string>) || {}) };
+  if (typeof init.body === 'string' && !Object.keys(headers).some(h => h.toLowerCase() === 'content-type')) {
+    headers['Content-Type'] = 'application/json';
+  }
+  headers.Authorization = `Bearer ${token}`;
+  return headers;
+};
 
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers as any),
-      Authorization: `Bearer ${token}`,
-    },
+const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, 'The server took too long to respond. Please try again.', 'timeout');
+    }
+    throw new ApiError(0, 'No connection to the server. Check your network and try again.', 'network');
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+// Adds the bearer token and a timeout. On 401 it renews the session and retries once;
+// a network failure is retried once for GET only (a POST may already have been applied).
+// Returns the Response for any HTTP status; throws ApiError only for network failure,
+// timeout or when no session can be obtained.
+export const authedFetch = async (
+  path: string,
+  init: RequestInit = {},
+  opts: { timeoutMs?: number } = {}
+): Promise<Response> => {
+  const url = getApiUrl(path);
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const isGet = (init.method || 'GET').toUpperCase() === 'GET';
+
+  const send = async (token: string): Promise<Response> => {
+    const request = { ...init, headers: buildHeaders(init, token) };
+    try {
+      return await fetchWithTimeout(url, request, timeoutMs);
+    } catch (e) {
+      if (isGet && e instanceof ApiError && e.kind === 'network') {
+        await new Promise(resolve => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
+        return fetchWithTimeout(url, request, timeoutMs);
+      }
+      throw e;
+    }
   };
 
-  try {
-    const fullUrl = getApiUrl(endpoint);
-    console.log(`Making API request to: ${fullUrl}`);
-    const response = await fetch(fullUrl, config);
+  const response = await send(await getAuthToken());
+  if (response.status !== 401) return response;
+  return send(await renewAuthToken());
+};
 
-    if (!response.ok) {
-      // If we get 401/403 and have retries left, refresh token and retry
-      if ((response.status === 401 || response.status === 403) && retries > 0) {
-        console.log('Auth error, refreshing session and retrying...');
-        // Force refresh session
-        const { data: { session }, error } = await supabase.auth.refreshSession();
-        if (!error && session) {
-          // Retry with fresh token
-          return apiRequest(endpoint, options, retries - 1);
-        }
-      }
+const genericMessage = (status: number): string => {
+  if (status === 401) return 'Your session expired. Please try again.';
+  if (status === 403) return "This account isn't allowed to do that.";
+  if (status === 404) return 'Not found.';
+  if (status === 413) return 'That file is too large.';
+  if (status === 429) return 'Too many requests. Try again in a minute.';
+  if (status >= 500) return 'Server error. Please try again.';
+  return `Request failed (${status}).`;
+};
 
-      const errorText = await response.text();
-      console.error(`API Error ${response.status}:`, errorText);
-      const error = ErrorHandler.handleApiError(new Error(`API request failed: ${response.status} ${response.statusText}`));
-      ErrorHandler.showError(error);
-      throw error;
-    }
-
-    const result = await response.json();
-    return result;
-  } catch (error: any) {
-    // Retry on network failures if we have retries left
-    if (error.message?.includes('Network request failed') && retries > 0) {
-      console.log('Network error, retrying...');
-      // Wait a bit before retry
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      return apiRequest(endpoint, options, retries - 1);
-    }
-
-    const appError = ErrorHandler.handleError(error, `API Request to ${endpoint}`);
-    ErrorHandler.showError(appError);
-    throw appError;
+const parseDetail = (detail: unknown): string => {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI 422: [{loc, msg, type}, ...]
+    return detail
+      .map(d => (d && typeof d === 'object' && typeof (d as any).msg === 'string' ? (d as any).msg : ''))
+      .filter(Boolean)
+      .join('; ');
   }
+  return '';
+};
+
+// Parses the backend's {"detail": ...} and throws one ApiError for a non-2xx response.
+export const throwIfNotOk = async (res: Response): Promise<void> => {
+  if (res.ok) return;
+  let detail = '';
+  try {
+    detail = parseDetail(JSON.parse(await res.text())?.detail);
+  } catch {
+    // not JSON (for example a proxy's HTML error page): use the generic message
+  }
+  throw new ApiError(res.status, detail || genericMessage(res.status), res.status === 401 ? 'auth' : 'http');
+};
+
+// authedFetch + throwIfNotOk + JSON. NEVER toasts: callers show the error once.
+export const apiRequest = async <T = any>(
+  path: string,
+  init: RequestInit = {},
+  opts: { timeoutMs?: number } = {}
+): Promise<T> => {
+  const res = await authedFetch(path, init, opts);
+  await throwIfNotOk(res);
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
 };
 
 // Helper function to calculate days ago
@@ -102,6 +175,7 @@ export interface TranscriptionResult {
     confidence: number;
     name: string;
   }>;
+  validation_errors: FieldError[];
 }
 
 // Mock transcription function removed - app now uses real API only
@@ -111,35 +185,22 @@ export const api = {
   // TASK 3: Audio Recording & Transcription APIs
   
   // Transcribe audio - NEW FUNCTION
-  transcribe: async (audioUrl: string): Promise<TranscriptionResult> => {
-    try {
-      console.log('🎤 Starting real OpenAI Whisper transcription...');
-      
-      // Convert audio file to base64 for sending
-      const response = await fetch(audioUrl);
-      const blob = await response.blob();
-      const base64Audio = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
-      
-      console.log('📤 Sending audio to OpenAI Whisper...');
-      
-      // Send to backend
-      const result = await apiRequest('/api/transcribe', {
-        method: 'POST',
-        body: JSON.stringify({ 
-          audio_data: base64Audio,
-        }),
-      });
-      
-      console.log('✅ Real transcription completed by OpenAI Whisper');
-      return result;
-    } catch (error) {
-      console.error('❌ Transcription error:', error);
-      throw error; // Don't fallback to mock - show real error
-    }
+  // Throws ApiError; the caller shows it once.
+  transcribe: async (audioUri: string): Promise<TranscriptionResult> => {
+    // Read the local recording and send it inline as base64
+    const response = await fetch(audioUri);
+    const blob = await response.blob();
+    const base64Audio = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+
+    // Whisper + GPT-4o + the duplicate check run in one request, so allow longer
+    return apiRequest<TranscriptionResult>('/api/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({ audio_data: base64Audio }),
+    }, { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
   },
 
   // Save individual (create new or update existing)
@@ -205,162 +266,119 @@ export const api = {
       };
     } catch (error: any) {
       console.error('❌ Save individual error:', error);
-
-      // Extract error message from backend response if available
-      let errorMessage = 'Failed to save individual';
-      if (error.message) {
-        errorMessage = error.message;
-      } else if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.detail) {
-        errorMessage = error.detail;
-      }
-
-      throw new Error(errorMessage);
+      // Rethrow untouched: an ApiError already carries the backend detail (C-16)
+      throw error;
     }
   },
 
   // TASK 4: Search & Category Management APIs
   
   // Search individuals
+  // Throws ApiError on failure: an outage must not look like "no one recorded yet" (C-17)
   searchIndividuals: async (query: string): Promise<SearchResult[]> => {
     await getAuthToken();
-    try {
-      console.log('🔍 Searching individuals in database...');
-      
-      // Use direct Supabase query for real database
-      let supabaseQuery = supabase
-        .from('individuals')
-        .select('*')
-        .order('created_at', { ascending: false });
+    console.log('🔍 Searching individuals in database...');
+    
+    // Use direct Supabase query for real database
+    let supabaseQuery = supabase
+      .from('individuals')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-      // Only apply search filter if query is not empty
-      if (query.trim()) {
-        supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,data->>'name'.ilike.%${query}%`);
-      } else {
-        console.log('🔍 No search query, fetching all individuals');
-      }
-
-      console.log('🔍 Executing Supabase query...');
-      const { data: individuals, error } = await supabaseQuery;
-
-      if (error) {
-        console.error('❌ Search error:', error);
-        return [];
-      }
-
-      
-      // Convert to SearchResult format
-      const searchResults: SearchResult[] = individuals.map(individual => {
-        // Calculate display score (override or calculated)
-                const displayScore = individual.urgency_override !== null && individual.urgency_override !== undefined
-          ? individual.urgency_override
-          : individual.urgency_score;
-        
-        return {
-          id: individual.id,
-          name: individual.name,
-          urgency_score: displayScore,
-          last_seen: individual.updated_at,
-          last_seen_days: calculateDaysAgo(individual.updated_at),
-          last_interaction_date: individual.updated_at,
-          abbreviated_address: "Market St & 5th" // Mock address for now
-        };
-      });
-
-      return searchResults;
-    } catch (error) {
-      console.error('❌ Search individuals error:', error);
-      return [];
+    // Only apply search filter if query is not empty
+    if (query.trim()) {
+      supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,data->>'name'.ilike.%${query}%`);
+    } else {
+      console.log('🔍 No search query, fetching all individuals');
     }
+
+    console.log('🔍 Executing Supabase query...');
+    const { data: individuals, error } = await supabaseQuery;
+
+    if (error || !individuals) {
+      throw new ApiError(500, "Couldn't load individuals. Please try again.", 'http');
+    }
+
+    
+    // Convert to SearchResult format
+    const searchResults: SearchResult[] = individuals.map(individual => {
+      // Calculate display score (override or calculated)
+              const displayScore = individual.urgency_override !== null && individual.urgency_override !== undefined
+        ? individual.urgency_override
+        : individual.urgency_score;
+      
+      return {
+        id: individual.id,
+        name: individual.name,
+        urgency_score: displayScore,
+        last_seen: individual.updated_at,
+        last_seen_days: calculateDaysAgo(individual.updated_at),
+        last_interaction_date: individual.updated_at,
+        abbreviated_address: "Market St & 5th" // Mock address for now
+      };
+    });
+
+    return searchResults;
   },
 
   // Semantic search using embeddings
+  // Throws ApiError on failure; the Search screen decides whether to fall back.
   semanticSearchIndividuals: async (query: string): Promise<SearchResult[]> => {
-    try {
-      console.log('🧠 Performing semantic search with embeddings...');
+    const result = await apiRequest('/api/embeddings/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: query,
+        top_k: 20,
+        similarity_threshold: 0.15  // Lower threshold for better semantic matching
+      }),
+    });
+
+    // Convert hybrid search results to SearchResult format
+    const searchResults: SearchResult[] = (result?.results ?? []).map((item: any) => {
+      // Calculate display score (override or calculated)
+      const displayScore = item.urgency_override !== null && item.urgency_override !== undefined
+        ? item.urgency_override
+        : item.urgency_score;
       
-      // Call the embedding search endpoint
-              const result = await apiRequest('/api/embeddings/search', {
-          method: 'POST',
-          body: JSON.stringify({ 
-            query: query,
-            top_k: 20,
-            similarity_threshold: 0.15  // Lower threshold for better semantic matching
-          }),
-        });
-      
-      
-      if (!result.results || !Array.isArray(result.results)) {
-        console.log('⚠️ No semantic search results, falling back to regular search');
-        return api.searchIndividuals(query);
-      }
-      
-      // Convert hybrid search results to SearchResult format
-      const searchResults: SearchResult[] = result.results.map((item: any) => {
-        // Calculate display score (override or calculated)
-        const displayScore = item.urgency_override !== null && item.urgency_override !== undefined
-          ? item.urgency_override
-          : item.urgency_score;
-        
-        return {
-          id: item.id,
-          name: item.name,
-          urgency_score: displayScore,
-          last_seen: new Date().toISOString(), // We don't have this in embedding results
-          last_seen_days: 0, // We don't have this in embedding results
-          last_interaction_date: new Date().toISOString(), // We don't have this in embedding results
-          abbreviated_address: "Market St & 5th", // Mock address for now
-          similarity_score: item.similarity_score, // Add similarity score for display
-          search_type: item.search_type // Add search type (exact/semantic)
-        };
-      });
-      
-      return searchResults;
-      
-    } catch (error) {
-      console.error('❌ Semantic search error:', error);
-      console.log('🔄 Falling back to regular search...');
-      // Fall back to regular search if embedding search fails
-      return api.searchIndividuals(query);
-    }
+      return {
+        id: item.id,
+        name: item.name,
+        urgency_score: displayScore,
+        last_seen: new Date().toISOString(), // We don't have this in embedding results
+        last_seen_days: 0, // We don't have this in embedding results
+        last_interaction_date: new Date().toISOString(), // We don't have this in embedding results
+        abbreviated_address: "Market St & 5th", // Mock address for now
+        similarity_score: item.similarity_score, // Add similarity score for display
+        search_type: item.search_type // Add search type (exact/semantic)
+      };
+    });
+    
+    return searchResults;
   },
 
   // Get individual profile
-  getIndividualProfile: async (individualId: string): Promise<IndividualProfile | null> => {
-    try {
-      console.log('👤 Fetching individual profile from backend API...');
-      
-      // Use backend API instead of direct Supabase query
-      const result = await apiRequest(`/api/individuals/${individualId}`);
+  // Throws ApiError; only status 404 means the person does not exist (C-17).
+  getIndividualProfile: async (individualId: string): Promise<IndividualProfile> => {
+    const result = await apiRequest(`/api/individuals/${individualId}`);
 
-      if (!result || !result.individual) {
-        console.error('❌ Profile fetch error: No data returned');
-        return null;
-      }
+    // Convert to IndividualProfile format. A failed history load fails the whole
+    // profile instead of showing "No interactions recorded".
+    const individual = result.individual;
+    const interactions = await api.getInteractions(individualId);
+    const profile: IndividualProfile = {
+      id: individual.id,
+      name: individual.name,
+      urgency_score: individual.urgency_score,
+      urgency_override: individual.urgency_override,
+      data: individual.data || {},
+      created_at: individual.created_at,
+      updated_at: individual.updated_at,
+      last_location: individual.last_location || null,
+      interactions,
+      total_interactions: interactions.length
+    };
 
-      
-      // Convert to IndividualProfile format
-      const individual = result.individual;
-      const interactions = await api.getInteractions(individualId).catch(() => []);
-      const profile: IndividualProfile = {
-        id: individual.id,
-        name: individual.name,
-        urgency_score: individual.urgency_score,
-        urgency_override: individual.urgency_override,
-        data: individual.data || {},
-        created_at: individual.created_at,
-        updated_at: individual.updated_at,
-        last_location: individual.last_location || null,
-        interactions,
-        total_interactions: interactions.length
-      };
-
-      return profile;
-    } catch (error) {
-      console.error('❌ Get individual profile error:', error);
-      return null;
-    }
+    return profile;
   },
 
   // Update urgency override
@@ -439,44 +457,33 @@ export const api = {
   },
 
   // Get categories
+  // Throws ApiError on failure
   getCategories: async (): Promise<any[]> => {
-    try {
-      // Always use real API - no mock data
-
-      const result = await apiRequest('/api/categories');
-      return result.categories || [];
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      throw error; // Don't fallback to mock data - show real error
-    }
+    const result = await apiRequest('/api/categories');
+    return result?.categories ?? [];
   },
 
   // Export CSV
   exportCSV: async (): Promise<string> => {
-    const token = await getAuthToken();
-    const response = await fetch(getApiUrl('/api/export'), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) throw new Error(`Export failed: ${response.status}`);
+    const response = await authedFetch('/api/export');
+    await throwIfNotOk(response);
     return response.text();
   },
 
   // Whisper-only transcription for the voice assistant
   transcribeForAssistant: async (uri: string): Promise<string> => {
-    const token = await getAuthToken();
     const form = new FormData();
     form.append('audio', { uri, name: 'question.m4a', type: 'audio/m4a' } as any);
-    const response = await fetch(getApiUrl('/api/voice-assistant/transcribe'), {
+    const result = await apiRequest<{ transcription?: string }>('/api/voice-assistant/transcribe', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
       body: form,
-    });
-    if (!response.ok) throw new Error(`Transcription failed: ${response.status}`);
-    return (await response.json()).transcription ?? '';
+    }, { timeoutMs: ASSISTANT_TRANSCRIBE_TIMEOUT_MS });
+    return result?.transcription ?? '';
   },
 
   // Interaction history for one individual (backend returns `changes`; the app's Interaction type uses `data`)
-  getInteractions: async (individualId: string) => {
+  // Throws ApiError on failure
+  getInteractions: async (individualId: string): Promise<Interaction[]> => {
     const result = await apiRequest(`/api/individuals/${individualId}/interactions`);
     return (result?.interactions ?? []).map((i: any) => ({
       id: i.id,
@@ -513,7 +520,9 @@ export const api = {
       return matches;
     } catch (error) {
       console.error('❌ API: Duplicate check error:', error);
-      console.error('❌ API: Error details:', error instanceof Error ? error.message : error);
+      // Still returns [] (Task 8 makes this throw and asks before saving as new).
+      // apiRequest no longer toasts, so say it here or the failure would be silent.
+      showApiError(error, 'Duplicate check failed');
       return [];
     }
   },

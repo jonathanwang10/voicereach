@@ -5,9 +5,9 @@ import {
   FlatList,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   SafeAreaView,
   ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +20,7 @@ import { Input } from '../components/ui/Input';
 import { FadeInView } from '../components/ui/AnimatedView';
 import { theme } from '../theme';
 import { getUrgencyScoreColor, calculateDaysAgo } from '../utils/urgencyScore';
+import { errorMessage } from '../utils/errorHandler';
 
 export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   navigation,
@@ -30,6 +31,10 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   const [allIndividuals, setAllIndividuals] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  // Set when the latest load (list) or search failed: shown instead of "no results" (C-17)
+  const [listError, setListError] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const loadError = searchQuery.trim() ? searchError : listError;
   const listRef = useRef<FlatList<SearchResult>>(null);
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -42,11 +47,12 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
 
       const results = await api.searchIndividuals('');
       console.log('✅ Loaded all individuals:', results);
+      setListError(null);
       setAllIndividuals(results);
       setSearchResults(results);
     } catch (error) {
       console.error('Error loading all individuals:', error);
-      Alert.alert('Error', 'Failed to load all individuals. Please try again.');
+      setListError(errorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -134,12 +140,21 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
       }
 
       console.log('✅ Final search results:', results);
+      setSearchError(null);
       setSearchResults(results);
     } catch (error) {
       console.error('Error searching individuals:', error);
-      Alert.alert('Error', 'Failed to search individuals. Please try again.');
+      setSearchError(errorMessage(error));
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (searchQuery.trim()) {
+      performSearch();
+    } else {
+      loadAllIndividuals();
     }
   };
 
@@ -221,6 +236,19 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     );
   };
 
+  const renderErrorState = () => (
+    <TouchableOpacity
+      style={styles.emptyState}
+      onPress={handleRetry}
+      accessibilityRole="button"
+      accessibilityLabel="Couldn't load. Tap to retry"
+    >
+      <Ionicons name="cloud-offline-outline" size={64} color={theme.colors.neutral[400]} />
+      <Text style={styles.emptyTitle}>Couldn't load — tap to retry</Text>
+      {loadError ? <Text style={styles.emptySubtitle}>{loadError}</Text> : null}
+    </TouchableOpacity>
+  );
+
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
       <Ionicons
@@ -240,7 +268,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
   );
 
   const renderStats = () => {
-    if (isLoading || searchResults.length === 0) return null;
+    if (isLoading || loadError || searchResults.length === 0) return null;
 
     const totalResults = searchResults.length;
     const highUrgency = searchResults.filter(r => (r.urgency_override ?? r.urgency_score ?? 0) >= 67).length;
@@ -312,6 +340,8 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
             <ActivityIndicator size="large" color={theme.colors.primary[600]} />
             <Text style={styles.loadingText}>Searching...</Text>
           </View>
+        ) : loadError ? (
+          renderErrorState()
         ) : searchResults.length > 0 ? (
           <FlatList
             ref={listRef}

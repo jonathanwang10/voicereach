@@ -27,3 +27,8 @@ it('explains what to fix when sign-in is impossible', async () => {
   mockGetSession.mockResolvedValue({ data: { session: null } });
   await expect(getAuthToken()).rejects.toThrow(/demo user/);
 });
+
+it('the sign-in failure is an ApiError of kind auth', async () => {
+  mockGetSession.mockResolvedValue({ data: { session: null } });
+  await expect(getAuthToken()).rejects.toMatchObject({ name: 'ApiError', kind: 'auth', status: 0 });
+});

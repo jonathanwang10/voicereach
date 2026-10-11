@@ -219,7 +219,7 @@ mobile/
 │   ├── InteractionHistoryItem.tsx, InteractionDetailModal.tsx
 │   └── ui/                      # Button, Card, Badge, Input, AnimatedView
 ├── services/
-│   ├── api.ts                 # Backend client; getAuthToken signs in first
+│   ├── api.ts                 # Backend client: getAuthToken, authedFetch, apiRequest, ApiError
 │   └── supabase.ts            # Supabase client and demo auto-login
 ├── contexts/                  # AuthContext, CategoryContext
 └── utils/                     # height parsing, urgency colours, error handling
@@ -228,11 +228,27 @@ mobile/
 ## Implementation patterns
 
 ### Errors
-Routes raise `HTTPException` with a string `detail`: 400 for validation, 401 for
-auth, 404 for missing records, 409 for a duplicate category name, 500 otherwise.
-Request-model failures (for example, a save without `height`) are FastAPI's
-standard 422. The app's `apiRequest` retries once after refreshing the session on
-401/403, retries once on a network failure, and shows a toast for other errors.
+Every non-2xx body is `{"detail": string}`: 400 for validation, 401 for auth, 404
+for missing records, 409 for a duplicate category name. Request-model failures
+(for example, a save without `height`) are FastAPI's standard 422, whose `detail`
+is a list of `{loc, msg, type}`. Each route re-raises `HTTPException` first, so a
+client error raised inside its `try` keeps its status; anything else goes through
+`api/errors.py:internal_error`, which returns a fixed `"<action> failed"` 500 and
+logs only the action and the exception type. Services let database errors
+propagate: only a zero-row result means "not found".
+
+OpenAI clients use a 30 s timeout with one retry (Whisper 60 s), instead of the
+SDK's 600 s default.
+
+In the app, `services/api.ts` has one transport. `authedFetch` adds the bearer
+token, aborts after 30 s (transcribe 120 s, assistant transcribe 60 s), on a 401
+refreshes the session (falling back to `autoLogin`) and retries once, and retries
+a network failure once for GET only. `apiRequest` adds JSON parsing and throws a
+single `ApiError` (`status`, `detail`, `kind`) carrying the backend `detail`. It
+never toasts; the caller shows the error once (`showApiError` in
+`utils/errorHandler.ts`, or its own inline state). Reads throw instead of
+returning `null` or `[]`, so an outage shows "Couldn't load — tap to retry" on
+Search and a retry view on a profile, and only a real 404 means "not found".
 
 ### Auth in the app
 ```typescript
@@ -243,7 +259,7 @@ export const getAuthToken = async () => {
     await autoLogin();                     // signs in as demo@sfgov.org
     ({ data: { session } } = await supabase.auth.getSession());
   }
-  if (!session) throw new Error('Not signed in. ...');
+  if (!session) throw new ApiError(0, 'Not signed in. ...', 'auth');
   return session.access_token;
 };
 ```
@@ -262,7 +278,8 @@ handshake use this token.
 - **Several duplicate matches:** only the best one is returned and shown.
 - **Create new despite a match:** allowed from the merge UI.
 - **Failed save:** an error is shown and the form keeps its data.
-- **No connection:** requests fail with an error toast; there is no offline mode.
+- **No connection:** requests fail with one error message (Search shows "Couldn't
+  load — tap to retry"); there is no offline mode.
 
 ## Testing
 

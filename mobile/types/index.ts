@@ -14,6 +14,12 @@ export interface Individual {
   };
 }
 
+// One per-field problem from the backend normaliser (POST /api/transcribe `validation_errors`)
+export interface FieldError {
+  field: string;
+  message: string;
+}
+
 export interface SearchResult {
   id: string;
   name: string;

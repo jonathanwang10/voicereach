@@ -11,6 +11,7 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 
 from api.auth import get_current_user
+from api.errors import internal_error
 from db.models import (
     SaveIndividualRequest,
     SaveIndividualResponse,
@@ -187,12 +188,7 @@ async def save_individual(
             detail=str(e)
         )
     except Exception as e:
-        # Log error for debugging
-        print(f"Error saving individual: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save individual: {str(e)}"
-        )
+        raise internal_error("Save individual", e)
 
 
 @router.get("", response_model=SearchIndividualsResponse)
@@ -231,13 +227,10 @@ async def search_individuals(
         
         return result
         
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log error for debugging
-        print(f"Error searching individuals: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search individuals: {str(e)}"
-        )
+        raise internal_error("Search individuals", e)
 
 
 @router.get("/{individual_id}", response_model=IndividualDetailResponse)
@@ -276,12 +269,7 @@ async def get_individual(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Log error for debugging
-        print(f"Error getting individual {individual_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get individual: {str(e)}"
-        )
+        raise internal_error("Get individual", e)
 
 
 @router.put("/{individual_id}/urgency-override", response_model=UrgencyOverrideResponse)
@@ -334,12 +322,7 @@ async def update_urgency_override(
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        # Log error for debugging
-        print(f"Error updating urgency override for {individual_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update urgency override: {str(e)}"
-        )
+        raise internal_error("Update urgency override", e)
 
 
 @router.get("/{individual_id}/interactions", response_model=InteractionsResponse)
@@ -388,13 +371,10 @@ async def get_interactions(
         
         return InteractionsResponse(interactions=interactions)
         
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log error for debugging
-        print(f"Error getting interactions for {individual_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get interactions: {str(e)}"
-        )
+        raise internal_error("Get interactions", e)
 
 
 @router.post("/check-duplicates")
@@ -426,9 +406,7 @@ async def check_duplicates(
             "potential_matches": potential_matches
         })
         
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Duplicate detection error: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Duplicate detection failed: {str(e)}"}
-        )
+        raise internal_error("Duplicate check", e)

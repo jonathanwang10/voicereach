@@ -125,7 +125,7 @@ total, offset, limit}`; each entry has `display_score`, `last_seen` and an
 abbreviated `last_location`.
 
 **`GET /api/individuals/{id}`** — Returns `{individual, recent_interactions}`
-(the last 10). 404 if not found — and, currently, also on a database error.
+(the last 10). 404 if not found; a database error is a 500.
 
 **`GET /api/individuals/{id}/interactions`** — Query: `limit` (default 50),
 `offset`. Newest first. Each item has `created_at`, `user_name`,
@@ -223,7 +223,12 @@ The original deployment no longer exists.
 
 ## Notes
 
-- CORS allows all origins (demo setting).
+- CORS: browser origins come from `CORS_ALLOW_ORIGINS` (comma-separated; unset
+  means none), never with credentials. The mobile app is unaffected.
+- Errors: every non-2xx body is `{"detail": string}`. A 500 says only
+  `"<action> failed"` (`api/errors.py:internal_error`); the log records the
+  exception type, not its message.
+- OpenAI calls time out after 30 s with one retry (Whisper 60 s).
 - Audio is never stored: it arrives inline, goes to a temp file for Whisper and
   is deleted straight after.
 - Interactions record the user id from the token, but `user_name` is always

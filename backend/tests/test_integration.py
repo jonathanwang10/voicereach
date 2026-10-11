@@ -46,20 +46,14 @@ class TestIntegrationFlow:
             assert "detail" in error_data
     
     def test_search_individuals_structure(self):
-        """Test search functionality structure"""
+        """Search against the unreachable test database is an outage, not "no results".
+
+        This used to pass with a 200 and an empty list because the service swallowed
+        the connection error (C-17). Auth is faked by conftest.
+        """
         response = client.get("/api/individuals?search=john")
-        # Should return 401 without auth, but structure should be correct
-        assert response.status_code in [401, 200]
-        if response.status_code == 200:
-            data = response.json()
-            assert "individuals" in data
-            assert "total" in data
-            assert "limit" in data
-            assert "offset" in data
-        else:
-            # Check that it's an auth error, not a structural error
-            error_data = response.json()
-            assert "detail" in error_data
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Search individuals failed"}
     
     @pytest.mark.real_auth
     def test_export_csv_structure(self):

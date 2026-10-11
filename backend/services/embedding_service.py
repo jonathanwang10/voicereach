@@ -22,7 +22,8 @@ def _join(value: Any) -> str:
 
 class EmbeddingService:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # Fail fast instead of the SDK defaults (600 s read, 2 retries)
+        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30, max_retries=1)
         self.model = "text-embedding-3-large"
         self.dimensions = 3072  # text-embedding-3-large dimensions
         

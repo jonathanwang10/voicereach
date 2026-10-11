@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 
 from api.auth import get_current_user
+from api.errors import internal_error
 from services.openai_service import OpenAIService
 from services.validation_helper import validate_categorized_data
 
@@ -134,10 +135,11 @@ async def transcribe_audio_endpoint(
             validation_errors=validation_result.validation_errors
         )
         
+    except HTTPException:
+        raise
     except ValueError as e:
-        # Handle validation errors from services
+        # Client-facing validation messages from the services ("File is not in M4A format",
+        # "Audio must be at least 5 seconds long", bad base64)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # Log error for debugging
-        print(f"Transcription error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+        raise internal_error("Transcription", e)

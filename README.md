@@ -157,6 +157,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_KEY` | All server-side database access (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
+| `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
 
@@ -211,7 +212,8 @@ and closes with code 1008 if it is missing or invalid (`backend/main.py:123-131`
 
 The app gets its token by signing in as the demo user before its first request
 (`getAuthToken` in `mobile/services/api.ts`) and sends it on every call,
-including the WebSocket handshake.
+including the WebSocket handshake. On a 401 the app refreshes the session (or
+signs in again if the refresh fails) and retries the request once (`authedFetch`).
 
 To call the API by hand, get a token from the repo root with the venv active:
 
@@ -386,8 +388,6 @@ These are still true:
 - **Search results from the semantic endpoint show "today" as last seen.** The
   endpoint returns no last-seen date, so the app fills in the current time
   (`mobile/services/api.ts:310-312`).
-- **`GET /api/individuals/{id}` reports database errors as 404**
-  (`services/individual_service.py:394-397`).
 - **Not yet re-verified against live services.** After the dependency upgrade,
   the OpenAI and Supabase calls were checked only offline (mocks and
   introspection). Run the curl check in [Auth](#auth) and one recording after
@@ -408,7 +408,6 @@ Listed explicitly so nobody mistakes them for finished work:
 - **One shared demo account, auto-logged-in.** The credentials are hardcoded in
   `mobile/services/supabase.ts`, there is no email verification, and every
   interaction is recorded as "Demo User" (`api/individuals.py:30-34`).
-- **CORS allows all origins.**
 - **No offline support.** The app requires connectivity throughout.
 - Audio is M4A/AAC, **5 s** minimum and 2 min maximum per recording
   (`mobile/components/ModernAudioRecorder.tsx:223`). `docs/PRD.md` says 10 s; the

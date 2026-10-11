@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '../services/api';
+import { showApiError } from '../utils/errorHandler';
 
 interface Category {
   id: string;
@@ -78,6 +79,8 @@ export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) 
       
     } catch (error) {
       console.error('❌ CategoryContext - Failed to fetch categories:', error);
+      // services/api no longer toasts, so say it here once (C-16/C-17)
+      showApiError(error, "Couldn't load categories");
       setCategories([]);
     } finally {
       setIsLoading(false);

@@ -10,6 +10,7 @@ import csv
 import io
 from supabase import create_client, Client
 from api.auth import get_current_user
+from api.errors import internal_error
 from db.models import CreateCategoryRequest, CategoryResponse
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -98,10 +99,7 @@ async def export_csv(user_id: str = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export CSV: {str(e)}"
-        )
+        raise internal_error("Export CSV", e)
 
 
 @router.get("/api/categories", response_model=Dict[str, List[Dict[str, Any]]])
@@ -138,9 +136,11 @@ async def get_categories(user_id: str = Depends(get_current_user)):
             categories.append(cat_data)
         
         return {"categories": categories}
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch categories: {str(e)}")
+        raise internal_error("Fetch categories", e)
 
 
 @router.post("/api/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
@@ -216,20 +216,7 @@ async def create_category(
         
     except HTTPException:
         raise
-    except ValueError as e:
-        # Pydantic validation errors
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "success": False,
-                "errors": {
-                    "validation": [str(e)],
-                    "missing_required": []
-                }
-            }
-        )
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create category: {str(e)}"
-        )
+        # Request validation already happened (FastAPI returns 422 before this runs),
+        # so anything else here is a server-side failure.
+        raise internal_error("Create category", e)

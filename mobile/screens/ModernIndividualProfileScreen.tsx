@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { IndividualProfile } from '../types';
 import { api } from '../services/api';
+import { errorMessage, showApiError } from '../utils/errorHandler';
 import { getUrgencyScoreColor, getDisplayUrgencyScore } from '../utils/urgencyScore';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -35,6 +36,8 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
   const [profile, setProfile] = useState<IndividualProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Set when the first load failed for a reason other than "not found" (C-17)
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedInteraction, setSelectedInteraction] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'map'>('overview');
@@ -60,22 +63,26 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
     loadProfile();
   }, [individualId]);
 
-  const loadProfile = async () => {
+  // A refresh keeps the current profile on screen (no full-screen spinner). Only a
+  // 404 means the person is gone; any other failure keeps the screen and offers a retry.
+  const loadProfile = async ({ refresh = false }: { refresh?: boolean } = {}) => {
     try {
-      setIsLoading(true);
+      if (!refresh) setIsLoading(true);
       const profileData = await api.getIndividualProfile(individualId);
-
-      if (profileData) {
-        setProfile(profileData);
-      } else {
+      setProfile(profileData);
+      setLoadError(null);
+    } catch (error: any) {
+      console.error('Error loading profile:', error);
+      if (error?.status === 404) {
         Toast.show({ type: 'error', text1: 'Individual not found' });
         navigation.goBack();
+      } else if (refresh && profile) {
+        showApiError(error, "Couldn't refresh profile");
+      } else {
+        setLoadError(errorMessage(error));
       }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      Toast.show({ type: 'error', text1: 'Failed to load profile', text2: 'Please try again.' });
     } finally {
-      setIsLoading(false);
+      if (!refresh) setIsLoading(false);
     }
   };
 
@@ -143,7 +150,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadProfile();
+    await loadProfile({ refresh: true });
     setIsRefreshing(false);
   };
 
@@ -326,9 +333,14 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={64} color={theme.colors.neutral[400]} />
-        <Text style={styles.errorTitle}>Profile not found</Text>
-        <Text style={styles.errorText}>This individual's profile could not be loaded</Text>
-        <Button variant="primary" onPress={() => navigation.goBack()}>
+        <Text style={styles.errorTitle}>{loadError ? "Couldn't load profile" : 'Profile not found'}</Text>
+        <Text style={styles.errorText}>{loadError || "This individual's profile could not be loaded"}</Text>
+        {loadError ? (
+          <Button variant="primary" onPress={() => loadProfile()} style={styles.retryButton}>
+            Retry
+          </Button>
+        ) : null}
+        <Button variant={loadError ? 'outline' : 'primary'} onPress={() => navigation.goBack()}>
           Go Back
         </Button>
       </View>
@@ -468,6 +480,9 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary,
     textAlign: 'center',
     marginBottom: theme.spacing.xl,
+  },
+  retryButton: {
+    marginBottom: theme.spacing.md,
   },
   headerButton: {
     paddingHorizontal: theme.spacing.sm,

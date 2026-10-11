@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { errorMessage } from '../utils/errorHandler';
 import { useCategories } from '../contexts/CategoryContext';
 
 interface Category {
@@ -91,7 +92,7 @@ export default function CategoriesScreen() {
       
     } catch (error) {
       console.error('Export error:', error);
-      Alert.alert('Export Failed', 'Failed to export CSV. Please try again.');
+      Alert.alert('Export Failed', errorMessage(error));
     } finally {
       setIsExporting(false);
     }
@@ -153,10 +154,7 @@ export default function CategoriesScreen() {
       // fetchCategories();
     } catch (error: any) {
       console.error('❌ Failed to create category:', error);
-      Alert.alert(
-        'Error', 
-        `Failed to create category: ${error.message || 'Unknown error'}`
-      );
+      Alert.alert('Error', `Failed to create category: ${errorMessage(error)}`);
     }
   };
 

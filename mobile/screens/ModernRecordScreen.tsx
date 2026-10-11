@@ -22,7 +22,7 @@ import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../services/supabase';
 import { api, TranscriptionResult } from '../services/api';
-import { ErrorHandler } from '../utils/errorHandler';
+import { ErrorHandler, errorMessage } from '../utils/errorHandler';
 import { theme } from '../theme';
 import Toast from 'react-native-toast-message';
 
@@ -118,7 +118,8 @@ export const ModernRecordScreen: React.FC = () => {
       Toast.show({
         type: 'error',
         text1: 'Transcription Failed',
-        text2: 'Please try again',
+        // The backend detail, e.g. "File is not in M4A format" or a timeout (C-16)
+        text2: errorMessage(error),
         position: 'top',
       });
     } finally {

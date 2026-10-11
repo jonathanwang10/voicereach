@@ -12,7 +12,7 @@ export interface AppError {
 export class ErrorHandler {
   // Network errors
   static handleNetworkError = (error: any): AppError => {
-    if (error.message?.includes('Network request failed')) {
+    if (error?.message?.includes('Network request failed')) {
       return {
         code: 'NETWORK_ERROR',
         message: 'Network request failed',
@@ -22,7 +22,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('timeout')) {
+    if (error?.message?.includes('timeout')) {
       return {
         code: 'TIMEOUT_ERROR',
         message: 'Request timeout',
@@ -34,7 +34,7 @@ export class ErrorHandler {
     
     return {
       code: 'UNKNOWN_NETWORK_ERROR',
-      message: error.message || 'Unknown network error',
+      message: error?.message || 'Unknown network error',
       userMessage: 'Network error occurred. Please try again.',
       retryable: true,
       severity: 'medium'
@@ -43,7 +43,7 @@ export class ErrorHandler {
 
   // API errors
   static handleApiError = (error: any): AppError => {
-    if (error.message?.includes('401')) {
+    if (error?.message?.includes('401')) {
       return {
         code: 'UNAUTHORIZED',
         message: 'Authentication failed',
@@ -53,7 +53,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('403')) {
+    if (error?.message?.includes('403')) {
       return {
         code: 'FORBIDDEN',
         message: 'Access denied',
@@ -63,7 +63,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('404')) {
+    if (error?.message?.includes('404')) {
       return {
         code: 'NOT_FOUND',
         message: 'Resource not found',
@@ -73,7 +73,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('500')) {
+    if (error?.message?.includes('500')) {
       return {
         code: 'SERVER_ERROR',
         message: 'Server error',
@@ -83,7 +83,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('Real API disabled')) {
+    if (error?.message?.includes('Real API disabled')) {
       return {
         code: 'DEMO_MODE',
         message: '✅ Demo mode active - using mock data',
@@ -95,7 +95,7 @@ export class ErrorHandler {
     
     return {
       code: 'UNKNOWN_API_ERROR',
-      message: error.message || 'Unknown API error',
+      message: error?.message || 'Unknown API error',
       userMessage: 'An error occurred. Please try again.',
       retryable: true,
       severity: 'medium'
@@ -104,7 +104,7 @@ export class ErrorHandler {
 
   // Recording errors
   static handleRecordingError = (error: any): AppError => {
-    if (error.message?.includes('permission')) {
+    if (error?.message?.includes('permission')) {
       return {
         code: 'RECORDING_PERMISSION_DENIED',
         message: 'Recording permission denied',
@@ -114,7 +114,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('Only one Recording object')) {
+    if (error?.message?.includes('Only one Recording object')) {
       return {
         code: 'RECORDING_IN_PROGRESS',
         message: 'Recording already in progress',
@@ -126,7 +126,7 @@ export class ErrorHandler {
     
     return {
       code: 'RECORDING_ERROR',
-      message: error.message || 'Recording error',
+      message: error?.message || 'Recording error',
       userMessage: 'Failed to record audio. Please try again.',
       retryable: true,
       severity: 'medium'
@@ -135,7 +135,7 @@ export class ErrorHandler {
 
   // Location errors
   static handleLocationError = (error: any): AppError => {
-    if (error.message?.includes('permission')) {
+    if (error?.message?.includes('permission')) {
       return {
         code: 'LOCATION_PERMISSION_DENIED',
         message: 'Location permission denied',
@@ -145,7 +145,7 @@ export class ErrorHandler {
       };
     }
     
-    if (error.message?.includes('timeout')) {
+    if (error?.message?.includes('timeout')) {
       return {
         code: 'LOCATION_TIMEOUT',
         message: 'Location request timeout',
@@ -157,7 +157,7 @@ export class ErrorHandler {
     
     return {
       code: 'LOCATION_ERROR',
-      message: error.message || 'Location error',
+      message: error?.message || 'Location error',
       userMessage: 'Failed to get location. Please try again.',
       retryable: true,
       severity: 'medium'
@@ -227,34 +227,59 @@ export class ErrorHandler {
     });
   };
 
-  // Generic error handler
+  // Generic error handler (null-safe: some callers pass whatever was caught)
   static handleError = (error: any, context: string = 'Unknown'): AppError => {
     console.error(`Error in ${context}:`, error);
     
     // Try to categorize the error
-    if (error.message?.includes('Network') || error.message?.includes('fetch')) {
+    if (error?.message?.includes('Network') || error?.message?.includes('fetch')) {
       return this.handleNetworkError(error);
     }
     
-    if (error.message?.includes('API') || error.message?.includes('401') || error.message?.includes('500')) {
+    if (error?.message?.includes('API') || error?.message?.includes('401') || error?.message?.includes('500')) {
       return this.handleApiError(error);
     }
     
-    if (error.message?.includes('Recording') || error.message?.includes('microphone')) {
+    if (error?.message?.includes('Recording') || error?.message?.includes('microphone')) {
       return this.handleRecordingError(error);
     }
     
-    if (error.message?.includes('Location') || error.message?.includes('GPS')) {
+    if (error?.message?.includes('Location') || error?.message?.includes('GPS')) {
       return this.handleLocationError(error);
     }
     
     // Default error
     return {
       code: 'UNKNOWN_ERROR',
-      message: error.message || 'Unknown error',
+      message: error?.message || 'Unknown error',
       userMessage: 'An unexpected error occurred. Please try again.',
       retryable: true,
       severity: 'medium'
     };
   };
-} 
+}
+
+// Text to show for any caught error. An ApiError's message is its backend `detail`.
+export const errorMessage = (e: unknown): string => {
+  if (e && typeof e === 'object') {
+    const detail = (e as any).detail;
+    if (typeof detail === 'string' && detail) return detail;
+    const message = (e as any).message;
+    if (typeof message === 'string' && message) return message;
+  }
+  if (typeof e === 'string' && e) return e;
+  return 'Something went wrong. Please try again.';
+};
+
+// Show a caught error once, as a toast. services/api never toasts, so this is the only one.
+export const showApiError = (e: unknown, title: string = 'Error'): void => {
+  Toast.show({
+    type: 'error',
+    text1: title,
+    text2: errorMessage(e),
+    position: 'top',
+    visibilityTime: 4000,
+    autoHide: true,
+    topOffset: 50,
+  });
+};

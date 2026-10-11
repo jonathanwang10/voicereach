@@ -4,7 +4,9 @@ Embedding API endpoints for semantic search and embedding management
 from fastapi import APIRouter, Depends, HTTPException
 import os
 from services.embedding_service import EmbeddingService
+from uuid import UUID
 from api.auth import get_current_user
+from api.errors import internal_error
 from supabase import create_client, Client
 from pydantic import BaseModel
 
@@ -20,7 +22,7 @@ class SearchRequest(BaseModel):
 
 
 class GenerateEmbeddingRequest(BaseModel):
-    individual_id: str
+    individual_id: UUID
 
 
 def get_supabase_client() -> Client:
@@ -48,7 +50,8 @@ async def generate_embedding_for_individual(
         supabase = get_supabase_client()
         
         # Get individual data from database
-        result = supabase.table("individuals").select("*").eq("id", request.individual_id).execute()
+        individual_id = str(request.individual_id)
+        result = supabase.table("individuals").select("*").eq("id", individual_id).execute()
         
         if not result.data:
             raise HTTPException(status_code=404, detail="Individual not found")
@@ -85,19 +88,21 @@ async def generate_embedding_for_individual(
         
         # Store embedding in database
         supabase.table("individual_embeddings").upsert({
-            "individual_id": request.individual_id,
+            "individual_id": individual_id,
             "embedding_data": embedding,
             "embedding_text": embedding_text
         }, on_conflict="individual_id").execute()
         
         return {
             "success": True,
-            "message": f"Embedding generated and stored for individual {request.individual_id}",
+            "message": f"Embedding generated and stored for individual {individual_id}",
             "embedding_dimensions": len(embedding)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate embedding: {str(e)}")
+        raise internal_error("Generate embedding", e)
 
 
 @router.post("/search")
@@ -114,44 +119,41 @@ async def semantic_search_individuals(
         
         # First, always do normal search for exact matches
         normal_results = []
-        try:
-            # Search individuals table directly for text matches
-            search_query = request.query.strip()
-            if search_query:
-                # Search in name field first (simpler approach)
-                search_term = f"%{search_query}%"
-                result = supabase.table("individuals").select("*").ilike("name", search_term).execute()
-                
-                if result.data:
-                    normal_results = result.data
-                    print(f"🔍 Normal search found {len(normal_results)} results")
-                
-                # Also search in JSONB data
-                all_response = supabase.table("individuals").select("*").execute()
-                all_individuals = all_response.data
-                
-                # Filter by JSONB data containing search term
-                jsonb_matches = []
-                for ind in all_individuals:
-                    if ind["id"] not in [i["id"] for i in normal_results]:  # Avoid duplicates
-                        data_str = str(ind.get("data", {}))
-                        if search_query.lower() in data_str.lower():
-                            jsonb_matches.append(ind)
-                
-                # Combine results
-                normal_results.extend(jsonb_matches)
-                
-                # Remove duplicates
-                seen_ids = set()
-                unique_individuals = []
-                for ind in normal_results:
-                    if ind["id"] not in seen_ids:
-                        seen_ids.add(ind["id"])
-                        unique_individuals.append(ind)
-                normal_results = unique_individuals
-        except Exception as e:
-            print(f"⚠️ Normal search failed: {str(e)}")
-            normal_results = []
+        # A database failure here is an outage, not "no matches": let it become a 500 (C-17).
+        # Search individuals table directly for text matches
+        search_query = request.query.strip()
+        if search_query:
+            # Search in name field first (simpler approach)
+            search_term = f"%{search_query}%"
+            result = supabase.table("individuals").select("*").ilike("name", search_term).execute()
+            
+            if result.data:
+                normal_results = result.data
+                print(f"🔍 Normal search found {len(normal_results)} results")
+            
+            # Also search in JSONB data
+            all_response = supabase.table("individuals").select("*").execute()
+            all_individuals = all_response.data
+            
+            # Filter by JSONB data containing search term
+            jsonb_matches = []
+            for ind in all_individuals:
+                if ind["id"] not in [i["id"] for i in normal_results]:  # Avoid duplicates
+                    data_str = str(ind.get("data", {}))
+                    if search_query.lower() in data_str.lower():
+                        jsonb_matches.append(ind)
+            
+            # Combine results
+            normal_results.extend(jsonb_matches)
+            
+            # Remove duplicates
+            seen_ids = set()
+            unique_individuals = []
+            for ind in normal_results:
+                if ind["id"] not in seen_ids:
+                    seen_ids.add(ind["id"])
+                    unique_individuals.append(ind)
+            normal_results = unique_individuals
         
         # Now try embedding search for semantic matches
         embedding_results = []
@@ -273,8 +275,10 @@ async def semantic_search_individuals(
             "similarity_threshold": request.similarity_threshold
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise internal_error("Search", e)
 
 
 @router.post("/generate-all")
@@ -339,7 +343,8 @@ async def generate_embeddings_for_all_individuals(
                 generated_count += 1
                 
             except Exception as e:
-                errors.append(f"Failed to generate embedding for {individual.get('name', 'Unknown')}: {str(e)}")
+                # Id and error type only: no names, no upstream error text (R-13)
+                errors.append(f"{individual.get('id')}: {type(e).__name__}")
                 continue
         
         return {
@@ -349,8 +354,10 @@ async def generate_embeddings_for_all_individuals(
             "errors": errors
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate embeddings: {str(e)}")
+        raise internal_error("Generate embeddings", e)
 
 
 @router.get("/status")
@@ -376,5 +383,7 @@ async def get_embedding_status(user_id: str = Depends(get_current_user)):
             "coverage_percentage": round((total_embeddings / total_individuals * 100) if total_individuals > 0 else 0, 2)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
+        raise internal_error("Embedding status", e)

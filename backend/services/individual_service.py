@@ -273,142 +273,127 @@ class IndividualService:
         2. Join with interactions for last_seen
         3. Apply sorting and pagination
         """
-        try:
-            # Build base query
-            query = self.supabase.table("individuals").select("*")
+        # Database errors propagate (the route turns them into a 500). Returning
+        # an empty list here made an outage look like "no one recorded yet" (C-17).
+        # Build base query
+        query = self.supabase.table("individuals").select("*")
+        
+        # Apply search if provided
+        if search:
+            # Search in name field first (simpler approach)
+            search_term = f"%{search}%"
+            query = query.ilike("name", search_term)
+        
+        # Execute query
+        response = query.execute()
+        individuals = response.data
+        
+        # If search provided, also search in JSONB data
+        if search:
+            # Get all individuals and filter by JSONB data
+            all_response = self.supabase.table("individuals").select("*").execute()
+            all_individuals = all_response.data
             
-            # Apply search if provided
-            if search:
-                # Search in name field first (simpler approach)
-                search_term = f"%{search}%"
-                query = query.ilike("name", search_term)
+            # Filter by JSONB data containing search term
+            jsonb_matches = []
+            for ind in all_individuals:
+                if ind["id"] not in [i["id"] for i in individuals]:  # Avoid duplicates
+                    data_str = str(ind.get("data", {}))
+                    if search.lower() in data_str.lower():
+                        jsonb_matches.append(ind)
             
-            # Execute query
-            response = query.execute()
-            individuals = response.data
+            # Combine results
+            individuals.extend(jsonb_matches)
             
-            # If search provided, also search in JSONB data
-            if search:
-                # Get all individuals and filter by JSONB data
-                all_response = self.supabase.table("individuals").select("*").execute()
-                all_individuals = all_response.data
+            # Remove duplicates
+            seen_ids = set()
+            unique_individuals = []
+            for ind in individuals:
+                if ind["id"] not in seen_ids:
+                    seen_ids.add(ind["id"])
+                    unique_individuals.append(ind)
+            individuals = unique_individuals
+        
+        # Get total count
+        total = len(individuals)
+        
+        # Apply sorting
+        if sort_by == "last_seen":
+            # Get last interaction for each individual
+            for ind in individuals:
+                last_interaction = self.supabase.table("interactions") \
+                    .select("created_at, location") \
+                    .eq("individual_id", ind["id"]) \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
                 
-                # Filter by JSONB data containing search term
-                jsonb_matches = []
-                for ind in all_individuals:
-                    if ind["id"] not in [i["id"] for i in individuals]:  # Avoid duplicates
-                        data_str = str(ind.get("data", {}))
-                        if search.lower() in data_str.lower():
-                            jsonb_matches.append(ind)
-                
-                # Combine results
-                individuals.extend(jsonb_matches)
-                
-                # Remove duplicates
-                seen_ids = set()
-                unique_individuals = []
-                for ind in individuals:
-                    if ind["id"] not in seen_ids:
-                        seen_ids.add(ind["id"])
-                        unique_individuals.append(ind)
-                individuals = unique_individuals
+                if last_interaction.data:
+                    ind["_last_seen"] = last_interaction.data[0]["created_at"]
+                    ind["_last_location"] = last_interaction.data[0].get("location")
+                else:
+                    ind["_last_seen"] = ind["created_at"]
+                    ind["_last_location"] = None
             
-            # Get total count
-            total = len(individuals)
-            
-            # Apply sorting
-            if sort_by == "last_seen":
-                # Get last interaction for each individual
-                for ind in individuals:
-                    last_interaction = self.supabase.table("interactions") \
-                        .select("created_at, location") \
-                        .eq("individual_id", ind["id"]) \
-                        .order("created_at", desc=True) \
-                        .limit(1) \
-                        .execute()
-                    
-                    if last_interaction.data:
-                        ind["_last_seen"] = last_interaction.data[0]["created_at"]
-                        ind["_last_location"] = last_interaction.data[0].get("location")
-                    else:
-                        ind["_last_seen"] = ind["created_at"]
-                        ind["_last_location"] = None
-                
-                # Sort by last_seen
-                individuals.sort(
-                    key=lambda x: x["_last_seen"],
-                    reverse=(sort_order == "desc")
-                )
-            elif sort_by == "urgency_score":
-                individuals.sort(
-                    key=lambda x: x["urgency_score"],
-                    reverse=(sort_order == "desc")
-                )
-            else:  # sort by name
-                individuals.sort(
-                    key=lambda x: x["name"],
-                    reverse=(sort_order == "desc")
-                )
-            
-            # Apply pagination
-            paginated = individuals[offset:offset + limit]
-            
-            # Format results
-            results = []
-            for ind in paginated:
-                # Calculate display score
-                display_score = ind["urgency_override"] if ind.get("urgency_override") is not None else ind["urgency_score"]
-                
-                # Get last location with abbreviated address
-                last_location = ind.get("_last_location")
-                if last_location and last_location.get("address"):
-                    last_location["address"] = self.abbreviate_address(last_location["address"])
-                
-                results.append(IndividualSummary(
-                    id=ind["id"],
-                    name=ind["name"],
-                    urgency_score=ind["urgency_score"],
-                    urgency_override=ind.get("urgency_override"),
-                    display_score=display_score,
-                    last_seen=ind.get("_last_seen", ind["created_at"]),
-                    last_location=last_location
-                ))
-            
-            return SearchIndividualsResponse(
-                individuals=results,
-                total=total,
-                offset=offset,
-                limit=limit
+            # Sort by last_seen
+            individuals.sort(
+                key=lambda x: x["_last_seen"],
+                reverse=(sort_order == "desc")
             )
-            
-        except Exception as e:
-            print(f"Error in search_individuals: {str(e)}")
-            # Return empty results on error
-            return SearchIndividualsResponse(
-                individuals=[],
-                total=0,
-                offset=offset,
-                limit=limit
+        elif sort_by == "urgency_score":
+            individuals.sort(
+                key=lambda x: x["urgency_score"],
+                reverse=(sort_order == "desc")
             )
+        else:  # sort by name
+            individuals.sort(
+                key=lambda x: x["name"],
+                reverse=(sort_order == "desc")
+            )
+        
+        # Apply pagination
+        paginated = individuals[offset:offset + limit]
+        
+        # Format results
+        results = []
+        for ind in paginated:
+            # Calculate display score
+            display_score = ind["urgency_override"] if ind.get("urgency_override") is not None else ind["urgency_score"]
+            
+            # Get last location with abbreviated address
+            last_location = ind.get("_last_location")
+            if last_location and last_location.get("address"):
+                last_location["address"] = self.abbreviate_address(last_location["address"])
+            
+            results.append(IndividualSummary(
+                id=ind["id"],
+                name=ind["name"],
+                urgency_score=ind["urgency_score"],
+                urgency_override=ind.get("urgency_override"),
+                display_score=display_score,
+                last_seen=ind.get("_last_seen", ind["created_at"]),
+                last_location=last_location
+            ))
+        
+        return SearchIndividualsResponse(
+            individuals=results,
+            total=total,
+            offset=offset,
+            limit=limit
+        )
+        
     
     async def get_individual_by_id(self, individual_id: UUID) -> Optional[IndividualDetailResponse]:
         """Get individual details with recent interactions"""
-        try:
-            # Get individual - use .maybe_single() to handle 0 rows gracefully
-            individual_query = self.supabase.table("individuals") \
-                .select("*") \
-                .eq("id", str(individual_id)) \
-                .maybe_single()
-            
-            # Execute the query
-            individual_response = individual_query.execute()
-            
-            # supabase-py returns None (not an empty response) for zero rows
-            if individual_response is None or not individual_response.data:
-                return None
-        except Exception as e:
-            # Handle any database errors gracefully
-            print(f"Database error getting individual {individual_id}: {str(e)}")
+        # maybe_single() returns None for zero rows (the only "not found"); any other
+        # database error propagates, so an outage is a 500 and not a 404 (C-17).
+        individual_response = self.supabase.table("individuals") \
+            .select("*") \
+            .eq("id", str(individual_id)) \
+            .maybe_single() \
+            .execute()
+
+        if individual_response is None or not individual_response.data:
             return None
         
         # Handle both single item and array responses

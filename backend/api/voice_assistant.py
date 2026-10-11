@@ -4,6 +4,7 @@ Voice Assistant API endpoints for OpenAI Realtime API integration
 import os
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from api.auth import get_current_user
+from api.errors import internal_error
 from pydantic import BaseModel
 from typing import Dict, Any, List
 import tempfile
@@ -67,9 +68,13 @@ async def transcribe_voice_audio(
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
                 
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # Client-facing audio validation messages ("File is not in M4A format", ...)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        print(f"❌ Transcription error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+        raise internal_error("Transcription", e)
 
 @router.get("/guidelines")
 async def get_safety_guidelines(user_id: str = Depends(get_current_user)):
@@ -110,8 +115,10 @@ async def get_safety_guidelines(user_id: str = Depends(get_current_user)):
         
         return guidelines
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get guidelines: {str(e)}")
+        raise internal_error("Get guidelines", e)
 
 @router.post("/context", response_model=ContextResponse)
 async def get_context_for_message(
@@ -142,8 +149,9 @@ async def get_context_for_message(
             names_detected=result["names_detected"]
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ Error getting context: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get context: {str(e)}")
+        raise internal_error("Get context", e)
 
 # WebSocket endpoint moved to main.py to avoid conflicts

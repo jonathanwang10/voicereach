@@ -19,11 +19,18 @@ load_dotenv()
 
 app = FastAPI(title="SF Homeless Outreach API", version="0.1.0")
 
-# CORS configuration for hackathon demo
+
+def cors_allow_origins(value: str | None) -> list[str]:
+    """Parse CORS_ALLOW_ORIGINS (comma-separated). Unset or empty means no browser origins."""
+    return [origin.strip() for origin in (value or "").split(",") if origin.strip()]
+
+
+# CORS only matters to browsers; the native app sends no Origin and is unaffected.
+# Auth is a bearer header, so credentials (cookies) are never needed (R-13).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for demo
-    allow_credentials=True,
+    allow_origins=cors_allow_origins(os.getenv("CORS_ALLOW_ORIGINS")),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -186,10 +193,11 @@ async def websocket_realtime_proxy(websocket: WebSocket):
             
             print(f"🔑 Token response status: {token_response.status_code}")
             if not token_response.is_success:
-                print(f"❌ Failed to create ephemeral token: {token_response.text}")
+                # Never forward the upstream body: it can echo key fragments (R-13).
+                print(f"❌ Failed to create ephemeral token: HTTP {token_response.status_code}")
                 await websocket.send_text(json.dumps({
                     "type": "error",
-                    "error": {"message": f"Failed to create ephemeral token: {token_response.text}"}
+                    "error": {"message": "Couldn't start the voice assistant session"}
                 }))
                 return
             
@@ -292,11 +300,11 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                     pass
 
     except Exception as e:
-        print(f"❌ WebSocket proxy error: {str(e)}")
+        print(f"❌ WebSocket proxy error: {type(e).__name__}")
         try:
             await websocket.send_text(json.dumps({
                 "type": "error",
-                "error": {"message": f"WebSocket proxy error: {str(e)}"}
+                "error": {"message": "Voice assistant connection error"}
             }))
         except:
             pass
