@@ -1,8 +1,9 @@
-"""Make every backend test importable offline.
+"""Make every backend test importable offline, and give every test a clean process.
 
 backend/main.py and api/embeddings.py create Supabase/OpenAI clients at import
 time, so tests need *some* values. These dummies point nowhere; anything that
-really calls out must mock the client or live under tests/integration/.
+really calls out must mock the client. The one live test is
+tests/integration/test_live_smoke.py, skipped unless its env vars are set.
 """
 import os
 import sys
@@ -36,28 +37,46 @@ def _no_background_embeddings(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_rate_limits():
-    """Rate-limit windows are process-global; never let one test's calls count against another."""
+def _reset_process_state():
+    """Reset every piece of process-global state before AND after each test.
+
+    - rate-limit windows (services.rate_limit)
+    - the shared ContextService and its cache (services.context_service._context_service)
+    - the verified-token cache and the Supabase Auth client (api.auth._cache, _auth_client)
+    - app.dependency_overrides: restored to exactly what it was, so a test that
+      installs an override (or pops the fake user) can't leak it into the next one
+    """
+    from main import app
+    from api import auth
+    from services import context_service
     from services.rate_limit import reset_rate_limits
-    reset_rate_limits()
+
+    def reset():
+        reset_rate_limits()
+        context_service._context_service = None
+        auth._cache.clear()
+        auth._auth_client = None
+
+    overrides = dict(app.dependency_overrides)
+    reset()
     yield
-    reset_rate_limits()
+    reset()
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(overrides)
 
 
 @pytest.fixture(autouse=True)
-def _fake_auth(request):
-    """Authenticate every test as a fake user, unless it is marked real_auth.
+def _fake_auth(request, _reset_process_state):
+    """Authenticate every test as "test-user-123", unless it is marked real_auth.
 
-    Several test modules also set and clear app.dependency_overrides themselves
-    at import/teardown time, which made results depend on file order.
+    Modules don't install auth overrides of their own. A test may change one mid-test
+    (e.g. to act as a second user); _reset_process_state puts it back afterwards.
     """
     from main import app
     from api.auth import get_current_user
     if request.node.get_closest_marker("real_auth"):
-        # Some modules install an override at import time; real_auth tests must not see it.
         app.dependency_overrides.pop(get_current_user, None)
         yield
         return
     app.dependency_overrides[get_current_user] = lambda: "test-user-123"
     yield
-    app.dependency_overrides.pop(get_current_user, None)

@@ -20,9 +20,8 @@ def _auth_client(user_id=None, raises=False, email="worker@example.org"):
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache(monkeypatch):
-    from api import auth
-    auth._cache.clear()
+def _no_allowlist(monkeypatch):
+    # The token cache and auth client are reset around every test by conftest
     monkeypatch.delenv("ALLOWED_USER_EMAILS", raising=False)
 
 
@@ -56,9 +55,10 @@ def test_health_stays_public():
 
 
 def test_realtime_websocket_requires_token():
-    with pytest.raises(WebSocketDisconnect):
+    with pytest.raises(WebSocketDisconnect) as exc:
         with TestClient(app).websocket_connect("/api/voice-assistant/realtime/ws") as ws:
             ws.receive_text()
+    assert exc.value.code == 1008  # policy violation, before accept()
 
 
 def test_missing_env_var_gives_503(monkeypatch):
@@ -178,8 +178,9 @@ def test_allowlist_is_read_on_every_call_even_for_cached_tokens(monkeypatch):
 def test_realtime_websocket_rejects_unlisted_user(monkeypatch):
     monkeypatch.setenv("ALLOWED_USER_EMAILS", "demo@sfgov.org")
     with patch("api.auth._get_auth_client", return_value=_auth_client("u1", email="intruder@example.org")):
-        with pytest.raises(WebSocketDisconnect):
+        with pytest.raises(WebSocketDisconnect) as exc:
             with TestClient(app).websocket_connect(
                 "/api/voice-assistant/realtime/ws", headers={"Authorization": "Bearer t"}
             ) as ws:
                 ws.receive_text()
+    assert exc.value.code == 1008  # policy violation, before accept()

@@ -530,23 +530,31 @@ python -m pip install -r requirements-dev.txt
 python -m pytest              # from the repo root
 ```
 
-Expected: **161 passed, 18 skipped.** The suite runs offline; OpenAI and Supabase
-are mocked. The 18 skipped tests are in `backend/tests/integration/` and need a
-running backend plus a populated Supabase project. To run them:
+The backend suite runs offline: OpenAI is mocked, Supabase is replaced by small
+fakes (`backend/tests/helpers.py`; the strict `FakeSupabase` fails any query a
+test didn't script, so tests assert on what was actually written), and a fake
+user stands in for token verification except in tests marked `real_auth`.
+`backend/tests/conftest.py` resets process-wide state (rate-limit windows, the
+assistant's context cache, the token cache, `app.dependency_overrides`) around
+every test, so the order tests run in doesn't matter. A test that builds a real
+Supabase client fails (see `pytest.ini`).
+
+The only skipped tests are the read-only live smoke test in
+`backend/tests/integration/test_live_smoke.py`. It runs only when both variables
+are set, against a running backend and its real Supabase project:
 
 ```bash
-VOICEREACH_INTEGRATION=1 python -m pytest backend/tests/integration
-# VOICEREACH_API_URL defaults to http://localhost:8001
+VOICEREACH_API_URL=http://localhost:8001 \
+VOICEREACH_LIVE_TOKEN=<a Supabase access token for an allowed user> \
+python -m pytest backend/tests/integration
 ```
 
-These integration tests are stale: they send a fixed test token, which the
-backend now rejects, and some point at audio from the deleted Supabase project.
-They would need a real access token and data to run.
+It writes nothing and calls no OpenAI endpoint.
 
 ```bash
 cd mobile
-npx jest          # 29 tests in 10 suites, all passing
-npx tsc --noEmit  # 0 errors
+npx jest          # component, screen and service tests; native modules are mocked
+npx tsc --noEmit  # must report 0 errors
 ```
 
 ## Deployment

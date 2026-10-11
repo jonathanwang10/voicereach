@@ -124,7 +124,6 @@ def _service(existing_data=None):
     return sb
 
 
-@pytest.mark.asyncio
 async def test_service_new_person_saves_normalised_data_and_score():
     sb = _service()
     await IndividualService(sb).save_individual(
@@ -140,7 +139,6 @@ async def test_service_new_person_saves_normalised_data_and_score():
     assert interaction_insert["changes"] == clean
 
 
-@pytest.mark.asyncio
 async def test_service_merge_records_no_phantom_changes():
     sb = _service(existing_data={"name": "Ann", "height": 70, "weight": "150", "age": None})
     await IndividualService(sb).save_individual(
@@ -152,7 +150,6 @@ async def test_service_merge_records_no_phantom_changes():
     assert interaction_insert["changes"] == {"gender": "Female"}
 
 
-@pytest.mark.asyncio
 async def test_service_rejects_invalid_values():
     sb = _service()
     with pytest.raises(ValueError):
@@ -166,7 +163,6 @@ def test_get_changed_fields_ignores_empty_new_values():
 
 
 # --- C-67: GPT keys matched regardless of case/spacing ---
-@pytest.mark.asyncio
 async def test_categorize_matches_gpt_keys_case_insensitively():
     svc = OpenAIService.__new__(OpenAIService)
     reply = {"Name": "Ann", "Height": "5 ft 6", "weight": 140, "Housing Status": "Shelter",
@@ -183,7 +179,6 @@ async def test_categorize_matches_gpt_keys_case_insensitively():
 
 
 # --- embedding text joins list items with map(str) and never splits strings ---
-@pytest.mark.asyncio
 async def test_embedding_text_joins_lists_and_strings_safely():
     from services.embedding_service import EmbeddingService
     svc = EmbeddingService.__new__(EmbeddingService)
@@ -198,7 +193,6 @@ async def test_embedding_text_joins_lists_and_strings_safely():
     assert "Substance Abuse History: Mild, 3" in text
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("gpt_height,expected", [(6, 72), (5.5, 66), ("6", 72), (70, 70), ("9 in", 9)])
 async def test_categorize_still_treats_small_gpt_numbers_as_feet(gpt_height, expected):
     svc = OpenAIService.__new__(OpenAIService)

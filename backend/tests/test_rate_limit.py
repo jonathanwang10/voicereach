@@ -102,7 +102,9 @@ def test_every_paid_route_is_rate_limited(env_var, method, path, kwargs, monkeyp
          patch("api.transcription.create_client", side_effect=RuntimeError("no db")):
         first = getattr(_client(), method)(path, **kwargs)
         second = getattr(_client(), method)(path, **kwargs)
-    assert first.status_code != 429
+    # the first call gets through to the route (which then fails on the missing database,
+    # or on the non-audio upload); only the second is limited
+    assert first.status_code == (400 if path == "/api/voice-assistant/transcribe" else 500)
     assert second.status_code == 429
 
 

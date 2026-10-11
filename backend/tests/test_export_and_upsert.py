@@ -128,8 +128,8 @@ def test_numbers_and_plain_text_are_not_prefixed():
 
 def test_export_route_registered_once():
     from main import app
-    from tests.test_security_routes import _all_paths
-    paths = [p for p in _all_paths(app) if p == "/api/export"]
+    from tests.helpers import all_route_paths
+    paths = [p for p in all_route_paths(app) if p == "/api/export"]
     assert len(paths) == 1
 
 

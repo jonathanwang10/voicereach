@@ -337,9 +337,10 @@ Match-confidence colours mean the same on every screen (`confidenceColor` in
 ## Testing
 
 - **Backend:** `python -m pytest` from the repo root runs the offline suite
-  (OpenAI and Supabase mocked, a fake user for auth). Integration tests in
-  `backend/tests/integration/` need a running backend and real services and run
-  only with `VOICEREACH_INTEGRATION=1`.
+  (OpenAI mocked, Supabase faked by `backend/tests/helpers.py`, a fake user for
+  auth). The one live test, `backend/tests/integration/test_live_smoke.py`, is
+  read-only and runs only when `VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN`
+  are set.
 - **App:** `npx jest` (component and service tests with mocked native modules)
   and `npx tsc --noEmit`.
 

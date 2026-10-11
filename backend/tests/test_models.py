@@ -1,21 +1,13 @@
-"""
-Unit tests for data models (Task 2.15.1)
-Tests Pydantic model validation and computed fields
-"""
+"""Request-model validation: location bounds, required fields, override range, category rules."""
 import pytest
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from db.models import (
+    CreateCategoryRequest,
+    InteractionSummary,
     LocationData,
     SaveIndividualRequest,
     UrgencyOverrideRequest,
-    IndividualSummary,
-    IndividualResponse,
-    InteractionSummary,
-    InteractionDetail,
-    SearchIndividualsResponse,
-    IndividualDetailResponse,
-    UrgencyOverrideResponse
 )
 
 
@@ -180,172 +172,31 @@ class TestUrgencyOverrideRequest:
             UrgencyOverrideRequest(urgency_override=-1)
 
 
-class TestResponseModels:
-    """Test response model creation"""
-    
-    def test_individual_summary(self):
-        """Test IndividualSummary model"""
-        summary = IndividualSummary(
-            id=uuid4(),
-            name="John Doe",
-            urgency_score=75,
-            urgency_override=None,
-            display_score=75,  # Should match urgency_score when no override
-            last_seen=datetime.now(),
-            last_location={
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "address": "Market St & 5th"  # Abbreviated
-            }
-        )
-        assert summary.display_score == summary.urgency_score
-    
-    def test_individual_summary_with_override(self):
-        """Test IndividualSummary with danger override"""
-        summary = IndividualSummary(
-            id=uuid4(),
-            name="Jane Smith",
-            urgency_score=20,
-            urgency_override=40,
-            display_score=40,  # Should match override when set
-            last_seen=datetime.now(),
-            last_location=None
-        )
-        assert summary.display_score == summary.urgency_override
-        assert summary.display_score != summary.urgency_score
-    
-    def test_individual_response(self):
-        """Test IndividualResponse model"""
-        response = IndividualResponse(
-            id=uuid4(),
-            name="Test Person",
-            urgency_score=50,
-            urgency_override=None,
-            display_score=50,
-            data={
-                "name": "Test Person",
-                "height": 70,
-                "weight": 160,
-                "age": "Medium",
-                "veteran_status": "Unknown"
-            },
-            last_location=None,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        assert response.data["veteran_status"] == "Unknown"
-        assert response.display_score == response.urgency_score
-    
-    def test_interaction_summary(self):
-        """Test InteractionSummary model"""
-        interaction = InteractionSummary(
-            id=uuid4(),
-            created_at=datetime.now(),
-            user_name="Demo User",
-            location={
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "address": "Tenderloin"
-            },
-            has_transcription=True
-        )
-        assert interaction.user_name == "Demo User"
-        assert interaction.has_transcription is True
-    
-    def test_interaction_detail(self):
-        """Test InteractionDetail model"""
-        detail = InteractionDetail(
-            id=uuid4(),
-            created_at=datetime.now(),
-            user_name="Demo User",
-            transcription="Met individual near library...",
-            location={
-                "latitude": 37.7749,
-                "longitude": -122.4194,
-                "address": "123 Main Library Street, San Francisco, CA 94102"  # Full address
-            },
-            changes={
-                "height": 71,
-                "weight": 175,
-                "medical_conditions": ["Diabetes"]
-            }
-        )
-        assert "height" in detail.changes
-        assert detail.location["address"].startswith("123 Main Library")
-    
-    def test_urgency_override_response(self):
-        """Test UrgencyOverrideResponse model"""
-        response = UrgencyOverrideResponse(
-            urgency_score=75,
-            urgency_override=90,
-            display_score=90  # Should be override value
-        )
-        assert response.display_score == response.urgency_override
-        
-        # Test without override
-        response2 = UrgencyOverrideResponse(
-            urgency_score=75,
-            urgency_override=None,
-            display_score=75  # Should be urgency_score
-        )
-        assert response2.display_score == response2.urgency_score
-    
-    def test_search_response(self):
-        """Test SearchIndividualsResponse model"""
-        individuals = [
-            IndividualSummary(
-                id=uuid4(),
-                name=f"Person {i}",
-                urgency_score=i * 10,
-                urgency_override=None,
-                display_score=i * 10,
-                last_seen=datetime.now(),
-                last_location=None
-            )
-            for i in range(3)
-        ]
-        
-        response = SearchIndividualsResponse(
-            individuals=individuals,
-            total=50,
-            offset=0,
-            limit=20
-        )
-        assert len(response.individuals) == 3
-        assert response.total == 50
-        assert response.limit == 20
-    
-    def test_individual_detail_response(self):
-        """Test IndividualDetailResponse model"""
-        individual = IndividualResponse(
-            id=uuid4(),
-            name="Detail Test",
-            urgency_score=60,
-            urgency_override=None,
-            display_score=60,
-            data={"name": "Detail Test", "height": 70, "weight": 160, "age": "Light"},
-            last_location=None,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        interactions = [
-            InteractionSummary(
-                id=uuid4(),
-                created_at=datetime.now(),
-                user_name="Demo User",
-                location=None,
-                has_transcription=False
-            )
-        ]
-        
-        response = IndividualDetailResponse(
-            individual=individual,
-            recent_interactions=interactions
-        )
-        assert response.individual.name == "Detail Test"
-        assert len(response.recent_interactions) == 1
+def test_location_bounds_are_inclusive():
+    assert LocationData(latitude=90, longitude=180, address="x").latitude == 90
+    assert LocationData(latitude=-90, longitude=-180, address="x").longitude == -180
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_interaction_summary_allows_null_user_name():
+    """C-55: one NULL user_name (a row written outside the backend) must not 500 a route."""
+    summary = InteractionSummary(id=uuid4(), created_at=datetime.now(timezone.utc), user_name=None,
+                                 location=None, has_transcription=False)
+    assert summary.user_name is None
+
+
+# --- CreateCategoryRequest: defaults never null; select option values numeric ---
+
+def test_category_null_weight_defaults_to_zero():
+    req = CreateCategoryRequest(name="notes2", type="text")
+    assert req.urgency_weight == 0 and req.priority == "medium"
+
+
+def test_category_rejects_null_weight():
+    with pytest.raises(ValueError):
+        CreateCategoryRequest(name="x", type="text", urgency_weight=None)
+
+
+def test_single_select_option_value_must_be_numeric():
+    with pytest.raises(ValueError):
+        CreateCategoryRequest(name="x", type="single_select",
+                              options=[{"label": "A", "value": "high"}])

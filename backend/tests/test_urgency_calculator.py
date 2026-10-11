@@ -67,3 +67,36 @@ def test_non_numeric_number_value_counts_as_zero():
 def test_no_weighted_categories_scores_zero():
     cats = [{"name": "name", "type": "text", "urgency_weight": 100, "auto_trigger": False}]
     assert calculate_urgency_score({"name": "Ann"}, cats) == 0
+
+
+def _number(name, weight, auto_trigger=False):
+    return {"name": name, "type": "number", "urgency_weight": weight, "auto_trigger": auto_trigger}
+
+
+def test_numbers_are_value_over_300_times_weight_normalised_by_total_weight():
+    # [(90/300)*30 + (200/300)*50] / (30+50) * 100 = 52.9 -> 52
+    assert calculate_urgency_score({"height": 90, "weight": 200}, [_number("height", 30), _number("weight", 50)]) == 52
+
+
+def test_single_select_uses_the_option_value():
+    cats = [{"name": "risk_level", "type": "single_select", "urgency_weight": 80, "auto_trigger": False,
+             "options": [{"label": "Low", "value": 0.2}, {"label": "High", "value": 0.9}]}]
+    assert calculate_urgency_score({"risk_level": "High"}, cats) == 90
+
+
+def test_text_categories_never_score_even_with_a_weight():
+    cats = [{"name": "name", "type": "text", "urgency_weight": 100, "auto_trigger": False}, _number("height", 50)]
+    # only height: (60/300)*50 / 50 * 100 = 20
+    assert calculate_urgency_score({"name": "John Doe", "height": 60}, cats) == 20
+
+
+def test_all_zero_weights_score_zero_not_a_division_error():
+    assert calculate_urgency_score({"height": 90, "weight": 200}, [_number("height", 0), _number("weight", 0)]) == 0
+
+
+def test_auto_trigger_number_fires_for_a_non_zero_value():
+    assert calculate_urgency_score({"incidents": 50}, [_number("incidents", 30, auto_trigger=True)]) == 100
+
+
+def test_auto_trigger_number_zero_does_not_fire():
+    assert calculate_urgency_score({"incidents": 0}, [_number("incidents", 10, auto_trigger=True)]) == 0

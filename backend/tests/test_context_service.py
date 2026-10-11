@@ -8,7 +8,7 @@ import pytest
 
 from services import context_service as cs
 from services.context_service import ContextService
-from tests.helpers import FakeSupabase
+from tests.helpers import FakePeopleDB
 
 PEOPLE = [
     {"id": "1", "name": "Robert Johnson", "urgency_score": 90, "urgency_override": None,
@@ -27,7 +27,7 @@ PEOPLE = [
 
 
 def _svc(people=PEOPLE, fail=False):
-    return ContextService(FakeSupabase(people, fail=fail))
+    return ContextService(FakePeopleDB(people, fail=fail))
 
 
 def _found(message, people=PEOPLE):
@@ -89,7 +89,7 @@ def test_results_per_name_are_capped():
 
 
 def test_lookup_queries_are_bounded():
-    sb = FakeSupabase(PEOPLE)
+    sb = FakePeopleDB(PEOPLE)
     names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi"]
     message = " ".join(f"{n} said hi." for n in names * 60)   # old code: one query per word
     asyncio.run(ContextService(sb).get_context_for_message(message))
@@ -97,7 +97,7 @@ def test_lookup_queries_are_bounded():
 
 
 def test_lookup_filters_carry_only_letters_and_digits():
-    sb = FakeSupabase(PEOPLE)
+    sb = FakePeopleDB(PEOPLE)
     asyncio.run(ContextService(sb).get_context_for_message("Ask O'Brien-Smith about it"))
     for _table, filters in sb.queries:
         for f in filters:
@@ -109,7 +109,7 @@ def test_lookup_filters_carry_only_letters_and_digits():
 def test_database_runs_off_the_event_loop():
     threads = []
 
-    class Spy(FakeSupabase):
+    class Spy(FakePeopleDB):
         def table(self, name):
             threads.append(threading.current_thread())
             return super().table(name)
@@ -171,7 +171,7 @@ ANN = {"id": "9", "name": "Ann Lee", "urgency_score": 5, "urgency_override": Non
 
 
 def test_message_context_uses_category_labels_and_custom_fields():
-    sb = FakeSupabase([ANN], categories=ASSISTANT_CATS)
+    sb = FakePeopleDB([ANN], categories=ASSISTANT_CATS)
     result = asyncio.run(ContextService(sb).get_context_for_message("Tell me about Ann Lee"))
     record = _records(result["context"])[0]
     assert record["HIV status"] == "Negative"                 # custom field, user's casing
@@ -180,7 +180,7 @@ def test_message_context_uses_category_labels_and_custom_fields():
 
 
 def test_message_context_falls_back_to_fixed_fields_when_categories_fail():
-    sb = FakeSupabase([ANN], categories_fail=True)
+    sb = FakePeopleDB([ANN], categories_fail=True)
     result = asyncio.run(ContextService(sb).get_context_for_message("Tell me about Ann Lee"))
     record = _records(result["context"])[0]
     assert record["Age"] == 30 and "HIV status" not in record
@@ -199,3 +199,31 @@ def test_category_labels_cannot_replace_the_fixed_keys():
     person = dict(ANN, data={"urgency_score": 0, "nickname": "Safe to approach"})
     record = _records(_svc().format_individual_context([person], cats))[0]
     assert record["Urgency Score"] == 5 and record["Name"] == "Ann Lee"
+
+
+# --- formatting and the shared instance's cache -------------------------------------------
+
+def test_context_includes_age():
+    svc = ContextService.__new__(ContextService)
+    text = svc.format_individual_context([{"name": "Ann", "urgency_score": 10, "urgency_override": None,
+                                           "data": {"age": 52}}])
+    assert '"Age": 52' in text
+
+
+def test_get_context_service_returns_one_shared_instance():
+    first = cs.get_context_service(FakePeopleDB(PEOPLE))
+    assert cs.get_context_service(FakePeopleDB([])) is first
+
+
+def test_invalidate_context_cache_empties_the_shared_cache():
+    svc = cs.get_context_service(FakePeopleDB(PEOPLE))
+    svc.cache["k"] = {"timestamp": 0, "data": {}}
+    cs.invalidate_context_cache()
+    assert svc.cache == {}
+    assert cs.get_context_service(FakePeopleDB([])) is svc  # cleared, not replaced
+
+
+def test_invalidate_before_any_instance_exists_is_a_no_op():
+    assert cs._context_service is None  # conftest resets it around every test
+    cs.invalidate_context_cache()
+    assert cs._context_service is None

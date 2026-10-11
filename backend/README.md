@@ -271,14 +271,20 @@ has a 0-100 `CHECK`, and `urgency_score`, `interactions.individual_id` and
 ## Testing
 
 ```bash
-python -m pytest     # from the repo root: 154 passed, 18 skipped
+python -m pytest     # from the repo root
 ```
 
-The suite is offline: OpenAI and Supabase are mocked, and a fake user stands in
-for token verification except in tests marked `real_auth`. The skipped tests in
-`tests/integration/` call a running backend; enable them with
-`VOICEREACH_INTEGRATION=1` (`VOICEREACH_API_URL` defaults to
-`http://localhost:8001`).
+The suite is offline: OpenAI is mocked, Supabase is faked (`tests/helpers.py`:
+the strict `FakeSupabase` raises on any query a test didn't script and records
+every insert/update payload), and a fake user stands in for token verification
+except in tests marked `real_auth`. `tests/conftest.py` resets rate limits, the
+assistant context cache, the token cache and `app.dependency_overrides` around
+every test. Tests are named by subject (`test_individuals_routes.py`,
+`test_transcribe_route.py`, `test_schema_contract.py`, ...).
+
+The skipped tests are `tests/integration/test_live_smoke.py`, a read-only smoke
+test against a running backend. It runs only when `VOICEREACH_API_URL` and
+`VOICEREACH_LIVE_TOKEN` (a real Supabase access token) are both set.
 
 ## Deployment
 

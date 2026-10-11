@@ -2,20 +2,15 @@
 Unit tests specifically for UUID mapping fix in duplicate detection service
 Tests that placeholder keys from GPT-4o are correctly mapped to actual UUIDs
 """
-import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock
 import uuid
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tests.helpers import FakeSupabase
+from tests.helpers import FakePeopleDB
 
 
 class TestUUIDMappingFix:
     """Test UUID mapping fix for duplicate detection"""
 
-    @pytest.mark.asyncio
     async def test_handles_placeholder_keys_from_llm(self):
         """Test that service correctly maps placeholder keys from GPT-4o to actual UUIDs"""
         from services.duplicate_detection_service import DuplicateDetectionService
@@ -43,7 +38,7 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase = FakeSupabase(candidates)
+        mock_supabase = FakePeopleDB(candidates)
         service.supabase = mock_supabase
 
         # Mock OpenAI returns placeholder keys instead of actual UUIDs
@@ -63,7 +58,6 @@ class TestUUIDMappingFix:
         assert matches[0]["confidence"] == 95
         assert matches[0]["name"] == "John Doe"
 
-    @pytest.mark.asyncio
     async def test_handles_candidate_id_placeholder_format(self):
         """Test handling of 'candidate_id_X' format from GPT-4o"""
         from services.duplicate_detection_service import DuplicateDetectionService
@@ -85,7 +79,7 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase = FakeSupabase(candidates)
+        mock_supabase = FakePeopleDB(candidates)
         service.supabase = mock_supabase
 
         # Mock OpenAI returns "candidate_id_1" format (the problematic format)
@@ -101,7 +95,6 @@ class TestUUIDMappingFix:
         assert matches[0]["id"] == valid_id  # Should be the actual UUID, not "candidate_id_1"
         assert matches[0]["confidence"] == 96
 
-    @pytest.mark.asyncio
     async def test_validates_uuids_before_returning(self):
         """Test that service only returns valid UUIDs and filters invalid ones"""
         from services.duplicate_detection_service import DuplicateDetectionService
@@ -127,7 +120,7 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase = FakeSupabase(candidates)
+        mock_supabase = FakePeopleDB(candidates)
         service.supabase = mock_supabase
 
         # Mock OpenAI returns confidence for all (including invalid)
@@ -146,7 +139,6 @@ class TestUUIDMappingFix:
         assert matches[0]["confidence"] == 95
         # Invalid IDs should be filtered out
 
-    @pytest.mark.asyncio
     async def test_handles_actual_uuids_from_llm(self):
         """Test that service still works when GPT-4o returns actual UUIDs (ideal case)"""
         from services.duplicate_detection_service import DuplicateDetectionService
@@ -173,7 +165,7 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase = FakeSupabase(candidates)
+        mock_supabase = FakePeopleDB(candidates)
         service.supabase = mock_supabase
 
         # Mock OpenAI correctly returns actual UUIDs (ideal behavior)
@@ -190,7 +182,6 @@ class TestUUIDMappingFix:
         assert matches[0]["id"] == candidate1_id
         assert matches[0]["confidence"] == 98
 
-    @pytest.mark.asyncio
     async def test_fallback_validates_uuids(self):
         """Test that fallback simple matching also validates UUIDs"""
         from services.duplicate_detection_service import DuplicateDetectionService
@@ -212,7 +203,7 @@ class TestUUIDMappingFix:
         result_mock = MagicMock()
         result_mock.data = candidates
 
-        mock_supabase = FakeSupabase(candidates)
+        mock_supabase = FakePeopleDB(candidates)
         service.supabase = mock_supabase
 
         # Act
