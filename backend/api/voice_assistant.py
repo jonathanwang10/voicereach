@@ -7,10 +7,14 @@ from api.auth import get_current_user
 from api.errors import internal_error
 from pydantic import BaseModel
 from typing import Dict, Any, List
-import tempfile
 from supabase import create_client, Client
-from services.openai_service import OpenAIService
+from services.openai_service import OpenAIService, temp_audio_file
 from services.context_service import get_context_service
+from services.rate_limit import rate_limit
+
+# Assistant questions are short; anything bigger is refused with 413 (C-12).
+# main.BodySizeLimitMiddleware also refuses a request body much over this.
+MAX_ASSISTANT_AUDIO_BYTES = 3 * 1024 * 1024
 
 router = APIRouter(prefix="/api/voice-assistant")
 
@@ -30,44 +34,30 @@ class ContextResponse(BaseModel):
 @router.post("/transcribe")
 async def transcribe_voice_audio(
     audio: UploadFile = File(...),
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit(
+        "assistant_transcribe", "RATE_LIMIT_ASSISTANT_TRANSCRIBE_PER_MIN", 30)),
 ):
     """
-    Transcribe audio file for voice assistant
+    Transcribe audio file for voice assistant (max 3 MB, else 413)
     """
     try:
-        print(f"🎤 Received audio file: {audio.filename}, type: {audio.content_type}")
-        
         # Validate file type
         if not audio.content_type or not audio.content_type.startswith('audio/'):
             raise HTTPException(status_code=400, detail="File must be an audio file")
-        
-        # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_file:
-            content = await audio.read()
-            temp_file.write(content)
-            temp_file_path = temp_file.name
-        
-        try:
-            # Initialize OpenAI service
-            openai_service = OpenAIService()
-            
-            # Transcribe the audio file
-            print(f"🎤 Transcribing audio file: {temp_file_path}")
-            transcription = await openai_service.transcribe_audio_file(temp_file_path)
-            
-            print(f"✅ Transcription successful: {transcription[:100]}...")
-            
-            return {
-                "transcription": transcription,
-                "status": "success"
-            }
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
-                
+
+        content = await audio.read(MAX_ASSISTANT_AUDIO_BYTES + 1)
+        if len(content) > MAX_ASSISTANT_AUDIO_BYTES:
+            raise HTTPException(status_code=413, detail="Audio file is larger than 3 MB")
+
+        # The temp file is removed on every path, including a failed write (C-65)
+        with temp_audio_file(content) as temp_file_path:
+            transcription = await OpenAIService().transcribe_audio_file(temp_file_path)
+
+        return {
+            "transcription": transcription,
+            "status": "success"
+        }
+
     except HTTPException:
         raise
     except ValueError as e:

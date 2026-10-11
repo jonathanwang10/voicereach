@@ -1,19 +1,26 @@
 """
 Audio transcription and categorization endpoints
 """
+import asyncio
+import base64
 import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 
-from api.auth import get_current_user
 from api.errors import internal_error
-from services.openai_service import OpenAIService
+from services.openai_service import AudioTooLarge, OpenAIService, temp_audio_file
+from services.rate_limit import rate_limit
 from services.validation_helper import validate_categorized_data
 
 
 router = APIRouter()
+
+# Answer before the app's 120 s transcribe timeout gives up: the chained OpenAI calls
+# can take ~180 s in the worst case (see services/openai_service.py).
+TRANSCRIBE_DEADLINE_SECONDS = 110
+# The request body (base64 audio) is capped at 8 MB by main.BodySizeLimitMiddleware.
 
 
 class TranscribeRequest(BaseModel):
@@ -36,8 +43,16 @@ class TranscribeResponse(BaseModel):
 @router.post("/api/transcribe", response_model=TranscribeResponse)
 async def transcribe_audio_endpoint(
     request: TranscribeRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit("transcribe", "RATE_LIMIT_TRANSCRIBE_PER_MIN", 30)),
 ):
+    """Transcribe and categorise, within TRANSCRIBE_DEADLINE_SECONDS (504 after that)."""
+    try:
+        return await asyncio.wait_for(_transcribe(request), TRANSCRIBE_DEADLINE_SECONDS)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Transcription took too long. Please try again.")
+
+
+async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
     """
     Transcribe audio and extract categorized data
     
@@ -81,24 +96,11 @@ async def transcribe_audio_endpoint(
         
         # 2. Transcribe audio
         if request.audio_data:
-            # Handle base64 audio data
-            import base64
-            import tempfile
-            
-            # Decode base64 audio data
-            audio_data = base64.b64decode(request.audio_data.split(',', 1)[-1])  # Strip optional data URL prefix
-            
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_file:
-                temp_file.write(audio_data)
-                temp_file_path = temp_file.name
-            
-            try:
-                # Transcribe from temporary file
+            # Base64 audio (an optional data-URL prefix is stripped). The temp file is
+            # removed on every path, including a failed write (C-65).
+            audio_data = base64.b64decode(request.audio_data.split(',', 1)[-1])
+            with temp_audio_file(audio_data) as temp_file_path:
                 transcription = await openai_service.transcribe_audio_file(temp_file_path)
-            finally:
-                # Clean up temporary file
-                os.unlink(temp_file_path)
         elif request.audio_url:
             # Handle audio URL
             transcription = await openai_service.transcribe_audio(request.audio_url)
@@ -144,6 +146,8 @@ async def transcribe_audio_endpoint(
         
     except HTTPException:
         raise
+    except AudioTooLarge as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except ValueError as e:
         # Client-facing validation messages from the services ("File is not in M4A format",
         # "Audio must be at least 5 seconds long", bad base64)

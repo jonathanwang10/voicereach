@@ -6,17 +6,47 @@ import httpx
 import tempfile
 import json
 import re
-from typing import Optional, Dict
+from contextlib import contextmanager
+from typing import Iterator, Optional, Dict
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
 from services.field_registry import category_key, parse_height_inches
 
 
-# Fail fast instead of the SDK defaults (600 s read, 2 retries). /api/transcribe chains
-# three calls, so the worst case stays around the app's 120 s transcribe timeout.
+# Fail fast instead of the SDK defaults (600 s read, 2 retries). GPT calls get 30 s
+# and one retry (60 s worst case each); Whisper gets 60 s and NO retry, because a
+# second 60 s attempt would outlast the app. /api/transcribe chains Whisper (60),
+# categorisation (60) and the duplicate comparison (60): up to ~180 s of OpenAI time,
+# so the route also has its own deadline (api/transcription.TRANSCRIBE_DEADLINE_SECONDS,
+# 110 s) and answers 504 before the app's 120 s timeout gives up.
 OPENAI_TIMEOUT_SECONDS = 30
 WHISPER_TIMEOUT_SECONDS = 60
+MAX_AUDIO_DOWNLOAD_BYTES = 5 * 1024 * 1024
+
+
+class AudioTooLarge(ValueError):
+    """The audio is over a size cap; routes answer 413."""
+
+
+@contextmanager
+def temp_audio_file(data: bytes, suffix: str = ".m4a") -> Iterator[str]:
+    """Write `data` to a temp file and yield its path; the file is removed on every path,
+    including a failed write (C-65)."""
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        yield path
+    finally:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
+def _supabase_host() -> str:
+    return (urlparse(os.getenv("SUPABASE_URL") or "").hostname or "").lower()
 
 
 class OpenAIService:
@@ -26,83 +56,73 @@ class OpenAIService:
             timeout=OPENAI_TIMEOUT_SECONDS,
             max_retries=1,
         )
+        self.whisper_client = self.client.with_options(
+            timeout=WHISPER_TIMEOUT_SECONDS, max_retries=0
+        )
 
-    async def transcribe_audio(self, audio_url: str) -> str:
-        """
-        Transcribe audio from Supabase URL using OpenAI Whisper API
-        
-        Args:
-            audio_url: Public URL to M4A audio file in Supabase Storage
-            
-        Returns:
-            Plain text transcription
-            
-        Raises:
-            ValueError: For invalid URL, wrong format, or duration issues
-            Exception: For API or network errors
-        """
-        # Validate URL format
-        parsed = urlparse(audio_url)
-        if not parsed.scheme or not parsed.netloc:
-            raise ValueError("Invalid URL format")
-            
-        # Check if it's a Supabase URL
-        host = parsed.hostname or ""
-        if not host.endswith(".supabase.co"):
-            raise ValueError("URL must be from Supabase Storage")
-            
-        # Download audio file to temporary location
+    async def _whisper(self, file_path: str) -> str:
+        with open(file_path, "rb") as audio_file:
+            transcript = await self.whisper_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text",
+                timeout=WHISPER_TIMEOUT_SECONDS,
+            )
+        return transcript.strip()
+
+    async def _download_audio(self, audio_url: str) -> bytes:
+        """Stream the file, stopping at MAX_AUDIO_DOWNLOAD_BYTES. No redirects."""
+        chunks, size = [], 0
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(audio_url, timeout=30.0)
-                response.raise_for_status()
+                async with client.stream("GET", audio_url, timeout=30.0, follow_redirects=False) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > MAX_AUDIO_DOWNLOAD_BYTES:
+                            raise AudioTooLarge("Audio file is larger than 5 MB")
+                        chunks.append(chunk)
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
                     raise ValueError("Audio file not found")
-                raise Exception(f"Failed to download audio: {e}")
+                raise Exception(f"Failed to download audio: HTTP {e.response.status_code}")
             except httpx.TimeoutException:
                 raise Exception("Network timeout while downloading audio")
-                
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp_file:
-            tmp_file.write(response.content)
-            tmp_path = tmp_file.name
-            
-        try:
-            # Validate file format (basic check for M4A header)
-            with open(tmp_path, 'rb') as f:
-                header = f.read(12)
-                # M4A files typically have 'ftyp' at offset 4
-                if b'ftyp' not in header:
-                    raise ValueError("File is not in M4A format")
-            
-            # Send to Whisper API
-            with open(tmp_path, 'rb') as audio_file:
-                transcript = await self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text",
-                    timeout=WHISPER_TIMEOUT_SECONDS,
-                )
-                
-            # Note: Duration validation would happen on frontend
-            # Backend accepts whatever audio Whisper can process
-            # Frontend enforces 5-second minimum and 2-minute maximum
-            
-            return transcript.strip()
-            
-        except Exception as e:
-            if "Audio file is too short" in str(e):
-                raise ValueError("Audio must be at least 5 seconds long")
-            elif "Audio file is too long" in str(e):
-                raise ValueError("Audio must be less than 2 minutes")
-            raise
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-    
+        return b"".join(chunks)
+
+    async def transcribe_audio(self, audio_url: str) -> str:
+        """
+        Transcribe audio from a Supabase Storage URL using OpenAI Whisper API.
+
+        The URL must be http(s) on the SAME host as SUPABASE_URL (not any
+        *.supabase.co project), and the download stops at 5 MB (C-12).
+
+        Raises:
+            AudioTooLarge: the file is over 5 MB
+            ValueError: invalid URL, wrong host, missing file or wrong format
+            Exception: for API or network errors
+        """
+        parsed = urlparse(audio_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("Invalid URL format")
+        host = (parsed.hostname or "").lower()
+        if not host or host != _supabase_host():
+            raise ValueError("URL must be from this project's Supabase Storage")
+
+        content = await self._download_audio(audio_url)
+        if b'ftyp' not in content[:12]:
+            raise ValueError("File is not in M4A format")
+
+        with temp_audio_file(content) as tmp_path:
+            try:
+                return await self._whisper(tmp_path)
+            except Exception as e:
+                if "Audio file is too short" in str(e):
+                    raise ValueError("Audio must be at least 5 seconds long")
+                elif "Audio file is too long" in str(e):
+                    raise ValueError("Audio must be less than 2 minutes")
+                raise
+
     async def transcribe_audio_file(self, file_path: str) -> str:
         """
         Transcribe audio from local file using OpenAI Whisper API
@@ -130,15 +150,7 @@ class OpenAIService:
                     raise ValueError("File is not in M4A format")
             
             # Send to Whisper API
-            with open(file_path, 'rb') as audio_file:
-                transcript = await self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text",
-                    timeout=WHISPER_TIMEOUT_SECONDS,
-                )
-                
-            return transcript.strip()
+            return await self._whisper(file_path)
             
         except Exception as e:
             if "Audio file is too short" in str(e):

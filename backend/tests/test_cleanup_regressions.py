@@ -52,7 +52,7 @@ def test_context_includes_age():
     svc = ContextService.__new__(ContextService)
     text = svc.format_individual_context([{"name": "Ann", "urgency_score": 10, "urgency_override": None,
                                             "data": {"age": 52}}])
-    assert "Age: 52" in text
+    assert '"Age": 52' in text
 
 
 # --- category model defaults never null; select option values numeric ---

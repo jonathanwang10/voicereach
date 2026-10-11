@@ -206,6 +206,8 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
 | `ALLOWED_USER_EMAILS` | Optional. Comma-separated emails (case-insensitive) allowed to use the API, e.g. `demo@sfgov.org`. When set, any other signed-in user gets a 403. Unset means every user of the Supabase project is accepted. Read on every request. |
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
+| `RATE_LIMIT_*_PER_MIN` | Optional. Per-user limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
+| `REALTIME_MAX_SESSION_SECONDS` | Optional. How long one voice-assistant connection may stay open (default 600). |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
 
@@ -258,9 +260,11 @@ with Supabase Auth (`auth.get_user`) and caches a valid result for 60 seconds
 token gets a 401. If `ALLOWED_USER_EMAILS` is set, a valid user whose email is
 not on it gets a 403 `{"detail": "This account is not allowed to use this
 service"}`; the list is checked on every request, cached tokens included. The
-realtime WebSocket checks the same header during the handshake and closes with
-code 1008 if the token is missing or invalid, or the user isn't allowed
-(`websocket_realtime_proxy` in `backend/main.py`).
+realtime WebSocket checks the same header during the handshake and refuses it if
+the token is missing or invalid, or the user isn't allowed; the client sees that
+as an **HTTP 403** on the upgrade, not a WebSocket close code
+(`websocket_realtime_proxy` in `backend/main.py`). If Supabase Auth itself is
+unreachable, the socket is accepted and closed with 1011.
 
 The app gets its token by signing in as the demo user before its first request
 (`getAuthToken` in `mobile/services/api.ts`) and sends it on every call,
@@ -308,10 +312,51 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/api/voice-assistant/guidelines` | Static safety guidelines |
 
 `POST /api/transcribe` takes `{"audio_data": "<base64, data-URL prefix optional>"}`
-or `{"audio_url": "..."}` (which must be on a `*.supabase.co` host,
-`services/openai_service.py:44`). The app always sends `audio_data`. It returns
-`transcription`, `categorized_data`, `missing_required`, `validation_errors` and
-`potential_matches`, and saves nothing.
+or `{"audio_url": "..."}` (which must be on the same host as `SUPABASE_URL`;
+the download stops at 5 MB, `OpenAIService.transcribe_audio`). The app always
+sends `audio_data`. It returns `transcription`, `categorized_data`,
+`missing_required`, `validation_errors` and `potential_matches`, and saves
+nothing. It answers within 110 s (`TRANSCRIBE_DEADLINE_SECONDS`), with a 504 if
+OpenAI is that slow, so the app's 120 s timeout never fires first.
+
+### Limits
+
+Anyone who can sign in can spend the owner's OpenAI credit, so the paid surfaces
+are bounded. All of these are per process and in memory (they reset on restart).
+
+| Limit | Value | Over it |
+|---|---|---|
+| `POST /api/transcribe` body (base64 audio) | 8 MB | 413 |
+| `audio_url` download | 5 MB, same host as `SUPABASE_URL`, no redirects | 413 / 400 |
+| `POST /api/voice-assistant/transcribe` audio | 3 MB | 413 |
+| `POST /api/individuals/check-duplicates` body | 20 KB, a JSON object | 413 / 422 |
+| `POST /api/embeddings/search` | `query` ≤ 500 chars, `top_k` 1–50, `similarity_threshold` 0–1 | 422 |
+| A saved `name` | 200 characters | 422 |
+| Realtime client frame | 1 MB; only the allowed event types (below) | error event, frame dropped |
+| Realtime session | `REALTIME_MAX_SESSION_SECONDS` (600) | close 1008 |
+
+Per-user requests per minute (a fixed 60 s window; a 429 carries `Retry-After`).
+Set the env var to a positive integer to change one:
+
+| Env var | Default | Route |
+|---|---|---|
+| `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` |
+| `RATE_LIMIT_ASSISTANT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/voice-assistant/transcribe` |
+| `RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN` | 60 | `POST /api/embeddings/search` |
+| `RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN` | 30 | `POST /api/embeddings/generate` |
+| `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |
+| `RATE_LIMIT_DUPLICATE_CHECK_PER_MIN` | 30 | `POST /api/individuals/check-duplicates` |
+| `RATE_LIMIT_WS_CONNECT_PER_MIN` | 10 | `WS /api/voice-assistant/realtime/ws` (close 1008) |
+
+The realtime proxy is not an open relay: the server sets the session (instructions,
+voice, tools) once, and a client may send only `input_audio_buffer.append` /
+`commit` / `clear`, `conversation.item.create` (a `user` message with `input_text`
+or `input_audio` parts), `response.create` (any `response` overrides are
+stripped) and `response.cancel`. Anything else, `session.update` included, is
+dropped and answered with `{"type": "error", "error": {"code":
+"event_not_allowed", ...}}` (`services/realtime_guard.py`). Database records reach
+the model only as a `user` item with id `ctx_...`, fenced as REFERENCE DATA that
+the session instructions say never to obey.
 
 Interactive docs are at `/docs` when the server is running. Endpoint detail and
 request bodies are in [`backend/README.md`](backend/README.md).

@@ -34,6 +34,8 @@ Environment variables (`backend/.env`):
 | `SUPABASE_ANON_KEY` | Only `api/auth.py`, to verify users' access tokens |
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
 | `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset = any user of the project |
+| `RATE_LIMIT_*_PER_MIN` | Optional per-user limits on the paid endpoints (see [Limits](#limits)) |
+| `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 
 Then: API at `http://localhost:8001`, interactive docs at `/docs`, health check
 at `/health`.
@@ -72,7 +74,9 @@ tokens get a 401; there is no demo fallback. When `ALLOWED_USER_EMAILS` is set
 (comma-separated, case-insensitive, read on every call), a valid user whose
 email isn't listed gets a 403 `{"detail": "This account is not allowed to use
 this service"}`; only allowed users are cached. The realtime WebSocket checks
-the same header before accepting and closes with code 1008 otherwise. Only `GET
+the same header before accepting and refuses the handshake otherwise, which the
+client sees as an HTTP 403 (closing before `accept()` can't send a close code).
+An Auth outage (503) is accepted and closed with 1011. Only `GET
 /health` and `GET /` are public. The root README shows how to get a token for
 curl.
 
@@ -81,9 +85,11 @@ curl.
 ### Transcription
 
 **`POST /api/transcribe`** — Body: `{"audio_data": "<base64>"}` (a `data:` URL
-prefix is stripped) or `{"audio_url": "https://<project>.supabase.co/..."}`
-(other hosts are rejected). Loads categories, transcribes with `whisper-1`,
-extracts fields with `gpt-4o`, validates, and looks for duplicates. Returns:
+prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
+same host as `SUPABASE_URL` (other hosts are rejected; the download stops at 5 MB
+and doesn't follow redirects). Loads categories, transcribes with `whisper-1`,
+extracts fields with `gpt-4o`, validates, and looks for duplicates. 413 over a
+size cap, 429 over the rate limit, 504 after 110 s. Returns:
 
 ```json
 {
@@ -182,22 +188,29 @@ and behavior. 404 if there are no individuals.
 
 ### Embeddings (`api/embeddings.py`, prefix `/api/embeddings`)
 
-- **`POST /search`** — `{"query", "top_k": 10, "similarity_threshold": 0.15}`.
+- **`POST /search`** — `{"query" (≤ 500 chars), "top_k": 10 (1-50),
+  "similarity_threshold": 0.15 (0-1)}`; out of range is a 422.
   Ranked in tiers: name match (`search_type: "exact"`, 1.0), data-value match
   (`"value"`, 0.9), then semantic matches by cosine score. See
   [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md).
 - **`POST /generate`** — `{"individual_id": "uuid"}`.
-- **`POST /generate-all`** — Embed every individual.
+- **`POST /generate-all`** — Embed every individual. One call per user per
+  minute by default; `scripts/backfill_embeddings.py` does the same offline.
 - **`GET /status`** — `total_individuals`, `total_embeddings`,
   `coverage_percentage`.
 
 ### Voice assistant
 
 - **`WS /api/voice-assistant/realtime/ws`** (in `main.py`) — Proxy to OpenAI's
-  `gpt-realtime`. Text messages that name someone in the database get a
-  `CONTEXT:` system message injected ahead of them.
-- **`POST /api/voice-assistant/transcribe`** — Multipart field `audio`; returns
-  `{"transcription", "status"}`. Whisper only.
+  `gpt-realtime`. The server sets the session once; client frames pass through
+  the allowlist in `services/realtime_guard.py` (others get an `event_not_allowed`
+  error event). A text message that names someone in the database is preceded by
+  a `user` item with id `ctx_<24 hex>` holding their records as JSON, fenced as
+  REFERENCE DATA (never a `system` message). Close codes after `accept()`: 1000
+  normal, 1008 session time limit or too many connects, 1011 upstream or Auth
+  outage.
+- **`POST /api/voice-assistant/transcribe`** — Multipart field `audio` (≤ 3 MB,
+  else 413); returns `{"transcription", "status"}`. Whisper only.
 - **`POST /api/voice-assistant/context`** — `{"message"}`; returns `context`,
   `individuals_found` and `names_detected`.
 - **`GET /api/voice-assistant/guidelines`** — Static safety guidance.
@@ -249,6 +262,31 @@ Railway builds from the repo root, not this directory:
 
 The original deployment no longer exists.
 
+## Limits
+
+Size caps (`BODY_LIMITS` in `main.py`, plus the route checks) give a 413
+`{"detail": ...}`: `/api/transcribe` body 8 MB, assistant audio 3 MB, `audio_url`
+download 5 MB, `check-duplicates` body 20 KB. A saved `name` is at most 200
+characters (422).
+
+Per-user rate limits (`services/rate_limit.py`, a fixed 60 s window in memory,
+per process) give a 429 with `Retry-After`. Each is read from its env var on every
+request; a missing or invalid value uses the default:
+
+| Env var | Default / min | Applies to |
+|---|---|---|
+| `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` |
+| `RATE_LIMIT_ASSISTANT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/voice-assistant/transcribe` |
+| `RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN` | 60 | `POST /api/embeddings/search` |
+| `RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN` | 30 | `POST /api/embeddings/generate` |
+| `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |
+| `RATE_LIMIT_DUPLICATE_CHECK_PER_MIN` | 30 | `POST /api/individuals/check-duplicates` |
+| `RATE_LIMIT_WS_CONNECT_PER_MIN` | 10 | the realtime WebSocket (close 1008) |
+
+The assistant's context lookup (`services/context_service.py`) reads at most the
+first 2,000 characters of a message, looks up at most 3 names and keeps at most
+3 people per name, with its database calls in a worker thread.
+
 ## Notes
 
 - CORS: browser origins come from `CORS_ALLOW_ORIGINS` (comma-separated; unset
@@ -256,9 +294,11 @@ The original deployment no longer exists.
 - Errors: every non-2xx body is `{"detail": string}`. A 500 says only
   `"<action> failed"` (`api/errors.py:internal_error`); the log records the
   exception type, not its message.
-- OpenAI calls time out after 30 s with one retry (Whisper 60 s).
+- OpenAI calls time out after 30 s with one retry; Whisper gets 60 s and no
+  retry. `/api/transcribe` chains up to ~180 s of OpenAI time, so the route has
+  its own 110 s deadline (504) to answer before the app's 120 s timeout.
 - Audio is never stored: it arrives inline, goes to a temp file for Whisper and
-  is deleted straight after.
+  the file is deleted on every path (`openai_service.temp_audio_file`).
 - Interactions record the user id from the token, but `user_name` is always
   "Demo User".
 - Several handlers make synchronous Supabase calls inside `async` functions, and

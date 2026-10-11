@@ -36,6 +36,15 @@ def _no_background_embeddings(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Rate-limit windows are process-global; never let one test's calls count against another."""
+    from services.rate_limit import reset_rate_limits
+    reset_rate_limits()
+    yield
+    reset_rate_limits()
+
+
+@pytest.fixture(autouse=True)
 def _fake_auth(request):
     """Authenticate every test as a fake user, unless it is marked real_auth.
 

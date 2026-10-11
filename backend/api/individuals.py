@@ -2,10 +2,10 @@
 Individual management API endpoints
 """
 import os
-from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse
 from uuid import UUID
-from typing import Optional
+from typing import Any, Dict, Optional
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -24,6 +24,7 @@ from db.models import (
 from services.individual_service import IndividualService
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
+from services.rate_limit import rate_limit
 
 
 router = APIRouter()
@@ -367,14 +368,16 @@ async def get_interactions(
 
 @router.post("/check-duplicates")
 async def check_duplicates(
-    data: dict,
-    user_id: str = Depends(get_current_user)
+    data: Dict[str, Any] = Body(..., description="The person's fields, e.g. {\"name\": \"Ann\", \"age\": 40}"),
+    user_id: str = Depends(rate_limit(
+        "duplicate_check", "RATE_LIMIT_DUPLICATE_CHECK_PER_MIN", 30)),
 ):
     """
     Check for potential duplicate individuals using sophisticated matching
     
     This endpoint uses the same duplicate detection logic as the transcription API
-    but works with manually entered data.
+    but works with manually entered data. The body is a JSON object of fields, at
+    most 20 KB (main.BodySizeLimitMiddleware answers 413 above that).
     """
     try:
         # Get Supabase client

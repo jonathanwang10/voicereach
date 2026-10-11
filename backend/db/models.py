@@ -7,6 +7,9 @@ from datetime import datetime
 from uuid import UUID
 
 
+MAX_NAME_LENGTH = 200
+
+
 # Request Models
 class LocationData(BaseModel):
     """Location data from frontend with geocoded address"""
@@ -33,6 +36,10 @@ class SaveIndividualRequest(BaseModel):
         ]
         if missing:
             raise ValueError(f"Missing required fields: {missing}")
+        name = v.get('name')
+        if isinstance(name, str) and len(name.strip()) > MAX_NAME_LENGTH:
+            # Names reach the assistant's prompt; keep them name-sized (C-28)
+            raise ValueError(f"name must be at most {MAX_NAME_LENGTH} characters")
         return v
 
 

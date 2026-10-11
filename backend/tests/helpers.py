@@ -16,7 +16,8 @@ class FakeSupabase:
 
     Supports table().select().ilike()/or_()/order()/limit().execute(). An `or_`
     filter of `name.ilike.*tok*` parts keeps rows whose name contains any token;
-    `ilike` keeps rows whose name contains the pattern without wildcards. Rows come
+    `ilike` with a `%` at either end keeps rows whose name contains the rest, and
+    without one keeps case-insensitive equal names. Rows come
     back in the given order (treat it as "most recently updated first").
     With fail=True every execute() raises, like a database outage.
     """
@@ -59,7 +60,10 @@ class _FakeQuery:
         for f in self.filters:
             if f[0] == "ilike":
                 needle = f[2].strip("%").replace("\\", "").lower()
-                rows = [r for r in rows if needle in (r.get("name") or "").lower()]
+                if f[2].startswith("%") or f[2].endswith("%"):
+                    rows = [r for r in rows if needle in (r.get("name") or "").lower()]
+                else:  # no wildcard: case-insensitive equality, like Postgres ILIKE
+                    rows = [r for r in rows if needle == (r.get("name") or "").lower()]
             elif f[0] == "or":
                 needles = [part.split(".ilike.", 1)[1].strip("*%").lower() for part in f[1].split(",")]
                 rows = [r for r in rows if any(n in (r.get("name") or "").lower() for n in needles)]

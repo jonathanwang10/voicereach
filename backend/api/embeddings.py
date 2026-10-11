@@ -8,7 +8,8 @@ from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
 from supabase import create_client, Client
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
 from services.urgency_calculator import get_display_urgency_score
 from services.search_matching import MATCH_TIER, match_individual
@@ -27,9 +28,10 @@ embedding_service = EmbeddingService()
 
 # Request models
 class SearchRequest(BaseModel):
-    query: str
-    top_k: int = 10
-    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
+    # Bounded so one call can't ask for every row or a huge embedding (C-12)
+    query: str = Field(..., max_length=500)
+    top_k: int = Field(10, ge=1, le=50)
+    similarity_threshold: float = Field(DEFAULT_SIMILARITY_THRESHOLD, ge=0, le=1)
 
 
 class GenerateEmbeddingRequest(BaseModel):
@@ -51,7 +53,8 @@ def get_supabase_client() -> Client:
 @router.post("/generate")
 async def generate_embedding_for_individual(
     request: GenerateEmbeddingRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit(
+        "embeddings_generate", "RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN", 30)),
 ):
     """
     Generate embedding for a specific individual
@@ -119,7 +122,8 @@ async def generate_embedding_for_individual(
 @router.post("/search")
 async def semantic_search_individuals(
     request: SearchRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit(
+        "embeddings_search", "RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN", 60)),
 ):
     """
     Hybrid search. Results are tiered: name matches ("exact", 1.0), then data-value
@@ -217,10 +221,13 @@ async def semantic_search_individuals(
 
 @router.post("/generate-all")
 async def generate_embeddings_for_all_individuals(
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit(
+        "embeddings_generate_all", "RATE_LIMIT_GENERATE_ALL_PER_MIN", 1)),
 ):
     """
-    Generate embeddings for all individuals in the database
+    Generate embeddings for all individuals in the database (one OpenAI call per
+    person, so 1 call per user per minute by default; the backfill script is the
+    usual way to do this)
     """
     try:
         # Get Supabase client

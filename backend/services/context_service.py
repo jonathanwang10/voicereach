@@ -1,14 +1,79 @@
 """
-Context Service for Voice Assistant Database Integration
-Handles name extraction, individual lookup, and context formatting with caching
+Context Service for the voice assistant: find the people a question names and
+format their records as reference data.
+
+- Names (C-18): runs of consecutive capitalised words that aren't on a stoplist
+  of sentence starters and common words ("Any advice before I approach John Doe?"
+  gives ["John Doe"]). Lower-case questions find no names.
+- Matching (C-18): an exact, case-insensitive full-name match wins. Otherwise a
+  person matches when a name token is a WHOLE word of their name ("John" finds
+  "John Smith", not "Robert Johnson"), ranked by tokens matched, then urgency.
+- Caps (C-31): the message is cut to MAX_MESSAGE_CHARS, at most MAX_NAMES names
+  are looked up, and each yields at most MAX_RESULTS_PER_NAME people. Database
+  calls run in a worker thread so they never block the event loop.
+- Format (C-28): one JSON record per person, every string value cut to
+  MAX_VALUE_CHARS. main.py wraps it as delimited reference data in a user item.
 """
+import hashlib
+import json
 import re
 import time
-import hashlib
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional
+
+from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
-from services.individual_service import IndividualService
+from services.field_registry import category_key
+from services.urgency_calculator import get_display_urgency_score
+
+MAX_NAMES = 3
+MAX_RESULTS_PER_NAME = 3
+MAX_MESSAGE_CHARS = 2000
+MAX_VALUE_CHARS = 100
+MAX_WORDS_PER_NAME = 4
+_TOKEN_CANDIDATE_LIMIT = 50
+
+# Lower-case words that start sentences or are common in questions, never names.
+STOPWORDS = frozenset("""
+a about after again all also am an and any anyone anything are around as ask assist at
+be been before being but by call can could did do does doing don't done each else
+emergency every everyone for from get give good had has have he hello help her here hey
+hi him his how i i'd i'll i'm i've if in is it it's its just know let let's like may me
+might more most must my need no nobody not now of ok okay on or our out person people
+please really right say see she should so some someone something still tell than thank
+thanks that that's the their them then there these they this those to today tomorrow
+tonight up us very want was we well were what what's when where which who why will
+with would yes yesterday you your
+crisis medical health housing shelter homeless substance abuse mental safety protocol
+individual advice approach safe danger dangerous urgent
+""".split())
+
+_WORD = re.compile(r"[A-Za-z][A-Za-z'\-]*")
+_RELEVANT_FIELDS = [
+    ("substance_abuse_history", "Substance Abuse"),
+    ("medical_conditions", "Medical Conditions"),
+    ("behavior", "Behavior"),
+    ("housing_priority", "Housing Priority"),
+    ("veteran_status", "Veteran Status"),
+    ("age", "Age"),
+    ("gender", "Gender"),
+    ("height", "Height"),
+    ("weight", "Weight"),
+]
+
+
+def _name_tokens(name: str) -> List[str]:
+    """Lower-case letter/digit runs, 2+ characters: safe inside a PostgREST filter."""
+    return list(dict.fromkeys(w for w in re.split(r"[\W_]+", name.casefold()) if len(w) >= 2))
+
+
+def _clip(value: Any) -> Any:
+    """Numbers/bools as-is; lists joined; everything else a string cut to MAX_VALUE_CHARS."""
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple)):
+        value = ", ".join(str(v) for v in value)
+    return str(value)[:MAX_VALUE_CHARS]
 
 
 class ContextService:
@@ -16,358 +81,150 @@ class ContextService:
 
     def __init__(self, supabase_client: Client, cache_ttl_seconds: int = 300):
         self.supabase = supabase_client
-        self.individual_service = IndividualService(supabase_client)
-
-        # Cache configuration
-        self.cache_ttl = cache_ttl_seconds  # 5 minutes default
+        self.cache_ttl = cache_ttl_seconds
         self.cache: Dict[str, Dict[str, Any]] = {}
-
-        print(f"🏃 ContextService initialized with {cache_ttl_seconds}s cache TTL")
 
     def clear_cache(self):
         """Drop every cached lookup (called after a save so the assistant sees fresh data)."""
         self.cache.clear()
 
     def _get_cache_key(self, names: List[str]) -> str:
-        """Generate cache key for names list"""
-        names_str = "|".join(sorted(names))  # Sort for consistent keys
-        return hashlib.md5(names_str.encode()).hexdigest()
-
-    def _is_cache_valid(self, cache_entry: Dict[str, Any]) -> bool:
-        """Check if cache entry is still valid based on TTL"""
-        return time.time() - cache_entry["timestamp"] < self.cache_ttl
+        return hashlib.md5("|".join(sorted(n.casefold() for n in names)).encode()).hexdigest()
 
     def _clean_expired_cache_entries(self):
-        """Remove expired cache entries to prevent memory leaks"""
-        current_time = time.time()
-        expired_keys = [
-            key for key, entry in self.cache.items()
-            if current_time - entry["timestamp"] >= self.cache_ttl
-        ]
-        for key in expired_keys:
+        now = time.time()
+        for key in [k for k, e in self.cache.items() if now - e["timestamp"] >= self.cache_ttl]:
             del self.cache[key]
 
-        if expired_keys:
-            print(f"🧹 Cleaned {len(expired_keys)} expired cache entries")
-
     def extract_names_from_message(self, message: str) -> List[str]:
-        """
-        Extract potential names from user message with improved accuracy
-
-        Args:
-            message: User's text message
-
-        Returns:
-            List of potential names found in the message
-        """
-        print(f"🔍 Extracting names from: '{message}'")
-
-        # Enhanced patterns for name detection
-        name_patterns = [
-            r'\b[A-Z][a-z]{2,}\b',  # Standard capitalized words (min 3 chars)
-            r'\b[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # Full names (John Smith)
-            r"(?:named|called|person)\s+([A-Z][a-z]+)",  # "named John", "called Sarah"
-            r"(?:help|assist|about)\s+([A-Z][a-z]+)",  # "help John", "assist Sarah"
-        ]
-
-        potential_names = set()
-        for pattern in name_patterns:
-            matches = re.findall(pattern, message)
-            if isinstance(matches[0] if matches else None, tuple):
-                # Handle grouped captures
-                for match in matches:
-                    potential_names.add(match[0] if isinstance(match, tuple) else match)
+        """Up to MAX_NAMES candidate names: runs of capitalised, non-stoplist words."""
+        text = (message or "")[:MAX_MESSAGE_CHARS]
+        runs: List[List[str]] = []
+        current: List[str] = []
+        last_end = 0
+        for match in _WORD.finditer(text):
+            word = re.sub(r"'s$", "", match.group()).strip("'-")
+            is_name = len(word) >= 2 and word[0].isupper() and word.casefold() not in STOPWORDS
+            joins = (is_name and current and len(current) < MAX_WORDS_PER_NAME
+                     and not text[last_end:match.start()].strip())
+            if joins:
+                current.append(word)
             else:
-                potential_names.update(matches)
+                if current:
+                    runs.append(current)
+                current = [word] if is_name else []
+            last_end = match.end()
+        if current:
+            runs.append(current)
 
-        # Enhanced filter for common words that aren't names
-        common_words = {
-            # Question words
-            'What', 'Should', 'Can', 'How', 'When', 'Where', 'Why', 'Who',
-            # Action words
-            'Do', 'Help', 'Tell', 'Give', 'Show', 'Find', 'Get', 'Make',
-            'Take', 'Need', 'Want', 'Call', 'Ask', 'Say', 'Know',
-            # Prepositions and articles
-            'About', 'With', 'For', 'From', 'The', 'And', 'But', 'Or',
-            # Pronouns and determiners
-            'This', 'That', 'They', 'Them', 'Their', 'These', 'Those',
-            'Someone', 'Anyone', 'Everyone', 'Nobody', 'Something',
-            # Common context words
-            'Person', 'Individual', 'People', 'Crisis', 'Emergency',
-            'Medical', 'Health', 'Housing', 'Shelter', 'Homeless',
-            'Substance', 'Abuse', 'Mental', 'Safety', 'Protocol'
-        }
+        names: List[str] = []
+        for run in runs:
+            name = " ".join(run)
+            if name.casefold() not in (n.casefold() for n in names):
+                names.append(name)
+            if len(names) == MAX_NAMES:
+                break
+        return names
 
-        # Split full names and add individual parts
-        all_names = set()
-        for name in potential_names:
-            name_parts = name.split()
-            for part in name_parts:
-                if len(part) >= 2:  # Minimum 2 characters
-                    all_names.add(part)
+    def _lookup_name(self, name: str) -> List[Dict[str, Any]]:
+        """People for one detected name, best first, at most MAX_RESULTS_PER_NAME (sync)."""
+        # 1. Exact full name. `name` holds only letters, spaces, ' and - (see _WORD),
+        #    so it carries no LIKE wildcard: ILIKE here is case-insensitive equality.
+        exact = self.supabase.table("individuals").select("*") \
+            .ilike("name", name).limit(MAX_RESULTS_PER_NAME).execute()
+        if exact.data:
+            return exact.data[:MAX_RESULTS_PER_NAME]
 
-        # Filter out common words and short names
-        filtered_names = [
-            name for name in all_names
-            if name not in common_words and len(name) >= 2
-        ]
+        # 2. Whole-word token matches. The filter uses letter/digit tokens only (as
+        #    duplicate detection does), so no filter syntax or wildcard gets in.
+        tokens = _name_tokens(name)
+        if not tokens:
+            return []
+        rows = self.supabase.table("individuals").select("*") \
+            .or_(",".join(f"name.ilike.*{t}*" for t in tokens)) \
+            .order("updated_at", desc=True).limit(_TOKEN_CANDIDATE_LIMIT).execute().data or []
+        scored = []
+        for row in rows:
+            words = set(_name_tokens(row.get("name") or ""))
+            hits = sum(1 for t in tokens if t in words)
+            if hits:
+                scored.append((hits, get_display_urgency_score(row), row))
+        scored.sort(key=lambda s: (s[0], s[1]), reverse=True)
+        return [row for _, _, row in scored[:MAX_RESULTS_PER_NAME]]
 
-        # Remove duplicates while preserving order
-        unique_names = []
-        for name in filtered_names:
-            if name not in unique_names:
-                unique_names.append(name)
-
-        print(f"🏷️ Detected names: {unique_names}")
-        return unique_names
+    def _lookup_names(self, names: List[str]) -> List[Dict[str, Any]]:
+        found: List[Dict[str, Any]] = []
+        seen = set()
+        for name in names[:MAX_NAMES]:
+            for row in self._lookup_name(name):
+                if row.get("id") not in seen:
+                    seen.add(row.get("id"))
+                    found.append(row)
+        return found
 
     async def search_individuals_by_names(self, names: List[str]) -> List[Dict[str, Any]]:
-        """
-        Search for individuals by names with caching and comprehensive logging
+        """Matching people for the detected names (cached; DB work in a worker thread).
 
-        Args:
-            names: List of names to search for
-
-        Returns:
-            List of individual records with full data
+        A database error propagates (and is not cached), so an outage isn't
+        remembered as "nobody by that name" for the cache TTL.
         """
         if not names:
-            print("📝 No names provided for search")
             return []
-
-        # Clean expired cache entries periodically
         self._clean_expired_cache_entries()
+        key = self._get_cache_key(names)
+        entry = self.cache.get(key)
+        if entry and time.time() - entry["timestamp"] < self.cache_ttl:
+            return entry["data"]
+        found = await run_in_threadpool(self._lookup_names, names)
+        self.cache[key] = {"data": found, "timestamp": time.time()}
+        return found
 
-        # Check cache first
-        cache_key = self._get_cache_key(names)
-        if cache_key in self.cache and self._is_cache_valid(self.cache[cache_key]):
-            cached_result = self.cache[cache_key]["data"]
-            print(f"💾 Cache HIT for names {names} - returning {len(cached_result)} individuals")
-            return cached_result
+    def format_individual_context(self, individuals: List[Dict[str, Any]],
+                                  categories: Optional[List[Dict[str, Any]]] = None) -> str:
+        """One JSON record per line; every string value cut to MAX_VALUE_CHARS.
 
-        print(f"🔍 Cache MISS for names {names} - querying database")
-        start_time = time.time()
-        all_matches = []
-        query_count = 0
-
-        for name in names:
-            # Search using case-insensitive ILIKE query
-            search_term = f"%{name}%"
-            print(f"📊 Searching database for: '{name}' (pattern: '{search_term}')")
-
-            try:
-                query_count += 1
-                # Query individuals table directly to get full data
-                response = self.supabase.table("individuals").select("*").ilike("name", search_term).execute()
-
-                if response.data:
-                    matches_found = len(response.data)
-                    print(f"✅ Found {matches_found} matches for '{name}'")
-                    all_matches.extend(response.data)
-
-                    # Log individual names found
-                    for individual in response.data:
-                        individual_name = individual.get("name", "Unknown")
-                        urgency = individual["urgency_override"] if individual.get("urgency_override") is not None else individual.get("urgency_score", 0)
-                        print(f"   👤 {individual_name} (Urgency: {urgency})")
-                else:
-                    print(f"❌ No matches found for '{name}'")
-
-            except Exception as e:
-                print(f"❌ Database error searching for '{name}': {str(e)}")
-                print(f"🔧 Query details - Table: individuals, Pattern: {search_term}")
-                continue
-
-        # Remove duplicates based on ID
-        seen_ids = set()
-        unique_matches = []
-
-        for individual in all_matches:
-            individual_id = individual.get("id")
-            if individual_id and individual_id not in seen_ids:
-                seen_ids.add(individual_id)
-                unique_matches.append(individual)
-
-        duplicates_removed = len(all_matches) - len(unique_matches)
-        if duplicates_removed > 0:
-            print(f"🔄 Removed {duplicates_removed} duplicate individuals")
-
-        # Sort by urgency score (highest first), then by updated_at (most recent first)
-        unique_matches.sort(
-            key=lambda x: (
-                x["urgency_override"] if x.get("urgency_override") is not None else x.get("urgency_score", 0),
-                x.get("updated_at", "")
-            ),
-            reverse=True
-        )
-
-        # Limit to top 3 most relevant matches
-        final_matches = unique_matches[:3]
-
-        # Performance logging
-        query_time = time.time() - start_time
-        print(f"⏱️ Database search completed in {query_time:.3f}s ({query_count} queries)")
-        print(f"📊 Results: {len(all_matches)} total → {len(unique_matches)} unique → {len(final_matches)} final")
-
-        # Cache the result
-        self.cache[cache_key] = {
-            "data": final_matches,
-            "timestamp": time.time(),
-            "names": names,  # Store for debugging
-            "query_count": query_count,
-            "query_time": query_time
-        }
-        print(f"💾 Cached result for {names} (TTL: {self.cache_ttl}s)")
-
-        return final_matches
-
-    def format_individual_context(self, individuals: List[Dict[str, Any]]) -> str:
+        Fields come from `categories` (all of them, labelled from the name) when
+        given, else a fixed list. `<` and `>` are \\u-escaped, which is still valid
+        JSON, so no value can contain the `>>>` that ends the reference block.
         """
-        Format individual data into context string for AI assistant
+        if categories:
+            fields = [(c["name"], c["name"].replace("_", " ").title())
+                      for c in categories if c.get("name") and category_key(c["name"]) != "name"]
+        else:
+            fields = _RELEVANT_FIELDS
 
-        Args:
-            individuals: List of individual database records
-
-        Returns:
-            Formatted context string
-        """
-        if not individuals:
-            return ""
-
-        context_parts = []
-
-        for individual in individuals:
-            name = individual.get("name", "Unknown")
-            urgency_score = individual.get("urgency_score", 0)
-            urgency_override = individual.get("urgency_override")
-            data = individual.get("data", {})
-
-            # Start with basic info
-            context = f"Individual: {name}\n"
-
-            # Add urgency information
-            display_urgency = urgency_override if urgency_override is not None else urgency_score
-            context += f"- Urgency Score: {display_urgency}"
-            if urgency_override is not None:
-                context += f" (Override: {urgency_override}, Calculated: {urgency_score})"
-            context += "\n"
-
-            # Add relevant data fields if they exist
-            relevant_fields = [
-                ('substance_abuse_history', 'Substance Abuse'),
-                ('medical_conditions', 'Medical Conditions'),
-                ('behavior', 'Behavior'),
-                ('housing_priority', 'Housing Priority'),
-                ('veteran_status', 'Veteran Status'),
-                ('age', 'Age'),
-                ('gender', 'Gender'),
-                ('height', 'Height'),
-                ('weight', 'Weight')
-            ]
-
-            for field_key, field_label in relevant_fields:
-                field_value = data.get(field_key)
-                if field_value is not None and field_value != "" and field_value != []:
-                    # Format list values
-                    if isinstance(field_value, list):
-                        field_value = ", ".join(str(v) for v in field_value)
-                    context += f"- {field_label}: {field_value}\n"
-
-            # Add last interaction info if available
-            updated_at = individual.get("updated_at")
-            if updated_at:
-                context += f"- Last Updated: {updated_at}\n"
-
-            context_parts.append(context.strip())
-
-        # Join all individuals with double line breaks
-        return "\n\n".join(context_parts)
+        lines = []
+        for individual in individuals or []:
+            data = individual.get("data") or {}
+            record: Dict[str, Any] = {
+                "Name": _clip(individual.get("name") or "Unknown"),
+                "Urgency Score": get_display_urgency_score(individual),
+            }
+            for key, label in fields:
+                value = data.get(key)
+                if value is not None and value != "" and value != []:
+                    record[label] = _clip(value)
+            if individual.get("updated_at"):
+                record["Last Updated"] = _clip(individual["updated_at"])
+            line = json.dumps(record, ensure_ascii=False)
+            lines.append(line.replace("<", "\\u003c").replace(">", "\\u003e"))
+        return "\n".join(lines)
 
     async def get_context_for_message(self, message: str) -> Dict[str, Any]:
-        """
-        Main method to extract context for a user message with comprehensive logging
-
-        Args:
-            message: User's message text
-
-        Returns:
-            Dict with context string and individuals found
-        """
-        print(f"🚀 Starting context extraction for message: '{message}'")
-        start_time = time.time()
-
+        """{"context": str, "individuals_found": list, "names_detected": list}."""
         try:
-            # Extract names from the message
-            print("🔍 Step 1: Extracting names from message...")
             names = self.extract_names_from_message(message)
-
             if not names:
-                print("📝 No names detected - returning empty context")
-                processing_time = time.time() - start_time
-                print(f"⏱️ Total processing time: {processing_time:.3f}s")
-                return {
-                    "context": "",
-                    "individuals_found": [],
-                    "names_detected": []
-                }
-
-            print(f"🏷️ Step 2: Found {len(names)} names: {names}")
-
-            # Search for individuals
-            print("📊 Step 3: Searching database for individuals...")
+                return {"context": "", "individuals_found": [], "names_detected": []}
             individuals = await self.search_individuals_by_names(names)
-
-            if not individuals:
-                print("❌ No individuals found in database")
-                processing_time = time.time() - start_time
-                print(f"⏱️ Total processing time: {processing_time:.3f}s")
-                return {
-                    "context": "",
-                    "individuals_found": [],
-                    "names_detected": names
-                }
-
-            print(f"✅ Step 4: Found {len(individuals)} individuals")
-
-            # Format context
-            print("📄 Step 5: Formatting context for AI assistant...")
-            context = self.format_individual_context(individuals)
-
-            context_length = len(context)
-            context_lines = context.count('\n') + 1 if context else 0
-            print(f"📝 Context formatted: {context_length} chars, {context_lines} lines")
-
-            processing_time = time.time() - start_time
-            print(f"⏱️ Total processing time: {processing_time:.3f}s")
-
-            # Summary log
-            individual_names = [ind.get("name", "Unknown") for ind in individuals]
-            print(f"✅ Context extraction complete - Names: {names} → Individuals: {individual_names}")
-
             return {
-                "context": context,
+                "context": self.format_individual_context(individuals),
                 "individuals_found": individuals,
-                "names_detected": names
+                "names_detected": names,
             }
-
         except Exception as e:
-            processing_time = time.time() - start_time
-            print(f"❌ CRITICAL ERROR in get_context_for_message: {str(e)}")
-            print(f"🔧 Error details:")
-            print(f"   - Message: '{message}'")
-            print(f"   - Processing time before error: {processing_time:.3f}s")
-            print(f"   - Error type: {type(e).__name__}")
-            print(f"   - Cache entries: {len(self.cache)}")
-
-            # Fallback with detailed error info
-            return {
-                "context": "",
-                "individuals_found": [],
-                "names_detected": [],
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "processing_time": processing_time
-            }
+            print(f"Context extraction failed: {type(e).__name__}")
+            return {"context": "", "individuals_found": [], "names_detected": []}
 
 
 _context_service = None
