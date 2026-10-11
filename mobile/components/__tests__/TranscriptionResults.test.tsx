@@ -7,9 +7,9 @@ jest.mock('../../utils/delayedDelete', () => ({ isPendingDelete: jest.fn(() => f
 jest.mock('../../services/api', () => ({
   api: {
     getCategories: jest.fn(async () => [
-      { id: '1', name: 'Name', type: 'text', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
-      { id: '2', name: 'Height', type: 'number', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
-      { id: '3', name: 'Weight', type: 'number', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
+      { id: '1', name: 'name', display_name: 'Name', type: 'text', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
+      { id: '2', name: 'height', display_name: 'Height', type: 'number', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
+      { id: '3', name: 'weight', display_name: 'Weight', type: 'number', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
       { id: '4', name: 'gender', type: 'single_select', is_required: false, priority: 'medium', urgency_weight: 0, auto_trigger: false,
         options: [{ label: 'Male', value: 0 }, { label: 'Female', value: 0 }] },
       { id: '5', name: 'medical_conditions', type: 'multi_select', is_required: false, priority: 'high', urgency_weight: 0, auto_trigger: false,
@@ -19,7 +19,7 @@ jest.mock('../../services/api', () => ({
     ]),
     saveIndividual: jest.fn(async () => ({ id: 'x', individual: { id: 'x' } })),
     checkDuplicates: jest.fn(async () => []),
-    getIndividualProfile: jest.fn(async () => ({ data: { Name: 'Anne Lee' } })),
+    getIndividualProfile: jest.fn(async () => ({ data: { name: 'Anne Lee' } })),
   },
 }));
 
@@ -44,7 +44,7 @@ const spyAlert = () => {
 
 const baseResult = (overrides: any = {}): any => ({
   transcription: 'hello there',
-  categorized_data: { Name: 'Ann', Height: "5'10", Weight: 150 },
+  categorized_data: { name: 'Ann', height: "5'10", weight: 150 },
   missing_required: [],
   potential_matches: [],
   validation_errors: [],
@@ -72,13 +72,13 @@ it('saves a person with no duplicate match as new, using the explicit request sh
   expect(req.merge_with_id ?? null).toBeNull(); // saved as new, not merged
   expect(req.transcription).toBe('hello there');
   expect(req.location).toEqual(location);
-  expect(req.data).toEqual({ Name: 'Ann', Height: 70, Weight: 150 });
+  expect(req.data).toEqual({ name: 'Ann', height: 70, weight: 150 });
 });
 
 it('sends typed numbers as numbers, a bare 6 as feet, and select labels in canonical case', async () => {
   const { getByText, getByDisplayValue, getByPlaceholderText } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+      result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150 } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -89,13 +89,13 @@ it('sends typed numbers as numbers, a bare 6 as feet, and select labels in canon
 
   await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
   const req = (api.saveIndividual as jest.Mock).mock.calls[0][0];
-  expect(req.data).toEqual({ Name: 'Ann', Height: 72, Weight: 180, gender: 'Female' });
+  expect(req.data).toEqual({ name: 'Ann', height: 72, weight: 180, gender: 'Female' });
 });
 
 it('multi-select quick options toggle list membership instead of replacing the value', async () => {
   const { getByText } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150, medical_conditions: ['Diabetes'] } })}
+      result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150, medical_conditions: ['Diabetes'] } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -111,7 +111,7 @@ it('multi-select quick options toggle list membership instead of replacing the v
 it('a cleared optional field is not sent, so it never becomes "null" (C-09)', async () => {
   const { getByText, getByDisplayValue } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150, behavior: 'Physical' } })}
+      result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150, behavior: 'Physical' } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -119,14 +119,14 @@ it('a cleared optional field is not sent, so it never becomes "null" (C-09)', as
   fireEvent.press(getByText('Save'));
 
   await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
-  expect((api.saveIndividual as jest.Mock).mock.calls[0][0].data).toEqual({ Name: 'Ann', Height: 70, Weight: 150 });
+  expect((api.saveIndividual as jest.Mock).mock.calls[0][0].data).toEqual({ name: 'Ann', height: 70, weight: 150 });
 });
 
 it('shows the backend validation_errors next to their fields (C-16)', async () => {
   const { getByText } = render(
     <TranscriptionResults
       result={baseResult({
-        categorized_data: { Name: 'Ann', Height: 70, Weight: 150, gender: 'robot' },
+        categorized_data: { name: 'Ann', height: 70, weight: 150, gender: 'robot' },
         validation_errors: [{ field: 'gender', message: "Invalid option 'robot'. Must be one of: Male, Female" }],
       })}
       onSave={jest.fn()} onCancel={jest.fn()} />
@@ -136,7 +136,7 @@ it('shows the backend validation_errors next to their fields (C-16)', async () =
 
 it('blocks the save and names the field when a value is invalid', async () => {
   const { getByText, getByDisplayValue, findByText } = render(
-    <TranscriptionResults result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+    <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150 } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -165,7 +165,7 @@ it('shows the save error detail in the form (C-16)', async () => {
 it('re-checks duplicates when the worker corrects the name, and offers the match it finds', async () => {
   (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([{ id: MATCH_ID, name: 'Anne Lee', confidence: 90 }]);
   const { getByText, getByDisplayValue, findByText } = render(
-    <TranscriptionResults result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+    <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150 } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -173,7 +173,7 @@ it('re-checks duplicates when the worker corrects the name, and offers the match
   fireEvent.press(getByText('Save'));
 
   await findByText('Potential Duplicate Found');
-  expect(api.checkDuplicates).toHaveBeenCalledWith({ Name: 'Anne Lee', Height: 70, Weight: 150 });
+  expect(api.checkDuplicates).toHaveBeenCalledWith({ name: 'Anne Lee', height: 70, weight: 150 });
   expect(api.saveIndividual).not.toHaveBeenCalled();
 });
 
@@ -267,7 +267,7 @@ it('keeps the backend messages on untouched fields when Save adds client ones', 
   const { getByText, getByDisplayValue, findByText } = render(
     <TranscriptionResults
       result={baseResult({
-        categorized_data: { Name: 'Ann', Height: 70, Weight: 150, gender: 'robot' },
+        categorized_data: { name: 'Ann', height: 70, weight: 150, gender: 'robot' },
         validation_errors: [{ field: 'gender', message: backendMsg }],
       })}
       onSave={jest.fn()} onCancel={jest.fn()} />
@@ -285,7 +285,7 @@ it('clears the save error as soon as the worker edits a field', async () => {
     Object.assign(new Error('weight: Value 400 exceeds maximum of 300'),
       { status: 400, detail: 'weight: Value 400 exceeds maximum of 300', kind: 'http' }));
   const { getByText, getByDisplayValue, findByText, queryByText } = render(
-    <TranscriptionResults result={baseResult({ categorized_data: { Name: 'Ann', Height: 70, Weight: 150 } })}
+    <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150 } })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -304,7 +304,7 @@ it('keeps the shown server match when the re-check of an edited name finds nothi
   (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([]);
   const { getByText, getByDisplayValue, findByText } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      result={baseResult({ categorized_data: { name: 'John', height: 70, weight: 150 }, potential_matches: [serverJohn] })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -324,7 +324,7 @@ it('shows exactly the matches it decided on: the union, de-duplicated at the hig
   ]);
   const { getByText, getByDisplayValue, findByText, queryByText, getAllByText } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      result={baseResult({ categorized_data: { name: 'John', height: 70, weight: 150 }, potential_matches: [serverJohn] })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));
@@ -345,7 +345,7 @@ it('decides on the shown server match without asking when the re-check fails', a
   (api.checkDuplicates as jest.Mock).mockRejectedValueOnce(outage);
   const { getByText, getByDisplayValue, findByText } = render(
     <TranscriptionResults
-      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      result={baseResult({ categorized_data: { name: 'John', height: 70, weight: 150 }, potential_matches: [serverJohn] })}
       onSave={jest.fn()} onCancel={jest.fn()} />
   );
   await waitFor(() => getByText('Save'));

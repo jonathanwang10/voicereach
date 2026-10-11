@@ -153,6 +153,9 @@ const sound = () => {
 
 // base64 of `n` bytes of value `v` (n not a multiple of 3 gives '=' padding).
 const b64 = (n: number, v = 7) => Buffer.from(new Uint8Array(n).fill(v)).toString('base64');
+// Chunks whose sizes are multiples of 3 have no '=' padding, so tests using them don't
+// depend on the C-26 per-chunk decoding (they would pass with text joining too).
+const UNPADDED = [b64(4800), b64(99)];
 
 async function askByVoice(screen: any) {
   await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
@@ -306,7 +309,7 @@ describe('spoken answers', () => {
     const s = sound();
     (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
     const { ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Stay back.');
+    streamAnswer(ws, 'a1', 'Stay back.', UNPADDED);
     await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalled());
 
     const modeCalls = (Audio.setAudioModeAsync as jest.Mock).mock;
@@ -321,7 +324,7 @@ describe('spoken answers', () => {
     const s = sound();
     (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
     const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
+    streamAnswer(ws, 'a1', 'Answer one', UNPADDED);
     await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalled());
 
     // The worker asks again while answer 1 is still playing.
@@ -331,6 +334,66 @@ describe('spoken answers', () => {
 
     await waitFor(() => expect(screen.getByText('Answer one')).toBeTruthy());
     expect(screen.queryByText('[Speaking...]')).toBeNull();
+  });
+
+  it('two interleaved answers keep their own text and their own audio', async () => {
+    const s1 = sound();
+    const s2 = sound();
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValueOnce({ sound: s1 }).mockResolvedValueOnce({ sound: s2 });
+    const FileSystem = require('expo-file-system');
+    const { screen, ws } = await renderConnected();
+    act(() => {
+      for (const id of ['a1', 'a2']) {
+        ws.receive({ type: 'conversation.item.created', item: { id, type: 'message', role: 'assistant' } });
+      }
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a1', delta: 'First ' });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a2', delta: 'Second ' });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(2400, 1) });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a2', delta: b64(6000, 2) });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a1', delta: 'answer' });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a2', delta: 'answer' });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(2400, 1) });
+      ws.receive({ type: 'response.output_audio.done', item_id: 'a1' });
+    });
+    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalledTimes(1));
+    act(() => ws.receive({ type: 'response.output_audio.done', item_id: 'a2' }));
+    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalledTimes(2));
+    await act(async () => { s2.finish(); });
+
+    // Each WAV holds only its own item's bytes (unpadded chunks; 4800 bytes is the playable minimum)
+    const wavs = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls.map(c => Buffer.from(c[1], 'base64'));
+    expect(wavs.map(w => w.length)).toEqual([44 + 4800, 44 + 6000]);
+    expect([...new Set(wavs[0].subarray(44))]).toEqual([1]);
+    expect([...new Set(wavs[1].subarray(44))]).toEqual([2]);
+    // ...and each text its own bubble
+    await waitFor(() => expect(screen.getByText('First answer')).toBeTruthy());
+    expect(screen.getByText('Second answer')).toBeTruthy();
+    expect(screen.queryByText(/First Second|Second First/)).toBeNull();
+  });
+});
+
+describe('C-63 status colours', () => {
+  const { StyleSheet } = require('react-native');
+  const { theme } = require('../../theme');
+  const colourValues = (screen: any): string[] =>
+    screen.UNSAFE_root.findAll((n: any) => typeof n.type === 'string' && n.props.style)
+      .flatMap((n: any) => Object.values(StyleSheet.flatten(n.props.style) || {}))
+      .filter((v: any) => typeof v === 'string');
+
+  it('never uses currentColor, which React Native does not support', async () => {
+    const { screen, ws } = await renderConnected();
+    expect(colourValues(screen)).not.toContain('currentColor');
+    act(() => ws.serverClose(1011, ''));
+    await waitFor(() => expect(screen.getByText('Disconnected')).toBeTruthy());
+    expect(colourValues(screen)).not.toContain('currentColor');
+  });
+
+  it('colours the status text green when connected and red when not', async () => {
+    const { screen, ws } = await renderConnected();
+    expect(StyleSheet.flatten(screen.getByText('Connected').props.style).color).toBe(theme.colors.success[600]);
+    act(() => ws.serverClose(1011, ''));
+    await waitFor(() => expect(screen.getByText('Disconnected')).toBeTruthy());
+    expect(StyleSheet.flatten(screen.getByText('Disconnected').props.style).color).toBe(theme.colors.danger[600]);
   });
 });
 

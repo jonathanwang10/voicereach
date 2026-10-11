@@ -160,15 +160,32 @@ it('too late to undo says the delete is in progress, not done', async () => {
 });
 
 describe('urgency override (C-10)', () => {
-  it('shows the scores the PUT returns', async () => {
+  it('shows the scores the PUT returns, not the optimistic value', async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
-    (api.updateUrgencyOverride as jest.Mock).mockResolvedValue({ urgency_score: 10, urgency_override: 75, display_score: 75 });
+    // The server's answer differs from what the slider sent (e.g. a newer value was
+    // stored meanwhile): what the server says is what must render.
+    (api.updateUrgencyOverride as jest.Mock).mockResolvedValue({ urgency_score: 12, urgency_override: 70, display_score: 70 });
     const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     await act(async () => { await mockUrgencyProps.onOverrideChange(75); });
     expect(api.updateUrgencyOverride).toHaveBeenCalledWith('p1', 75);
-    expect(screen.getByText('75')).toBeTruthy();
+    expect(screen.getByText('70')).toBeTruthy();
+    expect(screen.queryByText('75')).toBeNull();
+    expect(mockUrgencyProps.individual).toMatchObject({ urgency_score: 12, urgency_override: 70 });
     expect(Toast.show).not.toHaveBeenCalled();
+  });
+
+  it('shows the optimistic value while the PUT is in flight', async () => {
+    (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
+    let resolve: (v: any) => void = () => {};
+    (api.updateUrgencyOverride as jest.Mock).mockReturnValue(new Promise(r => { resolve = r; }));
+    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    await waitFor(() => screen.getByText('Ann Lee'));
+    let pending: Promise<void> = Promise.resolve();
+    act(() => { pending = mockUrgencyProps.onOverrideChange(75); });
+    expect(screen.getByText('75')).toBeTruthy();
+    await act(async () => { resolve({ urgency_score: 12, urgency_override: 70, display_score: 70 }); await pending; });
+    expect(screen.getByText('70')).toBeTruthy();
   });
 
   it('reverts and shows the backend error once when the PUT fails', async () => {
