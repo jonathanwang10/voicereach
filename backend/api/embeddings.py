@@ -2,6 +2,7 @@
 Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
+import logging
 import os
 from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD
 from uuid import UUID
@@ -23,6 +24,7 @@ TEXT_MATCH = {
 TIER_OF = {"exact": MATCH_TIER["name"], "value": MATCH_TIER["value"], "semantic": MATCH_TIER["semantic"]}
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
+logger = logging.getLogger(__name__)
 embedding_service = EmbeddingService()
 
 
@@ -141,7 +143,7 @@ async def semantic_search_individuals(
                             "search_type": "semantic"
                         })
         except Exception as e:
-            print(f"Embedding search failed: {type(e).__name__}")
+            logger.warning("Embedding search failed: %s", type(e).__name__)
             embedding_results = []
 
         # Combine and deduplicate: a text match wins over a semantic hit for the same person

@@ -1,6 +1,7 @@
 """
 OpenAI API integration for Whisper transcription and GPT-4o categorization
 """
+import logging
 import os
 import httpx
 import tempfile
@@ -12,6 +13,8 @@ from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
 from services.field_registry import category_key, parse_height_inches
+
+logger = logging.getLogger(__name__)
 
 
 # Fail fast instead of the SDK defaults (600 s read, 2 retries). GPT calls get 30 s
@@ -371,6 +374,7 @@ Return JSON only."""
                 return scores
 
         except Exception as e:
-            print(f"Error in compare_individuals: {str(e)}")
+            # Type only: an upstream error can echo the prompt (people's records)
+            logger.warning("compare_individuals failed: %s", type(e).__name__)
             # Return empty scores on error
             return {}

@@ -3,6 +3,7 @@ Audio transcription and categorization endpoints
 """
 import asyncio
 import base64
+import logging
 import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
@@ -13,6 +14,8 @@ from api.errors import internal_error
 from services.openai_service import AudioTooLarge, OpenAIService, temp_audio_file
 from services.rate_limit import rate_limit
 from services.validation_helper import validate_categorized_data
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter()
@@ -92,8 +95,6 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
             }
             categories.append(category_data)
         
-        print(f"Fetched {len(categories)} categories from database: {[cat['name'] for cat in categories]}")
-        
         # 2. Transcribe audio
         if request.audio_data:
             # Base64 audio (an optional data-URL prefix is stripped). The temp file is
@@ -130,7 +131,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
         try:
             potential_matches = await duplicate_service.find_duplicates(categorized_data)
         except Exception as e:
-            print(f"Duplicate detection error: {type(e).__name__}")
+            logger.warning("Duplicate detection failed: %s", type(e).__name__)
             potential_matches = []
             duplicate_check_failed = True
         

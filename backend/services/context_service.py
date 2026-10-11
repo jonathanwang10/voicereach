@@ -19,6 +19,7 @@ format their records as reference data.
 """
 import hashlib
 import json
+import logging
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -28,6 +29,8 @@ from supabase import Client
 
 from services.field_registry import category_key, display_label
 from services.urgency_calculator import get_display_urgency_score
+
+logger = logging.getLogger(__name__)
 
 MAX_NAMES = 3
 MAX_RESULTS_PER_NAME = 3
@@ -227,7 +230,7 @@ class ContextService:
         try:
             return await run_in_threadpool(fetch) or None
         except Exception as e:
-            print(f"Context categories unavailable: {type(e).__name__}")
+            logger.warning("Context categories unavailable: %s", type(e).__name__)
             return None
 
     async def get_context_for_message(self, message: str) -> Dict[str, Any]:
@@ -244,7 +247,7 @@ class ContextService:
                 "names_detected": names,
             }
         except Exception as e:
-            print(f"Context extraction failed: {type(e).__name__}")
+            logger.warning("Context extraction failed: %s", type(e).__name__)
             return {"context": "", "individuals_found": [], "names_detected": []}
 
 

@@ -1,6 +1,7 @@
 """
 Individual management API endpoints
 """
+import logging
 import os
 from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse
@@ -28,6 +29,7 @@ from services.rate_limit import rate_limit
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_current_user_name(user_id: str = Depends(get_current_user)) -> str:
@@ -73,7 +75,7 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
             supabase, {**individual_data, "id": str(individual_id)}, categories)
     except Exception as e:
         # Id and error type only: no names, no upstream error text
-        print(f"Background embedding failed for {individual_id}: {type(e).__name__}")
+        logger.warning("Background embedding failed for %s: %s", individual_id, type(e).__name__)
 
 
 @router.post("", response_model=SaveIndividualResponse)

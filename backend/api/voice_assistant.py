@@ -1,6 +1,7 @@
 """
 Voice Assistant API endpoints for OpenAI Realtime API integration
 """
+import logging
 import os
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from api.auth import get_current_user
@@ -11,6 +12,8 @@ from supabase import create_client, Client
 from services.openai_service import OpenAIService, temp_audio_file
 from services.context_service import get_context_service
 from services.rate_limit import rate_limit
+
+logger = logging.getLogger(__name__)
 
 # Assistant questions are short; anything bigger is refused with 413 (C-12).
 # main.BodySizeLimitMiddleware also refuses a request body much over this.
@@ -123,15 +126,14 @@ async def get_context_for_message(
     formatted context information for the AI assistant.
     """
     try:
-        print(f"🔍 Getting context for message: {request.message}")
-
         context_service = get_context_service(supabase)
 
         # Get context for the message
         result = await context_service.get_context_for_message(request.message)
 
-        print(f"📊 Found {len(result['individuals_found'])} individuals")
-        print(f"🏷️ Detected names: {result['names_detected']}")
+        # Counts only: never the question or the names (R-14)
+        logger.info("Context lookup: %d name(s), %d individual(s)",
+                    len(result["names_detected"]), len(result["individuals_found"]))
 
         return ContextResponse(
             context=result["context"],

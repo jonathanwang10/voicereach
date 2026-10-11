@@ -62,6 +62,16 @@ def test_oversized_frame_is_dropped():
     assert event is None and "large" in reason.lower()
 
 
+DEEPLY_NESTED = '{"type": "response.create", "x": ' + "[" * 200_000 + "]" * 200_000 + "}"
+
+
+def test_deeply_nested_frame_is_dropped_not_raised():
+    """Under the 1 MB cap, but json.loads hits the recursion limit: drop it with a reason."""
+    assert len(DEEPLY_NESTED.encode()) < MAX_CLIENT_MESSAGE_BYTES
+    event, reason = sanitize_client_event(DEEPLY_NESTED)
+    assert event is None and "json" in reason.lower()
+
+
 def test_audio_append_forwards_only_audio():
     event, reason = sanitize_client_event(json.dumps(
         {"type": "input_audio_buffer.append", "audio": "AAAA", "extra": {"x": 1}}))
@@ -311,6 +321,50 @@ def test_ws_drops_session_update_and_reports_it(ws_env):
     assert sent[0]["type"] == "session.update"
     assert "evil" not in json.dumps(sent)
     assert [e["type"] for e in sent[1:]] == ["input_audio_buffer.commit", "response.create", "response.cancel"]
+
+
+def test_ws_survives_a_deeply_nested_frame(ws_env):
+    """The forwarding task keeps running: the client gets an error event, then its next
+    frame still reaches OpenAI."""
+    with _connect() as ws:
+        ws.send_text(DEEPLY_NESTED)
+        reply = json.loads(ws.receive_text())
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+        for _ in range(200):
+            if len(ws_env.sent) >= 2:
+                break
+            import time
+            time.sleep(0.01)
+    assert reply["type"] == "error" and "json" in reply["error"]["message"].lower()
+    assert json.loads(ws_env.sent[-1]) == {"type": "response.cancel"}
+
+
+def test_cancelled_proxy_tasks_are_awaited():
+    """The proxy's leftover task is cancelled AND awaited, so it has really stopped
+    (its cleanup ran) before the sockets close; a task that raises while stopping
+    doesn't propagate."""
+    import main
+    cleaned = []
+
+    async def worker(fail):
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            await asyncio.sleep(0)          # cleanup that needs one more loop turn
+            cleaned.append(fail)
+            if fail:
+                raise RuntimeError("cleanup failed")
+            raise
+
+    async def run():
+        tasks = [asyncio.create_task(worker(False)), asyncio.create_task(worker(True))]
+        await asyncio.sleep(0)
+        await main.cancel_and_wait(tasks)
+        return tasks
+
+    tasks = asyncio.run(run())
+    assert all(t.done() for t in tasks)
+    assert sorted(cleaned) == [False, True]
 
 
 def test_ws_session_instructions_mark_reference_data_untrusted(ws_env):

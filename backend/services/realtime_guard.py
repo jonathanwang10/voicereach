@@ -56,7 +56,9 @@ def sanitize_client_event(raw: str) -> tuple[Optional[dict], Optional[str]]:
         return None, "Message too large (max 1 MB)"
     try:
         event = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError, RecursionError):
+        # RecursionError: deeply nested arrays well under 1 MB ("[[[[...") exhaust the
+        # parser's recursion limit; that must drop the frame, not end the proxy task.
         return None, "Message is not valid JSON"
     if not isinstance(event, dict) or not isinstance(event.get("type"), str):
         return None, "Message has no event type"

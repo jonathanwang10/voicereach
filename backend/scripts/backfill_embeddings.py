@@ -101,7 +101,8 @@ async def setup_embeddings():
         print(f"📊 Total embeddings in database: {final_embeddings}")
         
     except Exception as e:
-        print(f"❌ Setup failed: {str(e)}")
+        # Type only; the traceback below (raise) is the operator's own terminal
+        print(f"❌ Setup failed: {type(e).__name__}")
         raise
 
 if __name__ == "__main__":

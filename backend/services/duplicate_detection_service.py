@@ -3,12 +3,15 @@ Duplicate detection service for finding similar individuals
 Uses smart search strategy and LLM-based comparison
 """
 import json
+import logging
 import re
 import uuid
 from typing import Dict, List, Optional
 from supabase import Client
 
 from services.search_matching import match_individual
+
+logger = logging.getLogger(__name__)
 
 # Name tokens shorter than this are ignored when a longer one exists (C-22)
 MIN_TOKEN_LEN = 3
@@ -226,7 +229,7 @@ class DuplicateDetectionService:
         try:
             response = await self.openai_service.compare_individuals(comparison_prompt)
         except Exception as e:
-            print(f"LLM duplicate comparison failed ({type(e).__name__}); using name matching")
+            logger.warning("LLM duplicate comparison failed (%s); using name matching", type(e).__name__)
             response = None
 
         scores = self._scores_by_candidate(response, top_candidates)

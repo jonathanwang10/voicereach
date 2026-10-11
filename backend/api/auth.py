@@ -9,6 +9,7 @@ case-insensitive), a valid user whose email is not listed gets a 403. It is read
 on every call, cached tokens included, so tightening it takes effect at once.
 Unset means any valid user of the Supabase project is accepted.
 """
+import logging
 import os
 import time
 
@@ -22,6 +23,7 @@ _CACHE_MAX_ENTRIES = 1000
 _cache: dict[str, tuple[str, str, float]] = {}  # token -> (user id, email, expiry)
 NOT_ALLOWED_DETAIL = "This account is not allowed to use this service"
 _auth_client = None
+logger = logging.getLogger(__name__)
 
 
 def _get_auth_client():
@@ -72,19 +74,22 @@ def verify_token(token: str) -> str:
     try:
         client = _get_auth_client()
     except Exception as e:
-        print(f"Auth client could not be created (check SUPABASE_URL / SUPABASE_ANON_KEY): {type(e).__name__}: {e}")
+        logger.error("Auth client could not be created (check SUPABASE_URL / SUPABASE_ANON_KEY): %s",
+                     type(e).__name__)
         raise _unavailable()
     try:
         response = client.auth.get_user(token)
         user = response.user if response else None
     except (httpx.TransportError, AuthRetryableError) as e:
-        print(f"Auth service unreachable: {type(e).__name__}: {e}")
+        logger.warning("Auth service unreachable: %s", type(e).__name__)
         raise _unavailable()
     except AuthError as e:
-        print(f"Token rejected by Supabase Auth: {type(e).__name__}: {e}")
+        # Type, HTTP status and GoTrue error code only: the message text can carry an email
+        logger.info("Token rejected by Supabase Auth: %s status=%s code=%s",
+                    type(e).__name__, getattr(e, "status", None), getattr(e, "code", None))
         user = None
     except Exception as e:
-        print(f"Unexpected error verifying token: {type(e).__name__}: {e}")
+        logger.error("Unexpected error verifying token: %s", type(e).__name__)
         user = None
     if user is None:
         raise _unauthorized("Invalid or expired session")
