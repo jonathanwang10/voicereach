@@ -186,7 +186,10 @@ is cleared.
    `whisper-1` only, 30 a minute per user).
    It then sends the text over the socket as a `conversation.item.create` with
    `input_text`, followed by `response.create`. Typed questions take the same
-   route.
+   route. If transcription fails or comes back empty, the app shows "Couldn't
+   transcribe, please try again" and sends nothing. It only sends on an open
+   socket: if the socket closed while transcribing, the question goes back into
+   the text box to send after Retry. The app never sends `session.update`.
    Every client frame passes the allowlist in `services/realtime_guard.py`
    (at most 1 MB; only audio-buffer append/commit/clear, a `user` message
    item, `response.create` with its overrides stripped, and `response.cancel`).
@@ -210,5 +213,27 @@ is cleared.
    shows the transcript. When either side disconnects, the proxy stops both
    directions, closes the upstream socket and sends the app a close frame (1000
    normal, 1011 if OpenAI dropped or failed).
+
+   On the app side (`ModernVoiceAssistantScreen`, with the pure helpers in
+   `mobile/utils/assistantMessages.ts`):
+   - Transcript text and audio are kept per Realtime `item_id`, so each answer's
+     text lands in its own bubble even if the worker asks again mid-answer. The
+     text is shown when that answer's audio finishes (straight away while muted).
+   - Each base64 audio delta is decoded on its own and the bytes are joined
+     (`AudioProcessor.concatChunks`); padded chunks can't be joined as text.
+   - Before playback the app calls `configureAudioPlayback()`
+     (`allowsRecordingIOS: false`), so iOS plays the reply through the speaker,
+     not the earpiece; `configureAudioRecording()` turns recording back on when
+     the next question is recorded.
+   - One reply plays at a time. Mute, a new reply, starting a recording, Clear and
+     leaving the screen stop and unload it and delete its WAV file.
+   - The `ctx_` reference-data item is never shown. Server `error` events (such
+     as `event_not_allowed`) show as a short toast.
+   - Close codes get a short message (403 handshake: not signed in or not
+     allowed; 1008: the server's reason, e.g. the session time limit; 1011:
+     unavailable). There is no auto-reconnect: the worker taps Retry.
+   - Clear also reconnects, because the app can't delete server-side items, so
+     the model forgets the cleared conversation too.
+   - The screen no longer requests GPS.
 
 `POST /api/voice-assistant/context` exposes step 4 on its own, for debugging.

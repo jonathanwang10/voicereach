@@ -8,18 +8,39 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
-  TextInput,
-  Platform,
   Animated,
   Dimensions,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
-import * as Location from 'expo-location';
 import { api, getAuthToken } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import { AudioProcessor, configureAudioRecording } from '../utils/audioProcessor';
+import { AudioProcessor, configureAudioPlayback, configureAudioRecording } from '../utils/audioProcessor';
+import { errorMessage, showApiError } from '../utils/errorHandler';
+import {
+  Message,
+  TextBuffers,
+  SPEAKING_PLACEHOLDER,
+  RECORDING_PLACEHOLDER,
+  PROCESSING_PLACEHOLDER,
+  SPEECH_DELIVERED,
+  RESPONSE_INTERRUPTED,
+  TRANSCRIBE_FAILED,
+  addAssistantMessage,
+  appendAssistantText,
+  finalizeAssistantText,
+  setMessageContent,
+  removeMessage,
+  bufferText,
+  takeText,
+  cleanTranscript,
+  isContextItem,
+  isSocketOpen,
+  userTextEvents,
+  closeMessage,
+  connectErrorMessage,
+} from '../utils/assistantMessages';
 import { API_CONFIG } from '../config/api';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -29,15 +50,18 @@ import { theme } from '../theme';
 
 const { width } = Dimensions.get('window');
 
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  isAudio?: boolean;
-}
+const toast = (text1: string, text2?: string) =>
+  Toast.show({ type: 'error', text1, text2, position: 'top', visibilityTime: 3000, autoHide: true, topOffset: 50 });
 
-const SPEAKING_PLACEHOLDER = '[Speaking...]';
+// Stop a socket from calling back into the screen, then close it.
+const detachAndClose = (ws: WebSocket | null) => {
+  if (!ws) return;
+  ws.onopen = null;
+  ws.onclose = null;
+  ws.onerror = null;
+  ws.onmessage = null;
+  ws.close();
+};
 
 // Modern Animated Recording Indicator
 const ModernRecordingIndicator: React.FC = () => {
@@ -213,7 +237,6 @@ const ModernSpeakingIndicator: React.FC = () => {
 };
 
 export const ModernVoiceAssistantScreen: React.FC = () => {
-  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -222,46 +245,110 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
   const [textInput, setTextInput] = useState('');
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-  const [currentAudioData, setCurrentAudioData] = useState<string>('');
 
-  const audioBufferRef = useRef<string>('');
-  const pendingAssistantTextRef = useRef<string>('');
-  const awaitingPlaybackRef = useRef(false);
+  // Streaming state lives in refs, keyed by the Realtime item id (C-25), so a socket
+  // handler bound at connect time never reads stale state and chunks don't re-render.
+  const textBuffersRef = useRef<TextBuffers>({}); // text held until that item's audio has played
+  const audioChunksRef = useRef<Record<string, Uint8Array[]>>({}); // decoded audio per item (C-26)
+  const awaitingPlaybackRef = useRef<Set<string>>(new Set());
+  const lastAssistantIdRef = useRef<string | null>(null); // for events that arrive without item_id
+  const playbackRef = useRef<{ sound: Audio.Sound; fileUri: string; onDone: () => void } | null>(null);
+  const playbackGenRef = useRef(0); // bumped by stopPlayback to cancel a playback still being set up
+  const pendingUserIdRef = useRef<string | null>(null); // the bubble of the question being recorded
+  const idCounterRef = useRef(0);
   const isMutedRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const isMountedRef = useRef(true);
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
 
-  const flushPendingAssistantText = (fallback?: string) => {
-    const finalText = pendingAssistantTextRef.current;
-    const hasContent = finalText && finalText.trim().length > 0;
-    const fallbackText = fallback || '[Speech response delivered]';
+  const nextId = (prefix: string) => `${prefix}_${Date.now()}_${++idCounterRef.current}`;
 
-    if (!hasContent && !fallback) {
-      return;
-    }
+  const scrollToEnd = () => {
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
+  };
 
-    setMessages(prev => {
-      const newMessages = [...prev];
-      const lastMessage = newMessages[newMessages.length - 1];
-      if (lastMessage && lastMessage.role === 'assistant') {
-        const isPlaceholder = lastMessage.content === SPEAKING_PLACEHOLDER || !lastMessage.content || lastMessage.content === '[Processing your speech...]';
-        if (hasContent) {
-          lastMessage.content = finalText;
-        } else if (isPlaceholder) {
-          lastMessage.content = fallbackText;
-        }
+  // Show an item's buffered text in that item's own bubble (C-25).
+  const flushItem = (id: string, fallback: string = SPEECH_DELIVERED) => {
+    const { text, rest } = takeText(textBuffersRef.current, id);
+    textBuffersRef.current = rest;
+    if (!isMountedRef.current) return;
+    setMessages(prev => finalizeAssistantText(prev, id, text, fallback));
+  };
+
+  const flushAllText = () => {
+    Object.keys(textBuffersRef.current).forEach(id => flushItem(id));
+  };
+
+  // Stop and unload the reply that is playing (C-59). Its completion callback runs, so its
+  // text still shows; unmount passes notify=false.
+  const stopPlayback = async (notify: boolean = true) => {
+    playbackGenRef.current += 1;
+    const current = playbackRef.current;
+    playbackRef.current = null;
+    if (!current) return;
+    current.sound.setOnPlaybackStatusUpdate(null);
+    await current.sound.unloadAsync().catch(() => {});
+    FileSystem.deleteAsync(current.fileUri, { idempotent: true }).catch(() => {});
+    if (notify) current.onDone();
+  };
+
+  // Play one reply. Any reply already playing is stopped first; onDone runs exactly once,
+  // whether the reply finished, failed, or was cancelled by mute, recording or unmount.
+  const playReply = async (pcm: Uint8Array, onDone: () => void) => {
+    let finished = false;
+    const done = () => {
+      if (!finished) {
+        finished = true;
+        onDone();
       }
-      return newMessages;
-    });
+    };
+    await stopPlayback();
+    const gen = ++playbackGenRef.current;
+    const cancelled = () =>
+      gen !== playbackGenRef.current || !isMountedRef.current || isMutedRef.current || !!recordingRef.current;
+    let fileUri: string | null = null;
+    try {
+      if (!AudioProcessor.validatePCMData(pcm)) throw new Error('Invalid PCM data');
+      const wav = new Uint8Array(AudioProcessor.createWavFile(pcm));
+      fileUri = `${FileSystem.cacheDirectory}gpt_audio_${Date.now()}.wav`;
+      await FileSystem.writeAsStringAsync(fileUri, AudioProcessor.bytesToBase64(wav), {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (cancelled()) throw new Error('cancelled');
+      // C-24 (R-7): leave record mode so iOS plays through the speaker, not the earpiece.
+      await configureAudioPlayback();
+      const { sound } = await Audio.Sound.createAsync({ uri: fileUri });
+      if (cancelled()) {
+        await sound.unloadAsync().catch(() => {});
+        throw new Error('cancelled');
+      }
+      playbackRef.current = { sound, fileUri, onDone: done };
+      sound.setOnPlaybackStatusUpdate(status => {
+        if (playbackRef.current?.sound !== sound) return;
+        if (status.isLoaded ? status.didJustFinish : !!status.error) stopPlayback();
+      });
+      await sound.playAsync();
+    } catch (e) {
+      if (__DEV__ && (e as Error)?.message !== 'cancelled') console.warn('Assistant playback failed:', e);
+      if (fileUri && playbackRef.current?.fileUri === fileUri) {
+        await stopPlayback();
+      } else if (fileUri) {
+        FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+      }
+      done(); // the transcript text still shows
+    }
+  };
 
-    pendingAssistantTextRef.current = '';
+  // Forget everything streamed on the old socket, showing any text it already held.
+  const resetStreams = (notify: boolean) => {
+    if (notify) flushAllText();
+    stopPlayback(notify);
+    textBuffersRef.current = {};
+    audioChunksRef.current = {};
+    awaitingPlaybackRef.current = new Set();
+    lastAssistantIdRef.current = null;
   };
 
   useEffect(() => {
@@ -269,335 +356,166 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     initializeVoiceAssistant();
     return () => {
       isMountedRef.current = false;
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      detachAndClose(wsRef.current);
+      wsRef.current = null;
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      resetStreams(false);
     };
   }, []);
 
-  const getCurrentLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('Location permission denied');
-        return null;
-      }
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 10,
-      });
-
-      const coords = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
-
-      setCurrentLocation(coords);
-      console.log('📍 Current location:', coords);
-      return coords;
-    } catch (error) {
-      console.error('Error getting location:', error);
-      return null;
-    }
-  };
+  const itemIdOf = (event: any): string | null => event.item_id || lastAssistantIdRef.current;
 
   const handleWebSocketEvent = (event: any) => {
-    console.log('🔍 Processing WebSocket event:', event.type);
-
     switch (event.type) {
       case 'session.created':
-        console.log('✅ Session created successfully');
-        break;
-
-      case 'session.updated':
-        console.log('✅ Session updated successfully');
+        setError(null);
         break;
 
       case 'conversation.item.created':
-      case 'conversation.item.added':
-        if (event.item?.type === 'message' && event.item?.role === 'assistant') {
-          console.log('📝 Assistant message created/added');
-          const assistantMessage: Message = {
-            id: event.item.id || Date.now().toString(),
-            role: 'assistant',
-            content: SPEAKING_PLACEHOLDER,
-            timestamp: new Date(),
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          pendingAssistantTextRef.current = '';
+      case 'conversation.item.added': {
+        const item = event.item;
+        // The backend's ctx_ item is case-database reference data, not something the worker said.
+        if (isContextItem(item)) break;
+        if (item?.type === 'message' && item.role === 'assistant' && item.id) {
+          lastAssistantIdRef.current = item.id;
+          setMessages(prev => addAssistantMessage(prev, item.id));
         }
         break;
-
-      case 'conversation.item.updated':
-        if (event.item?.type === 'message' && event.item?.role === 'assistant') {
-          console.log('📝 Assistant message updated');
-          const updatedText = event.item.content?.[0]?.text || '';
-          if (isMutedRef.current) {
-            setMessages(prev => {
-              const newMessages = [...prev];
-              const lastMessage = newMessages[newMessages.length - 1];
-              if (lastMessage && lastMessage.role === 'assistant') {
-                lastMessage.content = updatedText;
-              }
-              return newMessages;
-            });
-            pendingAssistantTextRef.current = '';
-          } else if (updatedText) {
-            pendingAssistantTextRef.current = updatedText;
-          }
-        }
-        break;
+      }
 
       case 'conversation.item.done':
-        if (event.item?.type === 'message' && event.item?.role === 'assistant') {
-          console.log('✅ Assistant message completed');
-          setTimeout(() => {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        }
+        if (event.item?.role === 'assistant') scrollToEnd();
         break;
 
       case 'response.output_audio_transcript.delta':
-        console.log('📝 Audio transcript delta:', event.delta);
+      case 'response.output_text.delta': {
+        const id = itemIdOf(event);
+        if (!id || !event.delta) break;
         if (isMutedRef.current) {
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === 'assistant') {
-              const baseContent = lastMessage.content === SPEAKING_PLACEHOLDER ? '' : lastMessage.content;
-              const buffered = pendingAssistantTextRef.current;
-              const combinedBase = buffered ? `${baseContent}${buffered}` : baseContent;
-              lastMessage.content = `${combinedBase}${event.delta || ''}`;
-            }
-            return newMessages;
-          });
-          pendingAssistantTextRef.current = '';
+          setMessages(prev => appendAssistantText(prev, id, event.delta));
         } else {
-          pendingAssistantTextRef.current += event.delta || '';
+          textBuffersRef.current = bufferText(textBuffersRef.current, id, event.delta);
         }
         break;
+      }
 
-      case 'response.output_text.delta':
-        console.log('📝 Text delta:', event.delta);
-        if (isMutedRef.current) {
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === 'assistant') {
-              const baseContent = lastMessage.content === SPEAKING_PLACEHOLDER ? '' : lastMessage.content;
-              const buffered = pendingAssistantTextRef.current;
-              const combinedBase = buffered ? `${baseContent}${buffered}` : baseContent;
-              lastMessage.content = `${combinedBase}${event.delta || ''}`;
-            }
-            return newMessages;
+      case 'response.output_audio.delta': {
+        const id = itemIdOf(event);
+        if (!id || !event.delta || isMutedRef.current) break;
+        try {
+          // C-26: decode each delta on its own; padded chunks can't be joined as text.
+          const chunks = audioChunksRef.current[id] || (audioChunksRef.current[id] = []);
+          chunks.push(AudioProcessor.base64ToArrayBuffer(event.delta));
+        } catch {
+          // Skip a corrupt chunk; the rest of the reply still plays.
+        }
+        break;
+      }
+
+      case 'response.output_audio.done': {
+        const id = itemIdOf(event);
+        if (!id) break;
+        const chunks = audioChunksRef.current[id] || [];
+        delete audioChunksRef.current[id];
+        if (chunks.length && !isMutedRef.current && !recordingRef.current) {
+          awaitingPlaybackRef.current.add(id);
+          playReply(AudioProcessor.concatChunks(chunks), () => {
+            awaitingPlaybackRef.current.delete(id);
+            flushItem(id);
+            scrollToEnd();
           });
-          pendingAssistantTextRef.current = '';
         } else {
-          pendingAssistantTextRef.current += event.delta || '';
+          flushItem(id);
         }
         break;
+      }
 
-      case 'response.output_text.done':
-        console.log('✅ Text output completed');
+      case 'response.done': {
+        const status = event.response?.status;
+        const fallback = !status || status === 'completed' ? SPEECH_DELIVERED : RESPONSE_INTERRUPTED;
+        const outputIds: string[] = (event.response?.output || []).map((o: any) => o?.id).filter(Boolean);
+        const ids = new Set([...outputIds, ...Object.keys(textBuffersRef.current)]);
+        ids.forEach(id => {
+          if (!awaitingPlaybackRef.current.has(id)) flushItem(id, fallback);
+        });
         break;
-
-      case 'response.output_audio_transcript.done':
-        console.log('✅ Audio transcript completed');
-        break;
-
-      case 'response.output_audio.delta':
-        console.log('🎵 Audio delta received');
-        if (event.delta) {
-          setCurrentAudioData(prev => prev + event.delta);
-          audioBufferRef.current += event.delta;
-        }
-        break;
-
-      case 'response.output_audio.done':
-        console.log('✅ Audio output completed');
-        {
-          const buffered = audioBufferRef.current || currentAudioData;
-          if (buffered && !isMutedRef.current) {
-            awaitingPlaybackRef.current = true;
-            playAudioData(buffered, () => {
-              awaitingPlaybackRef.current = false;
-              flushPendingAssistantText('[Speech response delivered]');
-            });
-          } else {
-            awaitingPlaybackRef.current = false;
-            flushPendingAssistantText('[Speech response delivered]');
-          }
-          audioBufferRef.current = '';
-          setCurrentAudioData('');
-        }
-        break;
-
-      case 'input_audio_buffer.speech_started':
-        console.log('🎤 Speech started detected');
-        break;
-
-      case 'input_audio_buffer.speech_stopped':
-        console.log('🎤 Speech stopped detected');
-        break;
-
-      case 'input_audio_buffer.committed':
-        console.log('✅ Audio buffer committed');
-        break;
-
-      case 'response.done':
-        console.log('✅ Response completed');
-        if (!awaitingPlaybackRef.current && pendingAssistantTextRef.current) {
-          flushPendingAssistantText('[Speech response delivered]');
-        }
-        break;
+      }
 
       case 'error':
-        console.error('❌ Server error:', event.error);
-        setError(event.error?.message || 'Server error occurred');
-        break;
-
-      case 'echo':
-        console.log('🔍 Echo event received (testing mode)');
+        // e.g. the backend's event_not_allowed, or an upstream error: brief, not a permanent card.
+        toast('Voice assistant', event.error?.message || 'Something went wrong');
         break;
 
       default:
-        console.log('🔍 Unhandled event type:', event.type);
+        break;
     }
   };
 
-  const playAudioData = async (audioData: string, onPlaybackComplete?: () => void) => {
-    try {
-      console.log('🎵 Playing audio data...');
-      console.log('🎵 Audio data length:', audioData.length);
-
-      const pcmBytes = AudioProcessor.base64ToArrayBuffer(audioData);
-      if (!AudioProcessor.validatePCMData(pcmBytes)) {
-        throw new Error('Invalid PCM data format');
-      }
-
-      const wavBuffer = AudioProcessor.createWavFile(pcmBytes);
-
-      const wavBytes = new Uint8Array(wavBuffer);
-      let binary = '';
-      const chunk = 0x8000;
-      for (let i = 0; i < wavBytes.length; i += chunk) {
-        const slice = wavBytes.subarray(i, i + chunk);
-        binary += String.fromCharCode.apply(null, Array.from(slice));
-      }
-      const base64Wav = btoa(binary);
-
-      const fileUri = `${FileSystem.cacheDirectory}gpt_audio_${Date.now()}.wav`;
-      await FileSystem.writeAsStringAsync(fileUri, base64Wav, { encoding: FileSystem.EncodingType.Base64 });
-
-      const { sound } = await Audio.Sound.createAsync({ uri: fileUri }, { shouldPlay: true });
-      console.log('🎵 Audio playback started');
-
-      sound.setOnPlaybackStatusUpdate(async (status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          console.log('🎵 Audio playback completed');
-          try {
-            await sound.unloadAsync();
-          } catch (err) {
-            console.log('⚠️ Failed to unload sound:', err);
-          }
-          FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
-          onPlaybackComplete?.();
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error playing audio:', error);
-      console.log('🎵 Audio playback failed; transcript text is still shown');
-      onPlaybackComplete?.();
-    }
-  };
-
-  const toggleMute = async () => {
-    setIsMuted(m => { isMutedRef.current = !m; return !m; });
-    if (!isMuted) {
-      console.log('🔇 Muted - Audio output disabled');
-    } else {
-      console.log('🔊 Unmuted - Audio output enabled');
+  const toggleMute = () => {
+    const next = !isMutedRef.current;
+    isMutedRef.current = next;
+    setIsMuted(next);
+    if (next) {
+      // C-59: muting stops the reply that is playing, and keeps the text already received.
+      audioChunksRef.current = {};
+      flushAllText();
+      stopPlayback();
     }
   };
 
   const initializeVoiceAssistant = async () => {
-    const oldWs = wsRef.current;
-    if (oldWs) {
-      // Detach handlers so a late close on the old socket can't mark the new one disconnected.
-      oldWs.onopen = null;
-      oldWs.onclose = null;
-      oldWs.onerror = null;
-      oldWs.onmessage = null;
-      oldWs.close();
-    }
+    // Detach first so a late close on the old socket can't mark the new one disconnected.
+    detachAndClose(wsRef.current);
     wsRef.current = null;
+    setIsConnected(false);
+    resetStreams(true);
     try {
       setIsLoading(true);
       setError(null);
 
-      await getCurrentLocation();
-
-      console.log('🔌 Connecting to backend WebSocket proxy...');
-
-      // Properly convert HTTP/HTTPS to WS/WSS
       const backendUrl = API_CONFIG.BASE_URL.replace(/^https?:/, (match) =>
         match === 'https:' ? 'wss:' : 'ws:'
       );
       const wsUrl = `${backendUrl}/api/voice-assistant/realtime/ws`;
 
-      console.log('🔌 WebSocket URL:', wsUrl);
-      console.log('🔌 Backend URL:', backendUrl);
-
       const token = await getAuthToken();
-      // The screen may have unmounted during the awaits above; don't open a socket nobody will close.
+      // The screen may have unmounted during the await; don't open a socket nobody will close.
       if (!isMountedRef.current) return;
       // React Native's WebSocket accepts headers as a non-standard third argument.
-      const ws = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
+      const ws: WebSocket = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
 
       ws.onopen = () => {
-        console.log('✅ Connected to OpenAI Realtime API');
-        setIsConnected(true);
-        console.log('🔌 WebSocket connection state:', ws.readyState);
-        console.log('🔧 Session already configured via ephemeral token');
+        if (wsRef.current === ws) setIsConnected(true);
       };
 
       ws.onmessage = (event: any) => {
+        if (wsRef.current !== ws) return;
+        let data: any;
         try {
-          const data = JSON.parse(event.data);
-          console.log('📨 Received WebSocket message:', data);
-          handleWebSocketEvent(data);
-        } catch (error) {
-          console.error('❌ Error parsing WebSocket message:', error);
+          data = JSON.parse(event.data);
+        } catch {
+          return;
         }
+        handleWebSocketEvent(data);
       };
 
+      // A refused handshake (bad or not-allowed token) arrives here as an HTTP 403.
       ws.onerror = (err: any) => {
-        console.error('❌ WebSocket error:', err);
-        console.error('❌ Error details:', JSON.stringify(err, null, 2));
-        setError(`WebSocket connection error: ${err.message || 'Unknown error'}`);
+        if (wsRef.current !== ws) return;
+        setError(connectErrorMessage(err));
         setIsConnected(false);
-        console.log('🔌 Connection state set to false due to error');
       };
 
+      // No auto-reconnect: explain the close and let the worker tap Retry.
       ws.onclose = (event: any) => {
-        console.log('🔌 WebSocket connection closed');
-        console.log('🔌 Close event details:', JSON.stringify(event, null, 2));
+        if (wsRef.current !== ws || !isMountedRef.current) return;
         setIsConnected(false);
-        console.log('🔌 Connection state set to false due to close');
+        setError(closeMessage(event?.code, event?.reason));
       };
 
       wsRef.current = ws;
-      if (!isMountedRef.current) {
-        ws.close();
-        wsRef.current = null;
-      }
-
     } catch (err) {
-      console.error('Failed to initialize voice assistant:', err);
-      setError(err instanceof Error ? err.message : 'Failed to initialize voice assistant');
+      setError(`Couldn't connect to the voice assistant: ${errorMessage(err)}`);
     } finally {
       setIsLoading(false);
     }
@@ -613,18 +531,23 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       };
       setMessages([welcomeMessage]);
       setHasShownWelcome(true);
-      console.log('👋 Welcome message added');
     }
   };
 
+  // Send one question: a user input_text item, then response.create (both on the backend allowlist).
+  const sendQuestion = (ws: WebSocket, text: string) => {
+    userTextEvents(text).forEach(event => ws.send(JSON.stringify(event)));
+  };
+
   const startRecording = async () => {
-    if (!wsRef.current || !isConnected) {
+    if (!isSocketOpen(wsRef.current) || !isConnected) {
       Alert.alert('Error', 'Voice assistant not connected');
       return;
     }
 
     try {
-      await configureAudioRecording();
+      await stopPlayback(); // don't record over a reply
+      await configureAudioRecording(); // R-7: recording mode back on
 
       const recording = new Audio.Recording();
 
@@ -657,9 +580,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       try {
         await recording.prepareToRecordAsync(recordingOptions);
-        console.log('🎤 Using optimized audio settings for fast transcription');
-      } catch (error) {
-        console.log('⚠️ Optimized settings failed, trying LOW_QUALITY preset...');
+      } catch {
         await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.LOW_QUALITY);
       }
       await recording.startAsync();
@@ -667,172 +588,99 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       recordingRef.current = recording;
       setIsRecording(true);
 
-      const userMessage: Message = {
-        id: Date.now().toString(),
-        role: 'user',
-        content: '[Recording... Speak now]',
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-
-      console.log('🎤 Started recording audio with optimized settings');
+      const id = nextId('user');
+      pendingUserIdRef.current = id;
+      setMessages(prev => [...prev, { id, role: 'user', content: RECORDING_PLACEHOLDER, timestamp: new Date() }]);
     } catch (error) {
-      console.error('Failed to start recording:', error);
+      if (__DEV__) console.warn('Failed to start recording:', error);
       Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recordingRef.current || !isRecording) {
+    const recording = recordingRef.current;
+    if (!recording || !isRecording) {
       return;
     }
+    const bubbleId = pendingUserIdRef.current;
+    pendingUserIdRef.current = null;
+    const dropBubble = () => {
+      if (bubbleId) setMessages(prev => removeMessage(prev, bubbleId));
+    };
 
+    setIsProcessingAudio(true);
+    recordingRef.current = null;
+    setIsRecording(false);
     try {
-      setIsProcessingAudio(true);
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordingRef.current = null;
-      setIsRecording(false);
-
-      if (uri && wsRef.current) {
-        console.log('🎤 Stopped recording, processing audio:', uri);
-
-        setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMessage = newMessages[newMessages.length - 1];
-          if (lastMessage && lastMessage.role === 'user' && lastMessage.content === '[Recording... Speak now]') {
-            lastMessage.content = '[Processing your speech...]';
-          }
-          return newMessages;
-        });
-
-        try {
-          console.log('🎤 Fast transcribing recorded audio via backend...');
-          const startTime = Date.now();
-          const transcription = await api.transcribeForAssistant(uri);
-          const transcriptionTime = Date.now() - startTime;
-          console.log(`⚡ Transcription completed in ${transcriptionTime}ms`);
-
-          // Optimize for speed - skip if too short
-          if (!transcription || transcription.length < 3) {
-            console.log('⚠️ Transcription too short, using fallback');
-            throw new Error('Transcription too short');
-          }
-
-          console.log('🎤 Transcription result:', transcription);
-
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === 'user' && lastMessage.content === '[Processing your speech...]') {
-              lastMessage.content = transcription || '[Unrecognized speech]';
-            }
-            return newMessages;
-          });
-
-          const messageEvent = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'user',
-              content: [
-                { type: 'input_text', text: transcription || 'Please assist with homeless outreach guidance' },
-              ],
-            },
-          };
-
-          wsRef.current.send(JSON.stringify(messageEvent));
-          console.log('✅ Sent transcribed text to Realtime');
-
-          // Immediate response trigger for faster interaction
-          const responseEvent = { type: 'response.create' };
-          wsRef.current.send(JSON.stringify(responseEvent));
-          console.log('🎯 Triggered immediate assistant response');
-
-        } catch (audioError) {
-          console.error('Transcription failed:', audioError);
-
-          setMessages(prev => {
-            const newMessages = [...prev];
-            const lastMessage = newMessages[newMessages.length - 1];
-            if (lastMessage && lastMessage.role === 'user' && lastMessage.content === '[Processing your speech...]') {
-              lastMessage.content = 'I need help with homeless outreach guidance';
-            }
-            return newMessages;
-          });
-
-          const fallbackEvent = {
-            type: 'conversation.item.create',
-            item: {
-              type: 'message',
-              role: 'user',
-              content: [ { type: 'input_text', text: 'I need help with homeless outreach guidance' } ],
-            },
-          };
-          wsRef.current.send(JSON.stringify(fallbackEvent));
-          console.log('🎯 Sent fallback text message');
-        }
+      let uri: string | null = null;
+      try {
+        await recording.stopAndUnloadAsync();
+        uri = recording.getURI();
+      } catch (error) {
+        if (__DEV__) console.warn('Failed to stop recording:', error);
       }
-    } catch (error) {
-      console.error('Failed to stop recording:', error);
-      Alert.alert('Recording Error', 'Failed to stop recording. Please try again.');
+      if (!uri) {
+        dropBubble();
+        Alert.alert('Recording Error', 'Failed to stop recording. Please try again.');
+        return;
+      }
+
+      if (bubbleId) setMessages(prev => setMessageContent(prev, bubbleId, PROCESSING_PLACEHOLDER));
+
+      // C-23: a failed or empty transcription sends nothing; never invent a question.
+      let transcript = '';
+      try {
+        transcript = cleanTranscript(await api.transcribeForAssistant(uri));
+      } catch (e) {
+        dropBubble();
+        showApiError(e, TRANSCRIBE_FAILED);
+        return;
+      }
+      if (!transcript) {
+        dropBubble();
+        toast(TRANSCRIBE_FAILED);
+        return;
+      }
+
+      const ws = wsRef.current;
+      if (!ws || !isSocketOpen(ws)) {
+        // The socket closed while transcribing: keep the question so it can be sent after Retry.
+        dropBubble();
+        setTextInput(transcript);
+        toast('Not sent', 'Voice assistant disconnected. Tap Retry, then send your question.');
+        return;
+      }
+
+      if (bubbleId) setMessages(prev => setMessageContent(prev, bubbleId, transcript));
+      sendQuestion(ws, transcript);
     } finally {
       setIsProcessingAudio(false);
     }
   };
 
-  const sendTextMessage = async (text: string) => {
-    if (!wsRef.current || !isConnected) {
+  // Returns false if the question couldn't be sent, so the text box keeps it.
+  const sendTextMessage = (text: string): boolean => {
+    const ws = wsRef.current;
+    if (!ws || !isSocketOpen(ws)) {
       Alert.alert('Error', 'Voice assistant not connected');
-      return;
+      return false;
     }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text,
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    console.log('📤 Sending text message to GPT Realtime via WebSocket');
-    console.log('📤 Message content:', text);
-
-    const messageEvent = {
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: text,
-          },
-        ],
-      },
-    };
-
-    if (wsRef.current) {
-      wsRef.current.send(JSON.stringify(messageEvent));
-      console.log('✅ Text message sent successfully via WebSocket');
-
-      // Immediate response for text messages
-    const responseEvent = {
-      type: "response.create",
-    };
-    wsRef.current.send(JSON.stringify(responseEvent));
-    console.log('🎯 Triggered immediate text response');
-    }
+    setMessages(prev => [...prev, { id: nextId('user'), role: 'user', content: text, timestamp: new Date() }]);
+    sendQuestion(ws, text);
+    return true;
   };
 
   const clearConversation = () => {
     setMessages([]);
     setHasShownWelcome(false);
+    // The app can't delete server-side items (not on the allowlist), so start a fresh session
+    // to make the model forget the cleared conversation too.
+    initializeVoiceAssistant();
   };
 
   const renderMessage = (message: Message) => {
-    const isRecordingMessage = message.content === '[Recording... Speak now]';
-    const isProcessingMessage = message.content === '[Processing your speech...]';
+    const isRecordingMessage = message.content === RECORDING_PLACEHOLDER;
+    const isProcessingMessage = message.content === PROCESSING_PLACEHOLDER;
     const isSpeakingMessage = message.content === SPEAKING_PLACEHOLDER;
 
     return (
@@ -990,7 +838,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             maxLength={500}
             rightIcon="send"
             rightIconAccessibilityLabel="Send question"
-            onRightIconPress={textInput.trim() && isConnected ? () => { sendTextMessage(textInput.trim()); setTextInput(''); } : undefined}
+            onRightIconPress={textInput.trim() && isConnected ? () => { if (sendTextMessage(textInput.trim())) setTextInput(''); } : undefined}
             style={styles.textInput}
           />
         </View>
@@ -1005,12 +853,6 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
               (!isConnected || isProcessingAudio) && styles.recordButtonDisabled,
             ]}
             onPress={() => {
-              console.log('🎤 Record button pressed:', {
-                isRecording,
-                isConnected,
-                isProcessingAudio,
-                disabled: !isConnected || isProcessingAudio
-              });
               if (isRecording) {
                 stopRecording();
               } else {
