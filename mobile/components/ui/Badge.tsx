@@ -57,8 +57,9 @@ const styles = StyleSheet.create({
   default: {
     backgroundColor: theme.colors.neutral[200],
   },
+  // Solid: the search screen puts white text and icons in primary/secondary badges (C-62)
   primary: {
-    backgroundColor: theme.colors.primary[100],
+    backgroundColor: theme.colors.primary[600],
   },
   success: {
     backgroundColor: theme.colors.success[100],
@@ -72,7 +73,9 @@ const styles = StyleSheet.create({
   info: {
     backgroundColor: theme.colors.primary[50],
   },
-  secondary: {},
+  secondary: {
+    backgroundColor: theme.colors.neutral[600],
+  },
 
   // Text colors
   text: {
@@ -82,7 +85,7 @@ const styles = StyleSheet.create({
     color: theme.colors.neutral[700],
   },
   primaryText: {
-    color: theme.colors.primary[700],
+    color: theme.colors.text.inverse,
   },
   successText: {
     color: theme.colors.success[700],
@@ -96,7 +99,9 @@ const styles = StyleSheet.create({
   infoText: {
     color: theme.colors.primary[600],
   },
-  secondaryText: {},
+  secondaryText: {
+    color: theme.colors.text.inverse,
+  },
 
   // Sizes
   smallSize: {

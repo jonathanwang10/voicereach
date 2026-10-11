@@ -400,3 +400,71 @@ it('a failed merge save shows one error toast (the parent catches; MergeUI adds 
   await waitFor(() => expect(Toast.show).toHaveBeenCalled());
   expect(Toast.show).toHaveBeenCalledTimes(1);
 });
+
+// C-35: a failed category load offers Retry instead of a fieldless form whose Save
+// skips the required-field check.
+describe('category load failure (C-35)', () => {
+  it('shows the error with Retry and no Save; Retry loads the fields', async () => {
+    (api.getCategories as jest.Mock).mockRejectedValueOnce(outage);
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const screen = render(<TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />);
+    await waitFor(() => screen.getByText("Couldn't load form fields"));
+    expect(screen.getByText('Server error. Please try again.')).toBeTruthy();
+    expect(screen.queryByText('Save')).toBeNull();
+    expect(alert).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByText('Retry'));
+    await waitFor(() => screen.getByText('Save'));
+    expect(screen.getByDisplayValue('Ann')).toBeTruthy();
+  });
+
+  it('Cancel on the retry screen leaves the review', async () => {
+    (api.getCategories as jest.Mock).mockRejectedValueOnce(outage);
+    const onCancel = jest.fn();
+    const screen = render(<TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={onCancel} />);
+    await waitFor(() => screen.getByText('Retry'));
+    fireEvent.press(screen.getByText('Cancel'));
+    expect(onCancel).toHaveBeenCalled();
+  });
+});
+
+// Carried item: labels come from display_name ("HIV status", not "Hiv Status"), and
+// additional_information is a multiline box (the old check looked for a space).
+describe('field labels and long text', () => {
+  const extraCategories = [
+    { id: '1', name: 'name', display_name: 'Name', type: 'text', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
+    { id: '7', name: 'hiv_status', display_name: 'HIV status', type: 'text', is_required: false, priority: 'high', urgency_weight: 0, auto_trigger: false },
+    { id: '8', name: 'additional_information', display_name: null, type: 'text', is_required: false, priority: 'low', urgency_weight: 0, auto_trigger: false },
+  ];
+
+  it('uses display_name, else the title-cased key', async () => {
+    (api.getCategories as jest.Mock).mockResolvedValueOnce(extraCategories);
+    const screen = render(
+      <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann' } })} onSave={jest.fn()} onCancel={jest.fn()} />);
+    await waitFor(() => screen.getByText('Save'));
+    expect(screen.getByText('HIV status')).toBeTruthy();
+    expect(screen.queryByText('Hiv Status')).toBeNull();
+    expect(screen.getByText('Additional Information')).toBeTruthy();
+  });
+
+  it('additional_information is multiline with its own placeholder', async () => {
+    (api.getCategories as jest.Mock).mockResolvedValueOnce(extraCategories);
+    const screen = render(
+      <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann' } })} onSave={jest.fn()} onCancel={jest.fn()} />);
+    await waitFor(() => screen.getByText('Save'));
+    const input = screen.getByPlaceholderText(/other relevant information/);
+    expect(input.props.multiline).toBe(true);
+  });
+});
+
+// C-62: a strong match is green here and in MergeUI (one helper, one meaning).
+it('colours a strong match with the shared confidence colours', async () => {
+  const screen = render(
+    <TranscriptionResults
+      result={baseResult({ potential_matches: [{ id: MATCH_ID, name: 'Anne Lee', confidence: 97 }] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Anne Lee'));
+  const { StyleSheet } = require('react-native');
+  const { confidenceColor } = require('../../utils/duplicateMatches');
+  expect(StyleSheet.flatten(screen.getByText(/97% match/).props.style).color).toBe(confidenceColor(97).text);
+});

@@ -129,6 +129,36 @@ describe('delayed delete', () => {
   });
 });
 
+// The DELETE may still be in flight (and could fail), so "too late" must not claim
+// the person is already deleted.
+it('too late to undo says the delete is in progress, not done', async () => {
+  jest.useFakeTimers();
+  try {
+    (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
+    (api.deleteIndividual as jest.Mock).mockReturnValue(new Promise(() => {}));
+    const navigation = nav();
+    const screen = render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+    await waitFor(() => screen.getByText('Ann Lee'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const headerRight = navigation.setOptions.mock.calls[navigation.setOptions.mock.calls.length - 1][0].headerRight;
+    act(() => { headerRight().props.onPress(); });
+    const buttons = alert.mock.calls[0][2] as any[];
+    alert.mockRestore();
+    act(() => { buttons.find((b: any) => b.style === 'destructive').onPress(); });
+    const undoToast = (Toast.show as jest.Mock).mock.calls[0][0];
+
+    act(() => { jest.advanceTimersByTime(5000); });
+    expect(api.deleteIndividual).toHaveBeenCalledWith('p1');
+    act(() => { undoToast.onPress(); });
+    const late = (Toast.show as jest.Mock).mock.calls[1][0];
+    expect(late.text1).toBe('Too late to undo');
+    expect(late.text2).not.toMatch(/already deleted/);
+    expect(late.text2).toMatch(/in progress/);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 describe('urgency override (C-10)', () => {
   it('shows the scores the PUT returns', async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);

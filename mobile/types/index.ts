@@ -1,19 +1,3 @@
-export interface Individual {
-  id: string;
-  name: string;
-  urgency_score: number;
-  urgency_override?: number | null;
-  data: Record<string, any>;
-  created_at: string;
-  updated_at: string;
-  last_interaction_date?: string;
-  last_location?: {
-    latitude: number;
-    longitude: number;
-    address: string;
-  };
-}
-
 // A GPS fix with its geocoded address (backend `LocationData`; address is required)
 export interface LocationData {
   latitude: number;
@@ -68,16 +52,9 @@ export interface IndividualProfile {
   interactions: Interaction[];
   total_interactions: number;
   last_seen: string; // latest interaction, else created_at (same rule as the list)
-  last_interaction_date?: string;
   last_location?: {
     latitude: number;
     longitude: number;
     address: string;
   };
 }
-
-// For React Navigation compatibility
-export type RootStackParamList = {
-  SearchMain: undefined;
-  IndividualProfile: { individualId: string };
-}; 

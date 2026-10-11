@@ -208,12 +208,9 @@ export interface SaveIndividualRequest {
   transcription?: string | null;
 }
 
-// API functions for your app
+// Every backend call the app makes. Each throws ApiError; the caller shows it once.
 export const api = {
-  // TASK 3: Audio Recording & Transcription APIs
-  
-  // Transcribe audio - NEW FUNCTION
-  // Throws ApiError; the caller shows it once.
+  // Transcribe a recording (Whisper + field extraction + duplicate check)
   transcribe: async (audioUri: string): Promise<TranscriptionResult> => {
     // Read the local recording and send it inline as base64
     const response = await fetch(audioUri);
@@ -252,8 +249,6 @@ export const api = {
     return { id, individual: response.individual };
   },
 
-  // TASK 4: Search & Category Management APIs
-  
   // Search individuals: GET /api/individuals. An empty query is the default list,
   // most recently seen first. The backend escapes the term (no PostgREST filter
   // built from raw input, C-41). Throws ApiError: an outage must not look like

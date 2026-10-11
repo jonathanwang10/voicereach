@@ -151,7 +151,10 @@ it was removed on purpose and must not come back.
 3. The display score is `urgency_override` if it is set (0 included), else the
    calculated score.
 4. Colours in the app: 0-33 green `#10B981`, 34-66 yellow `#F59E0B`, 67-100 red
-   `#EF4444`.
+   `#EF4444`, as half-open bands (below 34, 34 up to 67, 67 and up), so 33.5 is
+   green and 66.5 yellow; a missing score counts as green. One helper decides the
+   band for the score colour, the badges and the labels (`getUrgencyLevel` in
+   `mobile/utils/urgencyScore.ts`).
 
 ### Duplicate detection and merging
 1. Candidates: an OR of name ILIKEs, one per name token of 3+ characters, then a
@@ -226,22 +229,25 @@ mobile/
 │   ├── ModernIndividualProfileScreen.tsx # Profile, pushed from Search
 │   ├── ModernVoiceAssistantScreen.tsx    # Assistant tab
 │   ├── CategoriesScreen.tsx              # Categories tab: list, create form, CSV export
-│   └── UserProfileScreen.tsx             # Profile tab (worker)
+│   └── UserProfileScreen.tsx             # Profile tab: signed-in email, last sign-in, Sign Out
 ├── components/
 │   ├── ModernAudioRecorder.tsx  # 5 s - 2 min recorder
 │   ├── TranscriptionResults.tsx # Review, edit, save or merge
 │   ├── ManualEntryForm.tsx
 │   ├── MergeUI.tsx              # Field-by-field duplicate resolution
+│   ├── CategoryLoadError.tsx    # "Couldn't load form fields" + Retry (both forms)
 │   ├── UrgencyScore.tsx         # Score display and override slider
 │   ├── LocationPicker.tsx, IndividualLocationMap.tsx
 │   ├── InteractionHistoryItem.tsx, InteractionDetailModal.tsx
-│   └── ui/                      # Button, Card, Badge, Input, AnimatedView
+│   └── ui/                      # Button, Card, Badge, Input, AnimatedView (FadeInView)
 ├── services/
 │   ├── api.ts                 # Backend client: getAuthToken, authedFetch, apiRequest, ApiError
-│   └── supabase.ts            # Supabase client and demo auto-login
+│   └── supabase.ts            # Supabase client (auth only): shared autoLogin, signOut
 ├── contexts/                  # AuthContext, CategoryContext
 └── utils/                     # height parsing, urgency colours, error handling,
-                               # categoryPayload (create form), csvExport (share sheet)
+                               # categoryPayload (create form), categoryDisplay (field
+                               # order and labels), duplicateMatches (incl. confidence
+                               # colours), csvExport (share sheet)
 ```
 
 ## Implementation patterns
@@ -286,6 +292,20 @@ export const getAuthToken = async () => {
 ```
 
 Every backend call and the assistant WebSocket handshake use this token.
+
+`autoLogin` (`mobile/services/supabase.ts`) keeps one sign-in in flight and hands
+it to every caller, so `AuthContext` at launch and `getAuthToken` never race two
+`signInWithPassword` calls; once it settles, the next call tries again.
+`AuthContext` keeps `loading` true until the launch sign-in settles (a null
+`INITIAL_SESSION` doesn't end it). With no user afterwards, `App.tsx` renders a
+blocking "Can't sign in" (with the reason) or "Signed out" screen with a
+Retry/Sign In button, and mounts `CategoryProvider` and the tabs only once
+signed in. `CategoryContext` exposes `error`, and the Categories tab and both
+forms show a failed category load with Retry. Sign Out on the Profile tab calls
+`supabase.auth.signOut()` and reports a failure; the next launch signs in again.
+
+Match-confidence colours mean the same on every screen (`confidenceColor` in
+`mobile/utils/duplicateMatches.ts`): 95 and up green, 60-94 yellow.
 
 ## Edge cases
 

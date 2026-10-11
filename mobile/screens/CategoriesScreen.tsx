@@ -24,7 +24,7 @@ import { useCategories } from '../contexts/CategoryContext';
 // Categories are create-only (PRD): there is no edit, delete or on/off switch,
 // because nothing on the server would honour it.
 export default function CategoriesScreen() {
-  const { categories, isLoading, refreshCategories } = useCategories();
+  const { categories, isLoading, error: loadError, refreshCategories } = useCategories();
 
   // "single_select" -> "Single Select" (for the type line)
   const formatTypeName = (type: string): string =>
@@ -147,7 +147,17 @@ export default function CategoriesScreen() {
       {/* Categories List */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Categories</Text>
-        {(() => {
+        {/* A failed load says so with Retry, instead of "0 categories" all session (C-35) */}
+        {loadError && (
+          <View style={styles.loadError}>
+            <Text style={styles.loadErrorTitle}>Couldn't load categories</Text>
+            <Text style={styles.infoText}>{loadError}</Text>
+            <TouchableOpacity style={[styles.addButton, styles.retryButton]} onPress={refreshCategories}>
+              <Text style={styles.addButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {(categories.length > 0 || !loadError) && (() => {
           const priorityDist = getPriorityDistribution();
           return (
             <Text style={styles.categoryCount}>
@@ -501,5 +511,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  loadError: {
+    marginBottom: 16,
+  },
+  loadErrorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#EF4444',
+    marginBottom: 4,
+  },
+  retryButton: {
+    marginTop: 12,
   },
 }); 

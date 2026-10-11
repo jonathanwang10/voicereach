@@ -25,6 +25,23 @@ export const bestMergeableMatch = (matches?: DuplicateMatch[] | null): Duplicate
   mergeableMatches(matches).reduce<DuplicateMatch | null>(
     (best, m) => (!best || m.confidence > best.confidence ? m : best), null);
 
+// One meaning for match-confidence colours on every screen (C-62): how sure the
+// check is that this is the same person. >= 95 high (green), 60-94 medium (yellow),
+// below 60 low (red; the backend drops those, so they rarely reach the app).
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export const confidenceLevel = (confidence: number): ConfidenceLevel =>
+  confidence >= 95 ? 'high' : confidence >= 60 ? 'medium' : 'low';
+
+const CONFIDENCE_COLORS: Record<ConfidenceLevel, { accent: string; background: string; text: string }> = {
+  high: { accent: '#28a745', background: '#d4edda', text: '#155724' },
+  medium: { accent: '#ffc107', background: '#fff3cd', text: '#856404' },
+  low: { accent: '#dc3545', background: '#f8d7da', text: '#721c24' },
+};
+
+// accent: borders; background: a tinted row; text: readable text on white or the tint
+export const confidenceColor = (confidence: number) => CONFIDENCE_COLORS[confidenceLevel(confidence)];
+
 // When the duplicate check fails, ask instead of silently saving a possible
 // duplicate (C-08). Resolves true for "Save as new", false otherwise.
 export const confirmSaveAsNew = (): Promise<boolean> =>

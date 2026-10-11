@@ -3,7 +3,13 @@ import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert,
 import Toast from 'react-native-toast-message';
 import { TranscriptionResult, DuplicateMatch, api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { bestMergeableMatch, confirmSaveAsNew, mergeableMatches, unionMatches } from '../utils/duplicateMatches';
+import {
+  bestMergeableMatch,
+  confidenceColor,
+  confirmSaveAsNew,
+  mergeableMatches,
+  unionMatches,
+} from '../utils/duplicateMatches';
 import {
   coerceFieldData,
   coerceFieldValue,
@@ -12,18 +18,16 @@ import {
   toggleMultiSelect,
   validateFieldValue,
 } from '../utils/fieldValues';
+import { Category, categoryLabel } from '../utils/categoryPayload';
+import {
+  fieldKeyboardType,
+  fieldPlaceholder,
+  isEssentialCategory,
+  isLongTextCategory,
+  sortCategories,
+} from '../utils/categoryDisplay';
 import { MergeUI } from './MergeUI';
-
-interface Category {
-  id: string;
-  name: string;
-  type: string;
-  is_required: boolean;
-  options?: any;
-  priority: string;
-  urgency_weight: number;
-  auto_trigger: boolean;
-}
+import { CategoryLoadError } from './CategoryLoadError';
 
 interface TranscriptionResultsProps {
   result: TranscriptionResult;
@@ -50,11 +54,12 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   location,
 }) => {
   const [categorizedData, setCategorizedData] = useState<Record<string, any>>(result.categorized_data);
-  const [isEditing, setIsEditing] = useState(false);
   const [showMergeUI, setShowMergeUI] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Why the category load failed (C-35); shown with Retry instead of a fieldless form
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Per-field problems: the backend's validation_errors from /api/transcribe, then the
   // client-side checks on Save (C-16). Editing a field clears its message.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(() =>
@@ -71,48 +76,13 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   const fetchCategories = async () => {
     try {
       setIsLoading(true);
-      const response = await api.getCategories();
-      
-      // Sort categories with essential categories first in specific order
-      const sortedCategories = (response || []).sort((a, b) => {
-        // Define essential categories order: Name, Height, Weight, Age
-        const essentialOrder = ['name', 'height', 'weight', 'age'];
-        const aIndex = essentialOrder.indexOf(a.name.toLowerCase());
-        const bIndex = essentialOrder.indexOf(b.name.toLowerCase());
-        
-        // If both are essential categories, sort by their defined order
-        if (aIndex !== -1 && bIndex !== -1) {
-          return aIndex - bIndex;
-        }
-        
-        // Essential categories always come first
-        if (aIndex !== -1) return -1;
-        if (bIndex !== -1) return 1;
-        
-        // For non-essential categories, sort by priority then alphabetically
-        const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
-        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        
-        // Finally sort alphabetically by name
-        return a.name.localeCompare(b.name);
-      });
-      
-      setCategories(sortedCategories);
-    } catch (error: any) {
-      console.error('Failed to fetch categories:', error);
-      Alert.alert('Error', 'Failed to load form fields. Please try again.');
+      setLoadError(null);
+      setCategories(sortCategories<Category>((await api.getCategories()) || []));
+    } catch (error) {
+      setLoadError(errorMessage(error));
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Helper to format a category name for display
-  const formatCategoryName = (name: string) => {
-    return name
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
   };
 
   const handleFieldChange = (fieldName: string, value: any) => {
@@ -273,30 +243,10 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     return isFieldRequired(fieldName) && isEmptyValue(categorizedData[fieldName]);
   };
 
-  const renderField = (fieldName: string, value: any) => {
-    const category = categories.find(cat => cat.name === fieldName);
-    if (!category) {
-      // For backward compatibility, render unknown fields as text inputs
-      return (
-        <View key={fieldName} style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>
-            {formatCategoryName(fieldName)}
-          </Text>
-          <TextInput
-            style={styles.fieldInput}
-            value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
-            onChangeText={(text) => handleFieldChange(fieldName, text)}
-            placeholder={
-              fieldName.toLowerCase().includes('additional information')
-                ? "Enter any other relevant information not covered by other categories..."
-                : `Enter ${formatCategoryName(fieldName).toLowerCase()}`
-            }
-            placeholderTextColor="#999"
-          />
-        </View>
-      );
-    }
-    
+  // Only categories are rendered, so every field has its category
+  const renderField = (category: Category) => {
+    const fieldName = category.name;
+    const value = categorizedData[fieldName];
     const isRequired = isFieldRequired(fieldName);
     const isMissing = isFieldMissing(fieldName);
     const fieldError = isMissing ? null : fieldErrors[fieldName];
@@ -308,7 +258,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
           isRequired && styles.requiredLabel,
           (isMissing || !!fieldError) && styles.missingLabel
         ]}>
-          {formatCategoryName(fieldName)}
+          {categoryLabel(category)}
           {isRequired && ' *'}
         </Text>
 
@@ -347,17 +297,11 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
           ]}
           value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
           onChangeText={(text) => handleFieldChange(fieldName, text)}
-          placeholder={
-            fieldName.trim().toLowerCase() === 'height' 
-              ? "Enter height (e.g., 5'10 or 70)" 
-              : fieldName.toLowerCase().includes('additional information')
-                ? "Enter any other relevant information not covered by other categories..."
-                : `Enter ${formatCategoryName(fieldName).toLowerCase()}`
-          }
+          placeholder={fieldPlaceholder(category)}
           placeholderTextColor="#999"
-          keyboardType={category.type === 'number' && fieldName.trim().toLowerCase() !== 'height' ? 'numeric' : 'default'}
-          multiline={category.type === 'text' && (fieldName.toLowerCase().includes('notes') || fieldName.toLowerCase().includes('additional information'))}
-          numberOfLines={category.type === 'text' && (fieldName.toLowerCase().includes('notes') || fieldName.toLowerCase().includes('additional information')) ? 4 : 1}
+          keyboardType={fieldKeyboardType(category)}
+          multiline={isLongTextCategory(category)}
+          numberOfLines={isLongTextCategory(category) ? 4 : 1}
         />
 
         {isMissing && (
@@ -392,6 +336,11 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     );
   }
 
+  // No fields means no required-field check on Save, so never show a fieldless form
+  if (categories.length === 0) {
+    return <CategoryLoadError error={loadError} onRetry={fetchCategories} onCancel={onCancel} />;
+  }
+
   return (
     <ScrollView style={styles.container}>
       {/* Transcription Text */}
@@ -409,42 +358,26 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
           Review and edit the information extracted from your recording
         </Text>
         
-        {/* Essential Information - Name, Height, Weight, Age */}
+        {/* Essential Information - Name, Height, Weight, Age (already in order) */}
         {(() => {
-          const essentialNames = ['name', 'height', 'weight', 'age'];
-          const essentialCategories = categories.filter(cat => 
-            essentialNames.includes(cat.name.toLowerCase())
-          ).sort((a, b) => {
-            const aIndex = essentialNames.indexOf(a.name.toLowerCase());
-            const bIndex = essentialNames.indexOf(b.name.toLowerCase());
-            return aIndex - bIndex;
-          });
-          
+          const essentialCategories = categories.filter(isEssentialCategory);
           if (essentialCategories.length === 0) return null;
           return (
             <View style={styles.subsection}>
               <Text style={styles.subsectionTitle}>Essential Information</Text>
-              {essentialCategories
-                .map(category => renderField(category.name, categorizedData[category.name]))
-                .filter(Boolean)}
+              {essentialCategories.map(renderField)}
             </View>
           );
         })()}
 
         {/* Other Information - All non-essential categories */}
         {(() => {
-          const essentialNames = ['name', 'height', 'weight', 'age'];
-          const otherCategories = categories.filter(cat => 
-            !essentialNames.includes(cat.name.toLowerCase())
-          );
-          
+          const otherCategories = categories.filter(cat => !isEssentialCategory(cat));
           if (otherCategories.length === 0) return null;
           return (
             <View style={styles.subsection}>
               <Text style={styles.subsectionTitle}>Other Information</Text>
-              {otherCategories
-                .map(category => renderField(category.name, categorizedData[category.name]))
-                .filter(Boolean)}
+              {otherCategories.map(renderField)}
             </View>
           );
         })()}
@@ -461,25 +394,22 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
             <Text style={styles.sectionSubtitle}>
               We found similar individuals in our database
             </Text>
-            {validMatches.map((match, index) => (
+            {validMatches.map((match, index) => {
+              // Same colours as MergeUI (one helper, one meaning: C-62)
+              const colours = confidenceColor(match.confidence);
+              return (
             <View key={index} style={[
               styles.matchContainer,
-              match.confidence >= 95 && styles.highConfidenceMatch,
-              match.confidence >= 60 && match.confidence < 95 && styles.mediumConfidenceMatch,
-              match.confidence < 60 && styles.lowConfidenceMatch
+              { backgroundColor: colours.background, borderLeftColor: colours.accent },
             ]}>
               <Text style={styles.matchName}>{match.name}</Text>
-              <Text style={[
-                styles.matchConfidence,
-                match.confidence >= 95 && styles.highConfidenceText,
-                match.confidence >= 60 && match.confidence < 95 && styles.mediumConfidenceText,
-                match.confidence < 60 && styles.lowConfidenceText
-              ]}>
+              <Text style={[styles.matchConfidence, { color: colours.text }]}>
                 {match.confidence}% match
                 {match.confidence >= 60 ? ' (Manual review)' : ' (Too low - no merge UI)'}
               </Text>
             </View>
-          ))}
+              );
+            })}
         </View>
         ) : null;
       })()}
@@ -604,27 +534,6 @@ const styles = StyleSheet.create({
     color: '#856404',
     marginTop: 4,
   },
-  highConfidenceMatch: {
-    backgroundColor: '#d4edda',
-    borderLeftColor: '#28a745',
-  },
-  mediumConfidenceMatch: {
-    backgroundColor: '#fff3cd',
-    borderLeftColor: '#ffc107',
-  },
-  lowConfidenceMatch: {
-    backgroundColor: '#f8d7da',
-    borderLeftColor: '#dc3545',
-  },
-  highConfidenceText: {
-    color: '#155724',
-  },
-  mediumConfidenceText: {
-    color: '#856404',
-  },
-  lowConfidenceText: {
-    color: '#721c24',
-  },
   buttonContainer: {
     flexDirection: 'row',
     padding: 20,
@@ -656,30 +565,6 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  selectContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  selectOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  selectedOption: {
-    backgroundColor: '#e0e0e0',
-    borderColor: '#007AFF',
-    borderWidth: 1,
-  },
-  selectOptionText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  selectedOptionText: {
-    color: '#007AFF',
     fontWeight: '600',
   },
   loadingContainer: {

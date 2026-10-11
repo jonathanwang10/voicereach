@@ -19,7 +19,7 @@ import { Badge } from '../components/ui/Badge';
 import { Input } from '../components/ui/Input';
 import { FadeInView } from '../components/ui/AnimatedView';
 import { theme } from '../theme';
-import { formatLastSeen } from '../utils/urgencyScore';
+import { formatLastSeen, getUrgencyLevel, UrgencyLevel, URGENCY_BADGE_VARIANT, URGENCY_LABELS } from '../utils/urgencyScore';
 import { errorMessage, showApiError } from '../utils/errorHandler';
 import { isPendingDelete, subscribePendingDeletes } from '../utils/delayedDelete';
 
@@ -207,20 +207,9 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     navigation.navigate('IndividualProfile', { individualId: result.id });
   };
 
-  const getUrgencyBadgeVariant = (score: number) => {
-    if (score >= 67) return 'danger';
-    if (score >= 34) return 'warning';
-    return 'success';
-  };
-
-  const getUrgencyLabel = (score: number) => {
-    if (score >= 67) return 'High Urgency';
-    if (score >= 34) return 'Medium Urgency';
-    return 'Low Urgency';
-  };
-
   const renderSearchResult = ({ item, index }: { item: SearchResult; index: number }) => {
     const urgencyScore = scoreOf(item);
+    const urgencyLevel = getUrgencyLevel(urgencyScore);
     const isHighlighted = highlightedId === item.id;
 
     return (
@@ -258,7 +247,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
               </Badge>
             )}
           </View>
-          <Badge variant={getUrgencyBadgeVariant(urgencyScore)} size="medium">
+          <Badge variant={URGENCY_BADGE_VARIANT[urgencyLevel]} size="medium">
             {Math.round(urgencyScore)}
           </Badge>
         </View>
@@ -273,7 +262,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
           <View style={styles.detailRow}>
             <Ionicons name="alert-circle-outline" size={14} color={theme.colors.text.secondary} />
             <Text style={styles.detailText}>
-              {getUrgencyLabel(urgencyScore)}
+              {URGENCY_LABELS[urgencyLevel]}
             </Text>
           </View>
         </View>
@@ -317,12 +306,10 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     if ((!hasQuery && isLoading) || loadError || visibleResults.length === 0) return null;
 
     const totalResults = visibleResults.length;
-    const highUrgency = visibleResults.filter(r => scoreOf(r) >= 67).length;
-    const mediumUrgency = visibleResults.filter(r => {
-      const score = scoreOf(r);
-      return score >= 34 && score < 67;
-    }).length;
-    const lowUrgency = visibleResults.filter(r => scoreOf(r) < 34).length;
+    const countAt = (level: UrgencyLevel) => visibleResults.filter(r => getUrgencyLevel(scoreOf(r)) === level).length;
+    const highUrgency = countAt('high');
+    const mediumUrgency = countAt('medium');
+    const lowUrgency = countAt('low');
 
     return (
       <Card style={styles.statsCard} variant="filled">

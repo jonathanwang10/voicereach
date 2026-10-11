@@ -4,7 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CategoryProvider } from './contexts/CategoryContext';
@@ -62,7 +62,7 @@ function SearchStack() {
 }
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, error, retry } = useAuth();
 
   if (loading) {
     return (
@@ -73,73 +73,92 @@ function AppContent() {
     );
   }
 
+  // No user: the sign-in failed, or the worker signed out (C-35, OD-4). Nothing
+  // below mounts, so no screen fails on its own or signs in behind the worker's back.
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>{error ? "Can't sign in" : 'Signed out'}</Text>
+        <Text style={styles.subtitle}>
+          {error
+            ? `${error}\n\nCheck your connection, and that the demo user exists in Supabase (see the README setup).`
+            : 'The app signs in again automatically the next time it starts.'}
+        </Text>
+        <TouchableOpacity onPress={retry} accessibilityRole="button">
+          <Text style={styles.retryText}>{error ? 'Retry' : 'Sign In'}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Categories load only once signed in (no race with the sign-in)
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        initialRouteName="Record"
-        screenOptions={({ route }) => ({
-          tabBarIcon: ({ focused, color, size }) => {
-            let iconName: keyof typeof Ionicons.glyphMap;
+    <CategoryProvider>
+      <NavigationContainer>
+        <Tab.Navigator
+          initialRouteName="Record"
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName: keyof typeof Ionicons.glyphMap;
 
-            if (route.name === 'Record') {
-              iconName = focused ? 'camera' : 'camera-outline';
-            } else if (route.name === 'Search') {
-              iconName = focused ? 'search' : 'search-outline';
-            } else if (route.name === 'VoiceAssistant') {
-              iconName = focused ? 'mic' : 'mic-outline';
-            } else if (route.name === 'Categories') {
-              iconName = focused ? 'settings' : 'settings-outline';
-            } else if (route.name === 'Profile') {
-              iconName = focused ? 'person' : 'person-outline';
-            } else {
-              iconName = 'help-outline';
-            }
+              if (route.name === 'Record') {
+                iconName = focused ? 'camera' : 'camera-outline';
+              } else if (route.name === 'Search') {
+                iconName = focused ? 'search' : 'search-outline';
+              } else if (route.name === 'VoiceAssistant') {
+                iconName = focused ? 'mic' : 'mic-outline';
+              } else if (route.name === 'Categories') {
+                iconName = focused ? 'settings' : 'settings-outline';
+              } else if (route.name === 'Profile') {
+                iconName = focused ? 'person' : 'person-outline';
+              } else {
+                iconName = 'help-outline';
+              }
 
-            return <Ionicons name={iconName} size={size} color={color} />;
-          },
-          tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: 'gray',
-          headerShown: true,
-        })}
-      >
-        <Tab.Screen
-          name="Record"
-          component={ModernRecordScreen}
-          options={{ title: 'Record' }}
-        />
-        <Tab.Screen
-          name="Search"
-          component={SearchStack}
-          options={{ title: 'Search', headerShown: false }}
-        />
-        <Tab.Screen
-          name="VoiceAssistant"
-          component={ModernVoiceAssistantScreen}
-          options={{ title: 'Assistant' }}
-        />
-        <Tab.Screen 
-          name="Categories" 
-          component={CategoriesScreen}
-          options={{ title: 'Categories' }}
-        />
-        <Tab.Screen 
-          name="Profile" 
-          component={UserProfileScreen}
-          options={{ title: 'Profile' }}
-        />
-      </Tab.Navigator>
-      <StatusBar style="auto" />
-    </NavigationContainer>
+              return <Ionicons name={iconName} size={size} color={color} />;
+            },
+            tabBarActiveTintColor: '#007AFF',
+            tabBarInactiveTintColor: 'gray',
+            headerShown: true,
+          })}
+        >
+          <Tab.Screen
+            name="Record"
+            component={ModernRecordScreen}
+            options={{ title: 'Record' }}
+          />
+          <Tab.Screen
+            name="Search"
+            component={SearchStack}
+            options={{ title: 'Search', headerShown: false }}
+          />
+          <Tab.Screen
+            name="VoiceAssistant"
+            component={ModernVoiceAssistantScreen}
+            options={{ title: 'Assistant' }}
+          />
+          <Tab.Screen 
+            name="Categories" 
+            component={CategoriesScreen}
+            options={{ title: 'Categories' }}
+          />
+          <Tab.Screen 
+            name="Profile" 
+            component={UserProfileScreen}
+            options={{ title: 'Profile' }}
+          />
+        </Tab.Navigator>
+        <StatusBar style="auto" />
+      </NavigationContainer>
+    </CategoryProvider>
   );
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <CategoryProvider>
-        <AppContent />
-        <Toast />
-      </CategoryProvider>
+      <AppContent />
+      <Toast />
     </AuthProvider>
   );
 }
@@ -161,13 +180,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     marginBottom: 20,
+    textAlign: 'center',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
     color: '#666',
   },
-  logoutText: {
+  retryText: {
     marginTop: 20,
     color: '#007AFF',
     fontSize: 16,

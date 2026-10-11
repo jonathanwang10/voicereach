@@ -1,0 +1,78 @@
+// C-35: when sign-in fails the app shows a blocking "Can't sign in" screen with Retry
+// instead of tabs that each fail on their own; categories load only once signed in.
+// OD-4: after a real Sign Out the app stays signed out until the worker signs in again.
+import React from 'react';
+import { Text } from 'react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+
+let mockAuthListener: ((event: string, session: any) => void) | null = null;
+const mockAutoLogin = jest.fn();
+jest.mock('../services/supabase', () => ({
+  supabase: {
+    auth: {
+      onAuthStateChange: (cb: any) => {
+        mockAuthListener = cb;
+        return { data: { subscription: { unsubscribe: jest.fn() } } };
+      },
+    },
+  },
+  autoLogin: (...a: any[]) => mockAutoLogin(...a),
+  signOut: jest.fn(async () => ({ error: null })),
+}));
+jest.mock('../services/api', () => ({ api: { getCategories: jest.fn(async () => []) } }));
+jest.mock('react-native-toast-message', () => {
+  const Toast = () => null;
+  Toast.show = jest.fn();
+  return { __esModule: true, default: Toast };
+});
+jest.mock('../screens/ModernRecordScreen', () => ({ ModernRecordScreen: () => mockScreen('Record screen') }));
+jest.mock('../screens/ModernSearchScreen', () => ({ ModernSearchScreen: () => mockScreen('Search screen') }));
+jest.mock('../screens/ModernIndividualProfileScreen', () => ({ ModernIndividualProfileScreen: () => null }));
+jest.mock('../screens/ModernVoiceAssistantScreen', () => ({ ModernVoiceAssistantScreen: () => null }));
+jest.mock('../screens/CategoriesScreen', () => () => null);
+jest.mock('../screens/UserProfileScreen', () => () => null);
+
+function mockScreen(label: string) {
+  return <Text>{label}</Text>;
+}
+
+import App from '../App';
+import { api } from '../services/api';
+
+const user = { id: 'u1', email: 'demo@sfgov.org' };
+const session = { access_token: 't', user };
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+afterEach(() => jest.restoreAllMocks());
+
+it('a failed sign-in blocks the app with Retry, and Retry opens the tabs', async () => {
+  mockAutoLogin.mockResolvedValueOnce({ error: new Error('Invalid login credentials') });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText("Can't sign in"));
+  expect(screen.getByText(/Invalid login credentials/)).toBeTruthy();
+  expect(screen.queryByText('Record screen')).toBeNull();
+  expect(api.getCategories).not.toHaveBeenCalled();
+
+  mockAutoLogin.mockResolvedValueOnce({ user, session });
+  fireEvent.press(screen.getByText('Retry'));
+  await waitFor(() => screen.getByText('Record screen'));
+  expect(api.getCategories).toHaveBeenCalledTimes(1);
+});
+
+it('after signing out the app stays signed out until the worker signs in again', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+
+  act(() => { mockAuthListener?.('SIGNED_OUT', null); });
+  await waitFor(() => screen.getByText('Signed out'));
+  expect(mockAutoLogin).toHaveBeenCalledTimes(1);
+
+  fireEvent.press(screen.getByText('Sign In'));
+  await waitFor(() => screen.getByText('Record screen'));
+  expect(mockAutoLogin).toHaveBeenCalledTimes(2);
+});

@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { Interaction } from '../types';
 import { formatFieldValue } from '../utils/fieldValues';
@@ -43,16 +42,6 @@ export default function InteractionDetailModal({
   const formatLocation = (location?: { latitude: number; longitude: number }) => {
     if (!location) return 'Location not available';
     return `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}`;
-  };
-
-  const handleShare = () => {
-    // Mock share functionality
-    Alert.alert('Share', 'Share functionality would be implemented here');
-  };
-
-  const handleExport = () => {
-    // Mock export functionality
-    Alert.alert('Export', 'Export functionality would be implemented here');
   };
 
   return (
@@ -116,19 +105,6 @@ export default function InteractionDetailModal({
                 ))}
               </View>
             )}
-
-            {/* Actions */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Actions</Text>
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-                  <Text style={styles.actionButtonText}>Share</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionButton} onPress={handleExport}>
-                  <Text style={styles.actionButtonText}>Export</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
           </ScrollView>
         </View>
       </View>
@@ -220,23 +196,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
     lineHeight: 24,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 8,
-  },
-  actionButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  actionButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 }); 

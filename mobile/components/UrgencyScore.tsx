@@ -17,38 +17,29 @@ interface UrgencyScoreProps {
   };
   onOverrideChange: (value: number | null) => void;
   showSlider?: boolean; // Optional prop to show/hide slider
-  compact?: boolean; // New prop for compact display in search results
 }
 
 export default function UrgencyScore({
   individual,
   onOverrideChange,
   showSlider = false,
-  compact = false
 }: UrgencyScoreProps) {
   // State for the slider value
   const [sliderValue, setSliderValue] = useState<number>(0);
-  const [isEditing, setIsEditing] = useState<boolean>(false);
 
   // Get the display score (override or calculated)
   const displayScore = getDisplayUrgencyScore(individual);
   const scoreColor = getUrgencyScoreColor(displayScore);
 
-  // Initialize slider value when component mounts or individual changes
+  // Follow the shown score (override or calculated) whenever it changes
   useEffect(() => {
     setSliderValue(displayScore);
   }, [displayScore]);
-
-  // Reset slider when individual changes
-  useEffect(() => {
-    setSliderValue(displayScore);
-  }, [individual.urgency_score, individual.urgency_override]);
 
   // Handle slider value change
   const handleSliderChange = (value: number) => {
     const roundedValue = Math.round(value)
     setSliderValue(roundedValue);
-    setIsEditing(true);
   };
 
   // Handle slider completion (when user stops dragging)
@@ -65,14 +56,12 @@ export default function UrgencyScore({
           style: 'cancel',
           onPress: () => {
             setSliderValue(displayScore); // Reset to original value
-            setIsEditing(false);
           },
         },
         {
           text: 'Set Override',
           onPress: () => {
             onOverrideChange(newValue);
-            setIsEditing(false);
           },
         },
       ]
@@ -94,25 +83,11 @@ export default function UrgencyScore({
           onPress: () => {
             onOverrideChange(null);
             setSliderValue(individual.urgency_score);
-            setIsEditing(false);
           },
         },
       ]
     );
   };
-
-  if (compact) {
-    return (
-      <View style={styles.compactContainer}>
-        <View style={[styles.compactScore, { backgroundColor: scoreColor }]}>
-          <Text style={styles.compactValue}>{displayScore}</Text>
-        </View>
-        {individual.urgency_override !== null && (
-          <View style={styles.compactOverrideIndicator} />
-        )}
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -122,7 +97,7 @@ export default function UrgencyScore({
         <Text style={styles.scoreValue}>{displayScore}</Text>
         
         {/* Manual Override Indicator */}
-        {individual.urgency_override !== null && (
+        {individual.urgency_override != null && (
           <View style={styles.manualIndicator}>
             <Text style={styles.manualLabel}>Manual Override</Text>
             <TouchableOpacity onPress={handleClearOverride}>
@@ -246,30 +221,5 @@ const styles = StyleSheet.create({
   rangeLabel: {
     fontSize: 12,
     color: '#6B7280',
-  },
-  // Compact styles for search results
-  compactContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  compactScore: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    minWidth: 36,
-    alignItems: 'center',
-    opacity: 0.9,
-  },
-  compactValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  compactOverrideIndicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#F59E0B',
-    marginLeft: 6,
   },
 });

@@ -83,16 +83,6 @@ export class ErrorHandler {
       };
     }
     
-    if (error?.message?.includes('Real API disabled')) {
-      return {
-        code: 'DEMO_MODE',
-        message: '✅ Demo mode active - using mock data',
-        userMessage: '✅ Demo mode: Using realistic mock transcription data.',
-        retryable: false,
-        severity: 'low'
-      };
-    }
-    
     return {
       code: 'UNKNOWN_API_ERROR',
       message: error?.message || 'Unknown API error',
@@ -164,64 +154,16 @@ export class ErrorHandler {
     };
   };
 
-  // Validation errors
-  static handleValidationError = (errors: Record<string, string>): AppError => {
-    const errorMessages = Object.values(errors).join(', ');
-    return {
-      code: 'VALIDATION_ERROR',
-      message: `Validation failed: ${errorMessages}`,
-      userMessage: `Please fix the following errors: ${errorMessages}`,
-      retryable: false,
-      severity: 'medium'
-    };
-  };
-
   // Show error to user
   static showError = (error: AppError) => {
-    // Use different logging level for demo mode
-    if (error.code === 'DEMO_MODE') {
-      console.log(`[${error.code}] ${error.message}`);
-    } else {
-      console.error(`[${error.code}] ${error.message}`);
-    }
+    console.error(`[${error.code}] ${error.message}`);
 
-    // Don't show toast for low severity errors
-    if (error.severity === 'low') {
-      return;
-    }
-    
     Toast.show({
       type: 'error',
       text1: 'Error',
       text2: error.userMessage,
       position: 'top',
       visibilityTime: 4000,
-      autoHide: true,
-      topOffset: 50
-    });
-  };
-
-  // Show success message
-  static showSuccess = (message: string) => {
-    Toast.show({
-      type: 'success',
-      text1: 'Success',
-      text2: message,
-      position: 'top',
-      visibilityTime: 3000,
-      autoHide: true,
-      topOffset: 50
-    });
-  };
-
-  // Show info message
-  static showInfo = (message: string) => {
-    Toast.show({
-      type: 'info',
-      text1: 'Info',
-      text2: message,
-      position: 'top',
-      visibilityTime: 3000,
       autoHide: true,
       topOffset: 50
     });

@@ -24,3 +24,12 @@ it('renders changes without null rows, joining lists and showing a location addr
   expect(screen.getByText('5th & Market')).toBeTruthy();
   expect(screen.getByText('Ann')).toBeTruthy();
 });
+
+// R-10 (C-62): the Share/Export buttons only showed "would be implemented here".
+it('has no placeholder Share or Export actions', () => {
+  const interaction: any = { id: 'i1', individual_id: 'p1', user_id: '', created_at: '2026-01-01T00:00:00Z', data: {} };
+  const screen = render(<InteractionDetailModal visible interaction={interaction} onClose={jest.fn()} />);
+  expect(screen.queryByText('Share')).toBeNull();
+  expect(screen.queryByText('Export')).toBeNull();
+  expect(screen.queryByText('Actions')).toBeNull();
+});

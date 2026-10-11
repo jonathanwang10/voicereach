@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIn
 import { api } from '../services/api';
 import { showApiError } from '../utils/errorHandler';
 import { formatFieldValue, isEmptyValue } from '../utils/fieldValues';
+import { confidenceColor } from '../utils/duplicateMatches';
 
 interface PotentialMatch {
   id: string;
@@ -134,12 +135,6 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     return formatFieldValue(data[fieldName]) ?? '—';
   };
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return '#dc3545'; // Red for high confidence
-    if (confidence >= 60) return '#ffc107'; // Yellow for medium confidence
-    return '#28a745'; // Green for low confidence
-  };
-
   const renderFieldComparison = (fieldName: string) => {
     const newValue = getFieldValue(fieldName, 'new');
     const existingValue = getFieldValue(fieldName, 'existing');
@@ -260,7 +255,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
           <Text style={styles.confidenceLabel}>Confidence:</Text>
           <Text style={[
             styles.confidenceScore,
-            { color: getConfidenceColor(potentialMatch.confidence) }
+            { color: confidenceColor(potentialMatch.confidence).text }
           ]}>
             {potentialMatch.confidence}%
           </Text>

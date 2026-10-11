@@ -17,7 +17,14 @@ import Toast from 'react-native-toast-message';
 import { IndividualProfile } from '../types';
 import { api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { getUrgencyScoreColor, getDisplayUrgencyScore, daysSince } from '../utils/urgencyScore';
+import {
+  getUrgencyScoreColor,
+  getDisplayUrgencyScore,
+  getUrgencyLevel,
+  daysSince,
+  URGENCY_BADGE_VARIANT,
+  URGENCY_LABELS,
+} from '../utils/urgencyScore';
 import { scheduleDelete, DELETE_UNDO_MS } from '../utils/delayedDelete';
 import { formatFieldValue } from '../utils/fieldValues';
 import { Button } from '../components/ui/Button';
@@ -113,7 +120,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
                 if (cancel()) {
                   Toast.show({ type: 'success', text1: 'Delete undone', text2: `${name} was kept` });
                 } else {
-                  Toast.show({ type: 'info', text1: 'Too late to undo', text2: `${name} was already deleted` });
+                  Toast.show({ type: 'info', text1: 'Too late to undo', text2: `The delete of ${name} is already in progress` });
                 }
               },
             });
@@ -157,18 +164,6 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
       setProfile(previous);
       showApiError(error, 'Update failed');
     }
-  };
-
-  const getDangerBadgeVariant = (score: number) => {
-    if (score >= 67) return 'danger';
-    if (score >= 34) return 'warning';
-    return 'success';
-  };
-
-  const getDangerLabel = (score: number) => {
-    if (score >= 67) return 'High Urgency';
-    if (score >= 34) return 'Medium Urgency';
-    return 'Low Urgency';
   };
 
   const renderField = (key: string, value: any, isRequired: boolean = false) => {
@@ -336,8 +331,8 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
           <View style={styles.profileHeader}>
             <View style={styles.nameSection}>
               <Text style={styles.profileName}>{profile.name}</Text>
-              <Badge variant={getDangerBadgeVariant(displayScore)} size="medium">
-                {getDangerLabel(displayScore)}
+              <Badge variant={URGENCY_BADGE_VARIANT[getUrgencyLevel(displayScore)]} size="medium">
+                {URGENCY_LABELS[getUrgencyLevel(displayScore)]}
               </Badge>
             </View>
 

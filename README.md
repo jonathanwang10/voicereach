@@ -254,6 +254,12 @@ configured" error. Restart Expo after editing `.env`; the values are inlined at
 build time.
 
 The app signs in as the demo user automatically and opens on the Record tab.
+If that sign-in fails (the demo user is missing, or Supabase is unreachable), it
+shows a "Can't sign in" screen with the reason and a Retry button instead of the
+tabs. The Profile tab shows the signed-in account's email and last sign-in time.
+**Sign Out** there really ends the session: the app shows a "Signed out" screen
+with a Sign In button, and it **signs in again automatically the next time it
+starts**.
 
 Expo Go from the App Store may only support the latest Expo SDK; this app uses
 SDK 53, so a physical device may need a development build
@@ -290,9 +296,11 @@ as an **HTTP 403** on the upgrade, not a WebSocket close code
 (`websocket_realtime_proxy` in `backend/main.py`). If Supabase Auth itself is
 unreachable, the socket is accepted and closed with 1011.
 
-The app gets its token by signing in as the demo user before its first request
-(`getAuthToken` in `mobile/services/api.ts`) and sends it on every call,
-including the WebSocket handshake. On a 401 the app refreshes the session (or
+The app signs in as the demo user at launch and shows no tabs until that sign-in
+settles (`AuthContext`). Every sign-in shares one in-flight attempt (`autoLogin`
+in `mobile/services/supabase.ts`), so the launch sign-in and a request that needs
+a token never race. The token (`getAuthToken` in `mobile/services/api.ts`) goes
+on every call, including the WebSocket handshake. On a 401 the app refreshes the session (or
 signs in again if the refresh fails) and retries the request once (`authedFetch`).
 
 To call the API by hand, get a token from the repo root with the venv active:
@@ -550,7 +558,9 @@ Listed explicitly so nobody mistakes them for finished work:
   was not rewritten; those keys are treated as compromised and must stay revoked.
 - **One shared demo account, auto-logged-in.** The credentials are hardcoded in
   `mobile/services/supabase.ts`, there is no email verification, and every
-  interaction is recorded as "Demo User" (`api/individuals.py:30-34`).
+  interaction is recorded as "Demo User" (`api/individuals.py:30-34`). Sign Out
+  (Profile tab) ends the session on the device, but the next launch signs in
+  again automatically, so it is not a lock on a shared or lost phone.
 - **No offline support.** The app requires connectivity throughout.
 - Audio is M4A/AAC, **5 s** minimum and 2 min maximum per recording
   (`stopRecording` in `mobile/components/ModernAudioRecorder.tsx`). `docs/PRD.md`

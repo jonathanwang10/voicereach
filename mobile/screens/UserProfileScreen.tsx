@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -8,49 +8,42 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
+import { errorMessage } from '../utils/errorHandler';
 
-interface UserInfo {
-  name: string;
-  email: string;
-  role: string;
-  organization: string;
-  lastLogin: string;
-}
+// The signed-in Supabase account (OD-4). There is no worker profile behind it, so
+// nothing else (name, role, organisation) is shown.
+const formatSignInTime = (iso?: string | null): string => {
+  if (!iso) return 'Not available';
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString();
+};
 
 export default function UserProfileScreen() {
-  const [userInfo] = useState<UserInfo>({
-    name: 'John Street Worker',
-    email: 'john.street@sfoutreach.org',
-    role: 'Street Outreach Worker',
-    organization: 'San Francisco Homeless Outreach',
-    lastLogin: '2024-01-15 09:30 AM',
-  });
+  const { user, signOut } = useAuth();
+  const email = user?.email ?? 'Unknown account';
 
-  const handleLogout = () => {
+  // A real sign-out. The app then shows a "Signed out" screen; it signs in again
+  // automatically the next time it starts (or when the worker taps Sign In).
+  const handleSignOut = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      'Sign Out',
+      'Sign out of this device? The app signs in again automatically the next time the app starts.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
-            // Mock logout functionality
-            Alert.alert('Logged Out', 'You have been successfully logged out.');
-            console.log('User logged out');
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              Alert.alert("Couldn't sign out", errorMessage(error));
+            }
           },
         },
       ]
     );
-  };
-
-  const handleChangePassword = () => {
-    Alert.alert('Change Password', 'Password change functionality would be implemented here');
-  };
-
-  const handleContactSupport = () => {
-    Alert.alert('Contact Support', 'Support contact functionality would be implemented here');
   };
 
   const handleAboutApp = () => {
@@ -68,8 +61,8 @@ export default function UserProfileScreen() {
         <View style={styles.avatarContainer}>
           <Ionicons name="person-circle" size={80} color="#007AFF" />
         </View>
-        <Text style={styles.userName}>{userInfo.name}</Text>
-        <Text style={styles.userRole}>{userInfo.role}</Text>
+        <Text style={styles.userName}>{email}</Text>
+        <Text style={styles.userRole}>Signed in automatically when the app starts</Text>
       </View>
 
       {/* User Information */}
@@ -79,37 +72,19 @@ export default function UserProfileScreen() {
         <View style={styles.infoRow}>
           <Ionicons name="mail" size={20} color="#6B7280" />
           <Text style={styles.infoLabel}>Email:</Text>
-          <Text style={styles.infoValue}>{userInfo.email}</Text>
-        </View>
-        
-        <View style={styles.infoRow}>
-          <Ionicons name="business" size={20} color="#6B7280" />
-          <Text style={styles.infoLabel}>Organization:</Text>
-          <Text style={styles.infoValue}>{userInfo.organization}</Text>
+          <Text style={styles.infoValue}>{email}</Text>
         </View>
         
         <View style={styles.infoRow}>
           <Ionicons name="time" size={20} color="#6B7280" />
-          <Text style={styles.infoLabel}>Last Login:</Text>
-          <Text style={styles.infoValue}>{userInfo.lastLogin}</Text>
+          <Text style={styles.infoLabel}>Last sign-in:</Text>
+          <Text style={styles.infoValue}>{formatSignInTime(user?.last_sign_in_at)}</Text>
         </View>
       </View>
 
       {/* Actions */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Account Actions</Text>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleChangePassword}>
-          <Ionicons name="lock-closed" size={20} color="#007AFF" />
-          <Text style={styles.actionButtonText}>Change Password</Text>
-          <Ionicons name="chevron-forward" size={20} color="#6B7280" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={handleContactSupport}>
-          <Ionicons name="help-circle" size={20} color="#007AFF" />
-          <Text style={styles.actionButtonText}>Contact Support</Text>
-          <Ionicons name="chevron-forward" size={20} color="#6B7280" />
-        </TouchableOpacity>
         
         <TouchableOpacity style={styles.actionButton} onPress={handleAboutApp}>
           <Ionicons name="information-circle" size={20} color="#007AFF" />
@@ -118,11 +93,11 @@ export default function UserProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Logout */}
+      {/* Sign Out */}
       <View style={styles.section}>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleSignOut}>
           <Ionicons name="log-out" size={20} color="#EF4444" />
-          <Text style={styles.logoutButtonText}>Logout</Text>
+          <Text style={styles.logoutButtonText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

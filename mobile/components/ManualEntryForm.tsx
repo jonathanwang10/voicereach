@@ -12,18 +12,16 @@ import {
   validateFieldValue,
 } from '../utils/fieldValues';
 import { LocationData } from '../types';
+import { Category, categoryLabel } from '../utils/categoryPayload';
+import {
+  fieldKeyboardType,
+  fieldPlaceholder,
+  isEssentialCategory,
+  isLongTextCategory,
+  sortCategories,
+} from '../utils/categoryDisplay';
 import { MergeUI } from './MergeUI';
-
-interface Category {
-  id: string;
-  name: string;
-  type: string;
-  is_required: boolean;
-  options?: any;
-  priority: string;
-  urgency_weight: number;
-  auto_trigger: boolean;
-}
+import { CategoryLoadError } from './CategoryLoadError';
 
 interface ManualEntryFormProps {
   onSave: (data: Record<string, any>) => void;
@@ -36,22 +34,16 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   onCancel,
   selectedLocation,
 }) => {
-  const [formData, setFormData] = useState<Record<string, any>>({
-    name: '',
-    height: '',
-    weight: '',
-    gender: '',
-    substance_abuse_history: '',
-    age: '',
-    location: '',
-    notes: '',
-  });
+  // One entry per category, set once the categories load
+  const [formData, setFormData] = useState<Record<string, any>>({});
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   // The backend's reason when a save is rejected, shown in the form (C-16)
   const [saveError, setSaveError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Why the category load failed (C-35); shown with Retry
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   // Blocks a second tap on Save that lands before the re-render disables it (C-13)
   const savingRef = useRef(false);
@@ -67,47 +59,16 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const fetchCategories = async () => {
     try {
       setIsLoading(true);
-      const response = await api.getCategories();
-      
-      // Sort categories with essential categories first in specific order
-      const sortedCategories = (response || []).sort((a, b) => {
-        // Define essential categories order: Name, Height, Weight, Age
-        const essentialOrder = ['name', 'height', 'weight', 'age'];
-        const aIndex = essentialOrder.indexOf(a.name.toLowerCase());
-        const bIndex = essentialOrder.indexOf(b.name.toLowerCase());
-        
-        // If both are essential categories, sort by their defined order
-        if (aIndex !== -1 && bIndex !== -1) {
-          return aIndex - bIndex;
-        }
-        
-        // Essential categories always come first
-        if (aIndex !== -1) return -1;
-        if (bIndex !== -1) return 1;
-        
-        // For non-essential categories, sort by priority then alphabetically
-        const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 };
-        const priorityDiff = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        
-        // Finally sort alphabetically by name
-        return a.name.localeCompare(b.name);
-      });
-      
+      setLoadError(null);
+      const sortedCategories = sortCategories<Category>((await api.getCategories()) || []);
       setCategories(sortedCategories);
-      
       setFormData(emptyForm(sortedCategories));
-      
     } catch (error) {
-      console.error('Failed to fetch categories:', error);
-      Alert.alert('Error', 'Failed to load form fields. Please try again.');
+      setLoadError(errorMessage(error));
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Parse height strings like 5'10, 5 ft 10 in, 70, 70in, 1.78m (optional) into inches
-  // height utils moved to ../utils/height
 
   // One empty value per category field
   const emptyForm = (cats: Category[]): Record<string, any> =>
@@ -122,14 +83,6 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     setPendingData({});
     setShowMergeUI(false);
     setSelectedMatch(null);
-  };
-
-  // Helper to format a category name for display
-  const prettyLabel = (name: string) => {
-    return name
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ');
   };
 
   const handleFieldChange = (fieldName: string, value: string | string[]) => {
@@ -278,7 +231,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           isRequired && styles.requiredLabel,
           error && styles.errorLabel
         ]}>
-          {prettyLabel(category.name)}
+          {categoryLabel(category)}
           {isRequired && ' *'}
         </Text>
 
@@ -317,17 +270,11 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
           ]}
           value={typeof value === 'string' ? value : formatFieldValue(value) ?? ''}
           onChangeText={(text) => handleFieldChange(category.name, text)}
-          placeholder={
-            category.name.trim().toLowerCase() === 'height' 
-              ? "Enter height (e.g., 5'10 or 70)" 
-              : category.name.toLowerCase().includes('additional information')
-                ? "Enter any other relevant information not covered by other categories..."
-                : `Enter ${category.name.toLowerCase()}`
-          }
+          placeholder={fieldPlaceholder(category)}
           placeholderTextColor="#999"
-          keyboardType={category.type === 'number' && category.name.trim().toLowerCase() !== 'height' ? 'numeric' : 'default'}
-          multiline={category.type === 'text' && (category.name.toLowerCase().includes('notes') || category.name.toLowerCase().includes('additional information'))}
-          numberOfLines={category.type === 'text' && (category.name.toLowerCase().includes('notes') || category.name.toLowerCase().includes('additional information')) ? 4 : 1}
+          keyboardType={fieldKeyboardType(category)}
+          multiline={isLongTextCategory(category)}
+          numberOfLines={isLongTextCategory(category) ? 4 : 1}
         />
 
         {error && (
@@ -347,17 +294,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   }
 
   if (categories.length === 0) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>No Categories Found</Text>
-        <Text style={styles.errorText}>
-          No form fields are configured. Please contact an administrator.
-        </Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchCategories}>
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
+    return <CategoryLoadError error={loadError} onRetry={fetchCategories} />;
   }
 
   // Show MergeUI if there's a medium confidence match
@@ -383,17 +320,9 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       </View>
 
       <View style={styles.formContainer}>
-        {/* Essential Information - Name, Height, Weight, Age */}
+        {/* Essential Information - Name, Height, Weight, Age (already in order) */}
         {(() => {
-          const essentialNames = ['name', 'height', 'weight', 'age'];
-          const essentialCategories = categories.filter(cat => 
-            essentialNames.includes(cat.name.toLowerCase())
-          ).sort((a, b) => {
-            const aIndex = essentialNames.indexOf(a.name.toLowerCase());
-            const bIndex = essentialNames.indexOf(b.name.toLowerCase());
-            return aIndex - bIndex;
-          });
-          
+          const essentialCategories = categories.filter(isEssentialCategory);
           if (essentialCategories.length === 0) return null;
           return (
             <View style={styles.section}>
@@ -417,11 +346,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
 
         {/* Other Information - All non-essential categories */}
         {(() => {
-          const essentialNames = ['name', 'height', 'weight', 'age'];
-          const otherCategories = categories.filter(cat => 
-            !essentialNames.includes(cat.name.toLowerCase())
-          );
-          
+          const otherCategories = categories.filter(cat => !isEssentialCategory(cat));
           if (otherCategories.length === 0) return null;
           return (
             <View style={styles.section}>
@@ -514,31 +439,6 @@ const styles = StyleSheet.create({
     borderColor: '#dc3545',
     backgroundColor: '#fff5f5',
   },
-  selectContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  selectOption: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#fff',
-  },
-  selectedOption: {
-    borderColor: '#007AFF',
-    backgroundColor: '#007AFF',
-  },
-  selectOptionText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  selectedOptionText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
   errorText: {
     color: '#dc3545',
     fontSize: 12,
@@ -601,31 +501,6 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     color: '#666',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#fff',
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#dc3545',
-    marginBottom: 10,
-  },
-
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    paddingHorizontal: 25,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
   presetOptionsContainer: {
     marginBottom: 10,

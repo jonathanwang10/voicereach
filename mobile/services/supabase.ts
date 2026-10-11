@@ -1,6 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG } from '../config/api';
+
+// The app uses Supabase for sign-in only; all data goes through the backend (R-1).
 
 // Demo credentials (hardcoded for hackathon)
 const DEMO_EMAIL = 'demo@sfgov.org';
@@ -13,7 +15,6 @@ if (!API_CONFIG.SUPABASE.URL || !API_CONFIG.SUPABASE.ANON_KEY) {
   );
 }
 
-// Create Supabase client with configuration from API config
 export const supabase = createClient(
   API_CONFIG.SUPABASE.URL,
   API_CONFIG.SUPABASE.ANON_KEY,
@@ -22,36 +23,34 @@ export const supabase = createClient(
       storage: AsyncStorage,
       autoRefreshToken: true,
       persistSession: true,
+      detectSessionInUrl: false, // not a browser: there is no URL to read a session from
     },
   }
 );
 
-// Auto-login function
-export const autoLogin = async () => {
+export type AutoLoginResult =
+  | { user: User; session: Session; error?: undefined }
+  | { error: unknown; user?: undefined; session?: undefined };
+
+const signInWithDemoAccount = async (): Promise<AutoLoginResult> => {
   try {
-    // First check if already logged in
+    // Keep a stored session if there is one
     const { data: { session } } = await supabase.auth.getSession();
-    
     if (session) {
       return { user: session.user, session };
     }
-    
-    // Auto sign in with demo credentials
-    console.log('Attempting auto-login with demo credentials...');
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email: DEMO_EMAIL,
       password: DEMO_PASSWORD,
     });
-    
     if (error) {
       console.error('Auto-login failed:', error.message);
       return { error };
     }
-    
-    if (data.session) {
+    if (data.session && data.user) {
       return { user: data.user, session: data.session };
     }
-    
     return { error: new Error('No session created') };
   } catch (error) {
     console.error('Auto-login error:', error);
@@ -59,14 +58,22 @@ export const autoLogin = async () => {
   }
 };
 
-// Get current user
-export const getCurrentUser = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+// One sign-in at a time (C-35): AuthContext at launch and getAuthToken after a 401
+// share the same in-flight attempt instead of racing several signInWithPassword
+// calls. Once it settles the next call tries again, so a failure is not cached.
+let inFlight: Promise<AutoLoginResult> | null = null;
+
+export const autoLogin = (): Promise<AutoLoginResult> => {
+  if (!inFlight) {
+    inFlight = signInWithDemoAccount().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
 };
 
-// Sign out
-export const signOut = async () => {
+// A real sign-out (OD-4). Returns Supabase's error rather than throwing.
+export const signOut = async (): Promise<{ error: Error | null }> => {
   const { error } = await supabase.auth.signOut();
   return { error };
 };

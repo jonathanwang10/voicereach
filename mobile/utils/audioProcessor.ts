@@ -13,15 +13,6 @@ export const AUDIO_SPECS = {
   BYTES_PER_SAMPLE: 2 // 16-bit = 2 bytes per sample
 };
 
-export interface AudioProcessingResult {
-  success: boolean;
-  pcmData?: Uint8Array;
-  base64Data?: string;
-  error?: string;
-  duration?: number;
-  sampleRate?: number;
-}
-
 /**
  * Convert recorded audio file to PCM format for GPT Realtime API
  */

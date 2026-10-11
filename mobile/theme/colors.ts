@@ -81,15 +81,12 @@ export const colors = {
 
   // Special colors
   border: '#E5E7EB',
-  divider: '#E5E7EB',
-  overlay: 'rgba(0, 0, 0, 0.5)',
 
-  // Urgency score colors
+  // Urgency score colours (bands in utils/urgencyScore.getUrgencyLevel)
   urgencyScore: {
     low: '#10B981', // Green
     medium: '#F59E0B', // Yellow/Orange
     high: '#EF4444', // Red
-    critical: '#7C2D12', // Dark Red
   },
 };
 

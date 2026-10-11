@@ -24,33 +24,6 @@ export const theme = {
   // Opacity
   opacity: {
     disabled: 0.5,
-    overlay: 0.7,
-    subtle: 0.1,
-  },
-
-  // Transitions
-  animation: {
-    fast: 150,
-    normal: 250,
-    slow: 350,
-  },
-
-  // Z-index layers
-  zIndex: {
-    base: 0,
-    dropdown: 10,
-    sticky: 20,
-    overlay: 30,
-    modal: 40,
-    popover: 50,
-    toast: 60,
-  },
-
-  // Breakpoints (for responsive design if needed)
-  breakpoints: {
-    sm: 320,
-    md: 768,
-    lg: 1024,
   },
 };
 

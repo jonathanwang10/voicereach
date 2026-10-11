@@ -32,6 +32,8 @@ export const Input: React.FC<InputProps> = ({
   variant = 'outlined',
   style,
   editable = true,
+  onFocus,
+  onBlur,
   ...props
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -63,13 +65,21 @@ export const Input: React.FC<InputProps> = ({
             style={styles.leftIcon}
           />
         )}
+        {/* The caller's props first, so its onFocus/onBlur run alongside (not
+            instead of) the focus styling (C-69) */}
         <TextInput
-          style={inputStyles}
           placeholderTextColor={theme.colors.text.tertiary}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          editable={editable}
           {...props}
+          style={inputStyles}
+          onFocus={e => {
+            setIsFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={e => {
+            setIsFocused(false);
+            onBlur?.(e);
+          }}
+          editable={editable}
         />
         {rightIcon && (
           <TouchableOpacity

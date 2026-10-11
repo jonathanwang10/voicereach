@@ -20,14 +20,13 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../services/supabase';
 import { api, TranscriptionResult } from '../services/api';
 import { ErrorHandler, errorMessage } from '../utils/errorHandler';
 import { theme } from '../theme';
 import Toast from 'react-native-toast-message';
 
 export const ModernRecordScreen: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const audioRecorderRef = useRef<any>(null);
 
   // Recording states

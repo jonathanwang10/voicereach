@@ -212,3 +212,33 @@ it('two taps on Save before a re-render check and save once', async () => {
   expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
   expect(api.saveIndividual).toHaveBeenCalledTimes(1);
 });
+
+// C-35: a load failure says what failed (not "contact an administrator") and Retry works.
+it('a failed category load shows the error and Retry reloads the form', async () => {
+  (api.getCategories as jest.Mock).mockRejectedValueOnce(outage);
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText("Couldn't load form fields"));
+  expect(screen.getByText('Server error. Please try again.')).toBeTruthy();
+  expect(screen.queryByText(/contact an administrator/)).toBeNull();
+  expect(alert).not.toHaveBeenCalled();
+  alert.mockRestore();
+
+  fireEvent.press(screen.getByText('Retry'));
+  await waitFor(() => screen.getByPlaceholderText('Enter name'));
+});
+
+// Carried item: display_name labels and the additional_information multiline box.
+it('labels fields by display_name and makes additional_information multiline', async () => {
+  (api.getCategories as jest.Mock).mockResolvedValueOnce([
+    { id: '1', name: 'name', display_name: 'Name', type: 'text', is_required: true, priority: 'high', urgency_weight: 0, auto_trigger: false },
+    { id: '7', name: 'hiv_status', display_name: 'HIV status', type: 'text', is_required: false, priority: 'high', urgency_weight: 0, auto_trigger: false },
+    { id: '8', name: 'additional_information', type: 'text', is_required: false, priority: 'low', urgency_weight: 0, auto_trigger: false },
+  ]);
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('HIV status'));
+  expect(screen.queryByText('Hiv Status')).toBeNull();
+  expect(screen.getByText('Additional Information')).toBeTruthy();
+  expect(screen.getByPlaceholderText('Enter hiv status')).toBeTruthy();
+  expect(screen.getByPlaceholderText(/other relevant information/).props.multiline).toBe(true);
+});

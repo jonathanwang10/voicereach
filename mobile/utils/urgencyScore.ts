@@ -1,18 +1,30 @@
-export const getUrgencyScoreColor = (score: number): string => {
-  if (score >= 0 && score <= 33) {
-    return '#10B981'; // Green
-  } else if (score >= 34 && score <= 66) {
-    return '#F59E0B'; // Yellow
-  } else {
-    return '#EF4444'; // Red
-  }
+import { colors } from '../theme/colors';
+
+export type UrgencyLevel = 'low' | 'medium' | 'high';
+
+// One set of bands everywhere: 0-33 low (green), 34-66 medium (yellow), 67-100 high
+// (red), as half-open ranges [0, 34), [34, 67), [67, 100] so a non-integer such as
+// 33.5 or 66.5 lands in the band below instead of falling through to red (C-62).
+// A missing or invalid score (NaN, undefined, negative) counts as low.
+export const getUrgencyLevel = (score: number): UrgencyLevel => {
+  if (!(score >= 34)) return 'low';
+  return score < 67 ? 'medium' : 'high';
 };
 
-export const getDisplayUrgencyScore = (individual: { urgency_score: number; urgency_override?: number | null }): number => {
-  return individual.urgency_override !== null && individual.urgency_override !== undefined
-    ? individual.urgency_override
-    : individual.urgency_score;
+export const getUrgencyScoreColor = (score: number): string => colors.urgencyScore[getUrgencyLevel(score)];
+
+export const URGENCY_LABELS: Record<UrgencyLevel, string> = {
+  low: 'Low Urgency',
+  medium: 'Medium Urgency',
+  high: 'High Urgency',
 };
+
+// The Badge variant for each band (same green/yellow/red meaning)
+export const URGENCY_BADGE_VARIANT = { low: 'success', medium: 'warning', high: 'danger' } as const;
+
+// The manual override when one is set (0 counts), else the calculated score.
+export const getDisplayUrgencyScore = (individual: { urgency_score: number; urgency_override?: number | null }): number =>
+  individual.urgency_override != null ? individual.urgency_override : individual.urgency_score;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

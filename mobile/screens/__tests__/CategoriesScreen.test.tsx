@@ -24,8 +24,14 @@ const mockCategories = [
     is_required: false, is_preset: false, urgency_weight: 30, auto_trigger: false,
     options: [{ label: 'High', value: 1 }] },
 ];
+let mockLoadError: string | null = null;
 jest.mock('../../contexts/CategoryContext', () => ({
-  useCategories: () => ({ categories: mockCategories, isLoading: false, refreshCategories: mockRefresh }),
+  useCategories: () => ({
+    categories: mockLoadError ? [] : mockCategories,
+    isLoading: false,
+    error: mockLoadError,
+    refreshCategories: mockRefresh,
+  }),
 }));
 
 import CategoriesScreen from '../CategoriesScreen';
@@ -35,6 +41,7 @@ import { shareCsvExport } from '../../utils/csvExport';
 let alertSpy: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
+  mockLoadError = null;
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   (api.createCategory as jest.Mock).mockResolvedValue({ id: 'new' });
 });
@@ -44,6 +51,19 @@ const chooseType = (screen: ReturnType<typeof render>, label: string) => {
   for (let i = 0; i < order.indexOf(label); i++) fireEvent.press(screen.getByText(order[i]));
   expect(screen.getByText(label)).toBeTruthy();
 };
+
+// C-35: a failed load says so and offers Retry, instead of "0 categories" all session.
+describe('category load failure (C-35)', () => {
+  it('shows the error with Retry, not an empty list', () => {
+    mockLoadError = 'No connection to the server. Check your network and try again.';
+    const screen = render(<CategoriesScreen />);
+    expect(screen.getByText("Couldn't load categories")).toBeTruthy();
+    expect(screen.getByText(/No connection to the server/)).toBeTruthy();
+    expect(screen.queryByText(/^0 categories/)).toBeNull();
+    fireEvent.press(screen.getByText('Retry'));
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('category list (C-36, C-53)', () => {
   it('has no Edit button and no ON/OFF toggles (categories are create-only)', () => {

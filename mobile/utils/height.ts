@@ -49,15 +49,3 @@ export const parseHeightToInches = (raw: any): number | null => {
 
   return null;
 };
-
-export const inchesToFeetInchesString = (inchesTotal: number): string => {
-  const feet = Math.floor(inchesTotal / 12);
-  const inches = Math.round(inchesTotal % 12);
-  return `${feet}'${inches}`;
-};
-
-export const normalizeHeightToStandardString = (raw: any): string | null => {
-  const inches = parseHeightToInches(raw);
-  if (inches === null) return null;
-  return inchesToFeetInchesString(inches);
-};

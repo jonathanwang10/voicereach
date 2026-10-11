@@ -4,7 +4,9 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 jest.mock('../../services/api', () => ({ api: { getIndividualProfile: jest.fn() } }));
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 
+import { StyleSheet } from 'react-native';
 import { MergeUI } from '../MergeUI';
+import { confidenceColor } from '../../utils/duplicateMatches';
 import { api } from '../../services/api';
 import Toast from 'react-native-toast-message';
 
@@ -53,6 +55,21 @@ describe('MergeUI', () => {
     expect(getByText('Potential Duplicate Found')).toBeTruthy();
     expect(getByText('85%')).toBeTruthy();
     expect(getByText('We found a similar individual: John Smith')).toBeTruthy();
+  });
+
+  // C-62: same colour meaning as the voice review list (strong match = green)
+  it('colours a strong match green and a medium match yellow, like voice review', () => {
+    const colourOf = (confidence: number) => {
+      const { getByText } = render(
+        <MergeUI newData={mockNewData} potentialMatch={{ ...mockPotentialMatch, confidence }}
+          existingData={mockExistingData} onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+      );
+      return StyleSheet.flatten(getByText(`${confidence}%`).props.style).color;
+    };
+    expect(colourOf(97)).toBe(confidenceColor(97).text);
+    expect(confidenceColor(97).text).toBe('#155724'); // dark green
+    expect(colourOf(85)).toBe(confidenceColor(85).text);
+    expect(confidenceColor(85).text).toBe('#856404'); // dark yellow
   });
 
   it('shows field comparison for all fields', () => {
