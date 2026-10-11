@@ -10,6 +10,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export const mergeableMatches = (matches?: DuplicateMatch[] | null): DuplicateMatch[] =>
   (matches ?? []).filter(m => UUID_RE.test(m.id) && !isPendingDelete(m.id));
 
+// Both lists as one: one entry per id at its highest confidence, best first.
+export const unionMatches = (...lists: Array<DuplicateMatch[] | null | undefined>): DuplicateMatch[] => {
+  const byId = new Map<string, DuplicateMatch>();
+  lists.forEach(list => (list ?? []).forEach(m => {
+    const seen = byId.get(m.id);
+    if (!seen || m.confidence > seen.confidence) byId.set(m.id, m);
+  }));
+  return Array.from(byId.values()).sort((a, b) => b.confidence - a.confidence);
+};
+
 // The highest-confidence mergeable match, or null.
 export const bestMergeableMatch = (matches?: DuplicateMatch[] | null): DuplicateMatch | null =>
   mergeableMatches(matches).reduce<DuplicateMatch | null>(

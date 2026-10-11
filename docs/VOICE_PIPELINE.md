@@ -71,8 +71,11 @@ never uses that path.
    and history (not skin colour). Scores below 60 are dropped and only the
    single best match is returned.
    If the LLM call fails, or its reply is empty, nested or names none of the
-   candidates, a whole-word name comparison stands in (95 same name, 80 one
-   name's words all in the other, 70 a word in common). If the candidate search
+   candidates, a whole-word name comparison stands in (80 same name, 70 one
+   name's words all in the other, 60 a word in common; capped at 80 because a
+   name alone is never near-certain). When GPT is unavailable the fallback
+   compares names only, so a candidate found only through other fields (an
+   "aka" value, say) isn't offered. If the candidate search
    itself fails (database error), the request still succeeds but sets
    `duplicate_check_failed: true` with no matches.
 6. **Respond.** `{transcription, categorized_data, missing_required,
@@ -98,13 +101,17 @@ never uses that path.
 - Save first decides whether the server's check still applies. If the worker
   changed any field (a misheard name is the common case) or the server set
   `duplicate_check_failed`, the app runs `POST /api/individuals/check-duplicates`
-  on the data it is about to save and uses that answer instead. If that check
-  fails, it asks "Duplicate check unavailable. Save as new anyway?" and saves
+  on the data it is about to save. The answer is added to the server's matches
+  (one entry per person, at the higher confidence), so a match already on
+  screen is never dropped, and the "Potential Matches" list then shows exactly
+  the list Save decided on. If that check fails and no server match is on
+  offer, it asks "Duplicate check unavailable. Save as new anyway?" and saves
   only on "Save as new".
 - A match whose delayed delete is pending (`isPendingDelete`) is never offered.
 - With no match, Save creates a new person. One success toast confirms it.
-- In `MergeUI`, Merge, Create New and Cancel are disabled while a save is in
-  flight, so a double tap can't save twice. If the matched person can't be
+- Save itself ignores a second tap while a save is in flight. In `MergeUI`,
+  Merge, Create New and Cancel are disabled while a save is in flight, so a
+  double tap can't save twice; a handler that rejects is reported once. If the matched person can't be
   loaded (deleted, or a network error), the error state offers Create New as
   well as Cancel. The field choices are built from the loaded person, so their
   existing-only fields are kept on Merge.

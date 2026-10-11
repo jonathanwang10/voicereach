@@ -17,6 +17,8 @@ MAX_LLM_CANDIDATES = 8
 # How many recent people the data-value (aka) scan looks at
 VALUE_SCAN_LIMIT = 200
 CANDIDATE_COLUMNS = "id, name, data"
+# Highest confidence the name-only fallback can give (an identical name)
+FALLBACK_MAX_CONFIDENCE = 80
 
 
 class DuplicateDetectionService:
@@ -330,9 +332,10 @@ Example with ACTUAL UUIDs (use the exact UUIDs from the records above):
         Name-only matching, used when the LLM comparison fails or can't be read.
 
         Scores every candidate and returns the best one (or []):
-        95 same name; 80 one name's words all appear in the other ("John" vs
-        "John Doe"); 70 at least one word in common. Whole words only, so "Al"
-        does not match "Hal".
+        80 same name; 70 one name's words all appear in the other ("John" vs
+        "John Doe"); 60 at least one word in common. Whole words only, so "Al"
+        does not match "Hal". Capped at FALLBACK_MAX_CONFIDENCE: a name alone,
+        with no LLM corroboration, never looks like a near-certain match.
         """
         new_name = new_data.get("name") or new_data.get("Name") or ""
         if not isinstance(new_name, str):
@@ -353,11 +356,11 @@ Example with ACTUAL UUIDs (use the exact UUIDs from the records above):
                 continue
 
             if candidate_name == new_name:
-                confidence = 95
+                confidence = FALLBACK_MAX_CONFIDENCE
             elif new_words <= candidate_words or candidate_words <= new_words:
-                confidence = 80
-            elif new_words & candidate_words:
                 confidence = 70
+            elif new_words & candidate_words:
+                confidence = 60
             else:
                 continue
 

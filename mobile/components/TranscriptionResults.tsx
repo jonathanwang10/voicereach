@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { TranscriptionResult, DuplicateMatch, api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { bestMergeableMatch, confirmSaveAsNew, mergeableMatches } from '../utils/duplicateMatches';
+import { bestMergeableMatch, confirmSaveAsNew, mergeableMatches, unionMatches } from '../utils/duplicateMatches';
 import {
   coerceFieldData,
   coerceFieldValue,
@@ -131,6 +131,13 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   };
 
   const [isSaving, setIsSaving] = useState(false);
+  // Blocks a second tap on Save that lands before the re-render disables it (C-13)
+  const savingRef = useRef(false);
+  // The matches listed under "Potential Matches": the server's at first, then
+  // exactly the list the last Save decided on, so the screen never shows a match
+  // that Save ignored
+  const [shownMatches, setShownMatches] = useState<DuplicateMatch[]>(
+    () => mergeableMatches(result.potential_matches));
 
   // Real types (numbers, height in inches, matched labels, multi-select arrays) with
   // empty fields dropped, so nothing is saved or shown as "null" (C-09, C-14)
@@ -147,7 +154,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     });
 
   const handleSave = async () => {
-    if (isSaving) return;
+    if (isSaving || savingRef.current) return;
     setSaveError(null);
     
     // Validate required fields using categories
@@ -177,24 +184,27 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       return;
     }
 
+    savingRef.current = true;
     setIsSaving(true);
 
     try {
       // The server checked the fields it extracted. If the worker changed them
       // (a misheard name is the usual case), or the server's check failed, check
-      // what will actually be saved (C-05, C-08).
+      // what will actually be saved (C-05, C-08). The re-check adds to the server's
+      // matches, never replaces them: a match the worker has seen stays on offer.
+      // Only real, live people count (no mock ids, no pending deletes).
       const fields = toFields(categorizedData);
-      let matches: DuplicateMatch[] = result.potential_matches ?? [];
+      let matches = mergeableMatches(result.potential_matches);
       if (result.duplicate_check_failed || !sameFields(fields, toFields(result.categorized_data))) {
         try {
-          matches = await api.checkDuplicates(fields);
+          matches = mergeableMatches(unionMatches(await api.checkDuplicates(fields), result.potential_matches));
         } catch {
-          if (!(await confirmSaveAsNew())) return;
-          matches = [];
+          // With a server match still on offer, decide on it; otherwise ask
+          if (matches.length === 0 && !(await confirmSaveAsNew())) return;
         }
       }
+      setShownMatches(matches);
 
-      // A real, live person (not one whose delete is pending) opens the merge UI
       const bestMatch = bestMergeableMatch(matches);
       if (bestMatch) {
         setSelectedMatch(bestMatch);
@@ -213,6 +223,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     } catch (error: any) {
       setSaveError(errorMessage(error));
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -441,8 +452,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
       {/* Potential Matches */}
       {(() => {
-        // Only real, live people (no mock ids, no pending deletes)
-        const validMatches = mergeableMatches(result.potential_matches);
+        // Exactly the list Save decides on (see shownMatches)
+        const validMatches = shownMatches;
 
         return validMatches.length > 0 ? (
           <View style={styles.section}>
@@ -465,9 +476,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
                 match.confidence < 60 && styles.lowConfidenceText
               ]}>
                 {match.confidence}% match
-                {match.confidence >= 95 ? ' (Streamlined confirmation)' : 
-                 match.confidence >= 60 ? ' (Manual review)' : 
-                 ' (Too low - no merge UI)'}
+                {match.confidence >= 60 ? ' (Manual review)' : ' (Too low - no merge UI)'}
               </Text>
             </View>
           ))}

@@ -3,7 +3,7 @@
 // rejection is shown in the form.
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 jest.mock('../../utils/delayedDelete', () => ({ isPendingDelete: jest.fn(() => false) }));
@@ -198,4 +198,17 @@ it('clears the save error as soon as the worker edits a field', async () => {
   await screen.findByText('weight: Value 400 exceeds maximum of 300');
   fireEvent.changeText(screen.getByPlaceholderText('Enter weight'), '200');
   expect(screen.queryByText('weight: Value 400 exceeds maximum of 300')).toBeNull();
+});
+
+// --- fix round 1: a double tap on Save checks and saves once ---------------------------
+
+it('two taps on Save before a re-render check and save once', async () => {
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Save'));
+  fillRequired(screen);
+  const save = screen.getByText('Save');
+  await act(async () => { fireEvent.press(save); fireEvent.press(save); });
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
+  expect(api.saveIndividual).toHaveBeenCalledTimes(1);
 });

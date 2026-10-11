@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { api, DuplicateMatch } from '../services/api';
@@ -53,6 +53,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  // Blocks a second tap on Save that lands before the re-render disables it (C-13)
+  const savingRef = useRef(false);
   const [showMergeUI, setShowMergeUI] = useState(false);
   const [pendingData, setPendingData] = useState<Record<string, any>>({});
   const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
@@ -174,7 +176,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       : null;
 
   const handleSave = async () => {
-    if (isSaving) return;
+    if (isSaving || savingRef.current) return;
     setSaveError(null);
 
     if (!validateForm()) {
@@ -182,6 +184,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       return;
     }
 
+    savingRef.current = true;
     setIsSaving(true);
     try {
       // Real types (numbers, height in inches, matched labels, multi-select arrays);
@@ -218,6 +221,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     } catch (error: any) {
       setSaveError(errorMessage(error));
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   };

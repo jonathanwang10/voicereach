@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 jest.mock('../../utils/delayedDelete', () => ({ isPendingDelete: jest.fn(() => false) }));
@@ -293,4 +293,110 @@ it('clears the save error as soon as the worker edits a field', async () => {
   await findByText('weight: Value 400 exceeds maximum of 300');
   fireEvent.changeText(getByDisplayValue('Ann'), 'Ann B');
   expect(queryByText('weight: Value 400 exceeds maximum of 300')).toBeNull();
+});
+
+// --- fix round 1: the re-check adds to what the worker sees; it never discards it -------
+
+const OTHER_ID = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+const serverJohn = { id: MATCH_ID, name: 'John', confidence: 90 };
+
+it('keeps the shown server match when the re-check of an edited name finds nothing', async () => {
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([]);
+  const { getByText, getByDisplayValue, findByText } = render(
+    <TranscriptionResults
+      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  expect(getByText(/90% match/)).toBeTruthy();
+  fireEvent.changeText(getByDisplayValue('John'), 'Jon');
+  fireEvent.press(getByText('Save'));
+
+  await findByText('Potential Duplicate Found');
+  expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+it('shows exactly the matches it decided on: the union, de-duplicated at the highest confidence', async () => {
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([
+    { id: MATCH_ID, name: 'John', confidence: 95 },
+    { id: OTHER_ID, name: 'Jon B', confidence: 70 },
+  ]);
+  const { getByText, getByDisplayValue, findByText, queryByText, getAllByText } = render(
+    <TranscriptionResults
+      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.changeText(getByDisplayValue('John'), 'Jon');
+  fireEvent.press(getByText('Save'));
+  await findByText('Potential Duplicate Found');
+  expect(getByText('John')).toBeTruthy(); // the best match is the one offered
+  fireEvent.press(getByText('Cancel'));
+
+  await findByText(/95% match/);
+  expect(getByText(/70% match/)).toBeTruthy();
+  expect(queryByText(/90% match/)).toBeNull();
+  expect(getAllByText(/% match/)).toHaveLength(2);
+});
+
+it('decides on the shown server match without asking when the re-check fails', async () => {
+  const { alert } = spyAlert();
+  (api.checkDuplicates as jest.Mock).mockRejectedValueOnce(outage);
+  const { getByText, getByDisplayValue, findByText } = render(
+    <TranscriptionResults
+      result={baseResult({ categorized_data: { Name: 'John', Height: 70, Weight: 150 }, potential_matches: [serverJohn] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.changeText(getByDisplayValue('John'), 'Jon');
+  fireEvent.press(getByText('Save'));
+  await findByText('Potential Duplicate Found');
+  expect(alert).not.toHaveBeenCalled();
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+it('no longer labels a high-confidence match "Streamlined confirmation"', async () => {
+  const { getByText, queryByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: [{ ...serverJohn, confidence: 97 }] })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText(/97% match/));
+  expect(queryByText(/Streamlined/)).toBeNull();
+});
+
+it('two taps on Save before a re-render save once', async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  const save = getByText('Save');
+  await act(async () => { fireEvent.press(save); fireEvent.press(save); });
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.saveIndividual).toHaveBeenCalledTimes(1);
+});
+
+it('two taps on Save run one re-check', async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult({ duplicate_check_failed: true })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  const save = getByText('Save');
+  await act(async () => { fireEvent.press(save); fireEvent.press(save); });
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
+  expect(api.saveIndividual).toHaveBeenCalledTimes(1);
+});
+
+it('a failed merge save shows one error toast (the parent catches; MergeUI adds none)', async () => {
+  (api.saveIndividual as jest.Mock).mockRejectedValueOnce(outage);
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: [serverJohn] })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  fireEvent.press(await findByText('Merge'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  await waitFor(() => expect(Toast.show).toHaveBeenCalled());
+  expect(Toast.show).toHaveBeenCalledTimes(1);
 });

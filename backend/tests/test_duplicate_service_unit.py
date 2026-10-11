@@ -191,7 +191,7 @@ async def test_empty_or_none_llm_reply_falls_back_to_name_matching(reply):
     svc, openai, _ = _service([john])
     openai.compare_individuals = AsyncMock(return_value=reply)
     matches = await svc.find_duplicates({"name": "John Doe"})
-    assert matches == [{"id": john["id"], "name": "John Doe", "confidence": 95}]
+    assert matches == [{"id": john["id"], "name": "John Doe", "confidence": 80}]
 
 
 @pytest.mark.asyncio
@@ -199,7 +199,7 @@ async def test_nested_llm_reply_falls_back_to_name_matching():
     john = _person("John Doe")
     svc, _, _ = _service([john], reply={"scores": {"whatever": 99}})
     matches = await svc.find_duplicates({"name": "John Doe"})
-    assert [(m["id"], m["confidence"]) for m in matches] == [(john["id"], 95)]
+    assert [(m["id"], m["confidence"]) for m in matches] == [(john["id"], 80)]
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,18 @@ def test_fallback_considers_every_candidate_and_returns_the_best():
     partial, exact = _person("John Smith"), _person("John Doe")
     svc = DuplicateDetectionService(MagicMock(), MagicMock())
     matches = svc._fallback_simple_matching({"name": "john doe"}, [partial, exact])
-    assert matches == [{"id": exact["id"], "name": "John Doe", "confidence": 95}]
+    assert matches == [{"id": exact["id"], "name": "John Doe", "confidence": 80}]
+
+
+def test_fallback_scores_are_capped_at_80_without_llm_corroboration():
+    # Name-only evidence never looks like a near-certain (95+) match (fix round 1)
+    from services.duplicate_detection_service import DuplicateDetectionService
+    svc = DuplicateDetectionService(MagicMock(), MagicMock())
+    score = lambda new, cand: (svc._fallback_simple_matching({"name": new}, [_person(cand)]) or [{"confidence": None}])[0]["confidence"]
+    assert score("John Doe", "john doe") == 80   # same name
+    assert score("John", "John Doe") == 70       # one name's words all in the other
+    assert score("John Smith", "John Doe") == 60 # one word in common
+    assert score("Ann", "Bob") is None
 
 
 def test_fallback_does_not_match_a_name_inside_another_word():

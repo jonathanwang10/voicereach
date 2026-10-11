@@ -161,12 +161,13 @@ it was removed on purpose and must not come back.
    tokens matched plus height/weight closeness.
 2. GPT-4o scores the top 8 0-100. Matches below 60 are dropped; only the best is
    returned. If the LLM fails or its reply can't be read, a whole-word name
-   comparison stands in. If the candidate search fails, `check-duplicates`
+   comparison stands in (at most 80, names only). If the candidate search fails, `check-duplicates`
    returns 500 and `/api/transcribe` sets `duplicate_check_failed`; the app then
    asks "Duplicate check unavailable. Save as new anyway?" instead of saving a
    possible duplicate silently.
 3. Voice review re-checks before saving when the worker edited any field (or the
-   server's check failed); manual entry always checks. Matches whose delayed
+   server's check failed) and decides on the re-check's matches together with
+   the server's; manual entry always checks. Matches whose delayed
    delete is pending are never offered.
 4. The app opens the same field-by-field merge UI for any match. There is no
    automatic merge at 95% or anywhere else. Its buttons are disabled while a save

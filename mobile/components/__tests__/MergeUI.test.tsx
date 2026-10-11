@@ -2,9 +2,11 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('../../services/api', () => ({ api: { getIndividualProfile: jest.fn() } }));
+jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 
 import { MergeUI } from '../MergeUI';
 import { api } from '../../services/api';
+import Toast from 'react-native-toast-message';
 
 describe('MergeUI', () => {
   const mockNewData = {
@@ -227,5 +229,18 @@ describe('MergeUI', () => {
       { ...mockNewData, medical_conditions: ['Diabetes'] },
       mockPotentialMatch.id
     );
+  });
+
+  // fix round 1: a rejecting handler is reported once, never left unhandled
+  it('shows one error toast when onMerge rejects, and the buttons work again', async () => {
+    const onMerge = jest.fn(async () => { throw new Error('Server error. Please try again.'); });
+    const { getByText } = render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch} existingData={mockExistingData}
+        onMerge={onMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+    );
+    await act(async () => { fireEvent.press(getByText('Merge')); });
+    expect(Toast.show).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByText('Create New'));
+    expect(mockOnCreateNew).toHaveBeenCalledTimes(1);
   });
 });

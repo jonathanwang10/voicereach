@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { api } from '../services/api';
+import { showApiError } from '../utils/errorHandler';
 import { formatFieldValue, isEmptyValue } from '../utils/fieldValues';
 
 interface PotentialMatch {
@@ -97,6 +98,10 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     setIsSubmitting(true);
     try {
       await action();
+    } catch (e) {
+      // Both parents catch and report their own failures; this only stops a
+      // rejecting handler from becoming an unhandled rejection, and says so once
+      showApiError(e, 'Save failed');
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
