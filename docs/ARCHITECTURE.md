@@ -38,7 +38,8 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
 
 ### Infrastructure
 - **Database:** one Supabase project, set up by running `supabase/schema.sql`
-  once in the SQL Editor; there is no migration chain
+  in the SQL Editor; there is no migration chain, and re-running it is safe
+  (it also upgrades a database made by an older version)
 - **Storage:** none. Audio is posted inline as base64 and only touches disk as a
   temp file during transcription
 - **Hosting:** runs locally. `railway.toml` and the root `main.py` remain for a
@@ -55,30 +56,30 @@ categories (
     display_name TEXT,
     type TEXT,               -- text/number/single_select/multi_select/date/location
     options JSONB,           -- [{label, value}] for single_select, [text] for multi_select
-    priority TEXT,           -- high/medium/low (display only)
-    urgency_weight INTEGER,  -- only meaningful for number/single_select
-    auto_trigger BOOLEAN,    -- can pin the urgency score to 100
-    is_required BOOLEAN,
-    is_preset BOOLEAN,
-    is_active BOOLEAN,
-    created_at, updated_at TIMESTAMPTZ
+    priority TEXT NOT NULL,  -- high/medium/low (display only)
+    urgency_weight INTEGER NOT NULL,  -- only meaningful for number/single_select
+    auto_trigger BOOLEAN NOT NULL,    -- can pin the urgency score to 100
+    is_required BOOLEAN NOT NULL,
+    is_preset BOOLEAN NOT NULL,
+    is_active BOOLEAN NOT NULL,
+    created_at, updated_at TIMESTAMPTZ NOT NULL
 )
 
 individuals (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
     data JSONB,              -- every field, keyed by category name
-    urgency_score INTEGER,   -- calculated
-    urgency_override INTEGER,-- manual, shown instead of the score when set
+    urgency_score INTEGER NOT NULL,  -- calculated
+    urgency_override INTEGER,-- manual (CHECK 0-100), shown instead of the score when set
     last_location JSONB,     -- {latitude, longitude, address}
-    created_at, updated_at TIMESTAMPTZ
+    created_at, updated_at TIMESTAMPTZ NOT NULL
 )
 
 interactions (
     id UUID PRIMARY KEY,
-    individual_id UUID REFERENCES individuals ON DELETE CASCADE,
+    individual_id UUID NOT NULL REFERENCES individuals ON DELETE CASCADE,
     user_id TEXT,            -- the Supabase user id, stored as text
-    user_name TEXT,          -- always "Demo User" today
+    user_name TEXT NOT NULL, -- always "Demo User" today
     transcription TEXT,
     audio_url TEXT,
     location JSONB,
@@ -95,9 +96,10 @@ individual_embeddings (
 )
 ```
 
-Row-level security is enabled on all four tables with one policy each: the
-`authenticated` role may read and write every row. The backend's service key
-bypasses RLS. The app no longer queries tables directly: its Supabase client is
+Row-level security is enabled on all four tables with **no policies**, so the
+anon key and users' own tokens can't read or write any row directly. The
+backend's service key bypasses RLS. A `set_updated_at` trigger maintains
+`updated_at` on `categories`, `individuals` and `individual_embeddings`. The app no longer queries tables directly: its Supabase client is
 used only to sign in, and every read and write goes through the backend routes
 below.
 
@@ -230,7 +232,8 @@ mobile/
 ## Implementation patterns
 
 ### Errors
-Every non-2xx body is `{"detail": string}`: 400 for validation, 401 for auth, 404
+Every non-2xx body is `{"detail": string}`: 400 for validation, 401 for auth,
+403 for a user outside `ALLOWED_USER_EMAILS` (when set), 404
 for missing records, 409 for a duplicate category name. Request-model failures
 (for example, a save without `height`) are FastAPI's standard 422, whose `detail`
 is a list of `{loc, msg, type}`. Each route re-raises `HTTPException` first, so a
@@ -311,7 +314,9 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 1. No offline support.
 2. Categories are effectively create-only (edits are local; weight and
    auto-trigger aren't sent on create).
-3. One shared demo account; every signed-in user can read and write every row.
+3. One shared demo account. Direct table access is closed (RLS, no policies),
+   but every user the backend accepts can read and write every record through
+   the API; `ALLOWED_USER_EMAILS` can limit which accounts that is.
 4. Built and demoed on iOS; Android has had little testing.
 5. English only.
 6. Two-minute recording limit, enforced in the app.

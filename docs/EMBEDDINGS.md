@@ -138,7 +138,7 @@ search time grows linearly with the number of people.
 
 ```
 Name: John Doe Age: 45 years old Height: 72 inches Weight: 180 pounds Gender: Male
-Substance abuse: Moderate Medical conditions: Diabetes Veteran status: No Urgency score: 52
+Substance abuse: Moderate Medical conditions: Diabetes Veteran status: No Urgency score: 23
 ```
 
 The `embedding_text` column stores a readable summary alongside the vector. It
@@ -213,5 +213,6 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 ## Privacy
 
 Embeddings and `embedding_text` are derived from personal and medical data and
-are covered by the same row-level security as the rest of the database: any
-signed-in user can read them. Treat them as sensitive.
+are covered by the same row-level security as the rest of the database (on,
+with no policies): nobody can read them directly, only through the backend,
+which any accepted user can call. Treat them as sensitive.

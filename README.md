@@ -117,33 +117,67 @@ You need Python 3.11, a current Node.js LTS, a Supabase project and an OpenAI AP
 ### 1. Database
 
 1. Create a new Supabase project.
-2. In the SQL Editor, run **`supabase/schema.sql`** once. That single file is the
-   whole schema: tables, indexes, preset categories, six demo individuals with
-   one seed interaction each, and the row-level security policies. There is no
-   migration chain.
+2. In the SQL Editor, run **`supabase/schema.sql`**. That single file is the
+   whole schema: tables, constraints, indexes, an `updated_at` trigger, preset
+   categories, six demo individuals with one seed interaction each, and
+   row-level security switched on with **no policies**. There is no migration
+   chain, and the file is safe to run again: it never duplicates the seed
+   people or adds seed history to anyone who already has some.
 3. In **Authentication → Users → Add user**, create `demo@sfgov.org` with
    password `demo123456` and tick **Auto Confirm User**. The app signs in as
    this user; without it every request fails.
-4. In **Authentication** settings, disable new user sign-ups. The demo
-   credentials are public in this repo, so anyone who has them can sign in and
-   read every row.
+4. In **Authentication** settings, disable new user sign-ups and keep
+   anonymous sign-ins disabled. The backend accepts any user of the project,
+   and the demo credentials are public in this repo. To restrict it to named
+   accounts as well, set `ALLOWED_USER_EMAILS` in `backend/.env` (see below).
+
+Only the backend reads or writes the tables, using the service key, which
+bypasses row-level security. With RLS on and no policies, the anon key and
+every user's own token get nothing: a direct `select` returns no rows, and
+inserts, updates and deletes are refused. The app uses Supabase for sign-in
+only.
 
 Audio is sent to the backend inline (base64), so no Storage bucket is needed.
 
 #### Upgrading a database created from an older schema.sql
 
-Older versions of `schema.sql` granted the `anon` role full access. To switch an
-existing database to the signed-in-only policies, run:
+Run the current `supabase/schema.sql` again. On an existing database it:
+
+- drops every policy earlier versions created, leaving RLS on with none;
+- adds the `NOT NULL` and `CHECK (urgency_override BETWEEN 0 AND 100)`
+  constraints, after filling NULLs with the column defaults, clamping
+  out-of-range overrides, and deleting interactions that have no individual
+  (no route can reach those);
+- adds the `updated_at` trigger and swaps the old indexes for the ones the
+  queries use;
+- recomputes the urgency score of a seed person only while their data is still
+  exactly the seed data, and inserts nothing that already exists.
+
+The SQL Editor may ask you to confirm because the file contains `DROP` and
+`DELETE` statements. If you only want to close direct table access, this is
+the part that does it:
 
 ```sql
-DROP POLICY "demo all categories"  ON categories;
-DROP POLICY "demo all individuals" ON individuals;
-DROP POLICY "demo all inter"       ON interactions;
-DROP POLICY "demo all embeddings"  ON individual_embeddings;
+DROP POLICY IF EXISTS "Allow all operations on categories"   ON categories;
+DROP POLICY IF EXISTS "Allow all operations on individuals"  ON individuals;
+DROP POLICY IF EXISTS "Allow all operations on interactions" ON interactions;
+DROP POLICY IF EXISTS "demo all categories"  ON categories;
+DROP POLICY IF EXISTS "demo all individuals" ON individuals;
+DROP POLICY IF EXISTS "demo all inter"       ON interactions;
+DROP POLICY IF EXISTS "demo all embeddings"  ON individual_embeddings;
+DROP POLICY IF EXISTS "signed-in users: categories"   ON categories;
+DROP POLICY IF EXISTS "signed-in users: individuals"  ON individuals;
+DROP POLICY IF EXISTS "signed-in users: interactions" ON interactions;
+DROP POLICY IF EXISTS "signed-in users: embeddings"   ON individual_embeddings;
 ```
 
-then run the four `CREATE POLICY "signed-in users: …"` statements at the end of
-`supabase/schema.sql`.
+Afterwards, this should return no rows:
+
+```sql
+SELECT tablename, policyname FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename IN ('categories', 'individuals', 'interactions', 'individual_embeddings');
+```
 
 ### 2. Backend
 
@@ -170,6 +204,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_KEY` | All server-side database access (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
+| `ALLOWED_USER_EMAILS` | Optional. Comma-separated emails (case-insensitive) allowed to use the API, e.g. `demo@sfgov.org`. When set, any other signed-in user gets a 403. Unset means every user of the Supabase project is accepted. Read on every request. |
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
@@ -219,9 +254,13 @@ cd backend && python scripts/backfill_embeddings.py
 Every `/api/*` route except `/health` requires
 `Authorization: Bearer <Supabase access token>`. The backend checks the token
 with Supabase Auth (`auth.get_user`) and caches a valid result for 60 seconds
-(`backend/api/auth.py`). There is no fallback user: a missing or invalid token
-gets a 401. The realtime WebSocket checks the same header during the handshake
-and closes with code 1008 if it is missing or invalid (`backend/main.py:123-131`).
+(`backend/api/auth.py`). There is no fallback user: a missing, empty or invalid
+token gets a 401. If `ALLOWED_USER_EMAILS` is set, a valid user whose email is
+not on it gets a 403 `{"detail": "This account is not allowed to use this
+service"}`; the list is checked on every request, cached tokens included. The
+realtime WebSocket checks the same header during the handshake and closes with
+code 1008 if the token is missing or invalid, or the user isn't allowed
+(`websocket_realtime_proxy` in `backend/main.py`).
 
 The app gets its token by signing in as the demo user before its first request
 (`getAuthToken` in `mobile/services/api.ts`) and sends it on every call,
@@ -408,10 +447,11 @@ These are still true:
 
 Listed explicitly so nobody mistakes them for finished work:
 
-- **Row-level security allows any signed-in user to read and write all rows.**
-  The anon key alone sees nothing, but there is no per-agency or per-user
-  scoping. A real deployment needs it — this is sensitive personal and medical
-  data.
+- **No per-agency or per-user scoping.** Row-level security now blocks all
+  direct table access, but every user the backend accepts (any user of the
+  Supabase project, or those in `ALLOWED_USER_EMAILS`) can read and change
+  every record through the API. A real deployment needs scoping — this is
+  sensitive personal and medical data.
 - **Keys were once committed to git history** (in 2025: an OpenAI key and
   Supabase service-role keys for a project that has since been deleted). History
   was not rewritten; those keys are treated as compromised and must stay revoked.

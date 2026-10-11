@@ -163,6 +163,35 @@ class TestGetInteractions:
         assert response.status_code == 200
         data = response.json()
         assert data["interactions"] == []
+
+    def test_get_interactions_tolerates_null_user_name(self, client, mock_supabase):
+        """C-55: one NULL user_name (e.g. a row written outside the backend) must not 500 the route."""
+        individual_id = str(uuid4())
+        mock_select = MagicMock()
+        mock_supabase.table.return_value.select.return_value = mock_select
+        mock_select.eq.return_value.order.return_value.range.return_value.execute.return_value.data = [{
+            "id": str(uuid4()),
+            "individual_id": individual_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "user_name": None,
+            "transcription": None,
+            "location": None,
+            "changes": {"height": 70},
+        }]
+
+        response = client.get(
+            f"/api/individuals/{individual_id}/interactions",
+            headers={"Authorization": "Bearer test-token"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["interactions"][0]["user_name"] is None
+
+    def test_interaction_summary_allows_null_user_name(self):
+        from db.models import InteractionSummary
+        summary = InteractionSummary(id=uuid4(), created_at=datetime.now(timezone.utc), user_name=None,
+                                     location=None, has_transcription=False)
+        assert summary.user_name is None
     
     def test_get_interactions_chronological_order(self, client, mock_supabase):
         """Test interactions are returned in chronological order"""

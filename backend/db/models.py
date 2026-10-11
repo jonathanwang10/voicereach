@@ -70,7 +70,7 @@ class InteractionSummary(BaseModel):
     """Brief interaction info for lists"""
     id: UUID
     created_at: datetime
-    user_name: str
+    user_name: Optional[str]  # NOT NULL in schema.sql; Optional so one bad row can't 500 the route
     location: Optional[Dict[str, Any]]
     has_transcription: bool
 
@@ -79,7 +79,7 @@ class InteractionDetail(BaseModel):
     """Full interaction details with changes"""
     id: UUID
     created_at: datetime
-    user_name: str
+    user_name: Optional[str]  # NOT NULL in schema.sql; Optional so one bad row can't 500 the route
     transcription: Optional[str]
     location: Optional[Dict[str, Any]]  # Full location with complete address
     changes: Dict[str, Any]  # Only fields that changed in this interaction

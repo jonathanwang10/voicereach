@@ -147,8 +147,10 @@ the assistant puts what we already know in front of the worker when they need it
   with the interaction.
 - **"Can it work offline?"** No. It needs a connection throughout.
 - **"Is it secure enough for real client data?"** Not yet. Every request needs a
-  signed-in session, but any signed-in user can read every record. A real
-  deployment needs per-agency access rules and a proper account system.
+  signed-in session and the database refuses direct access, but every account
+  the backend accepts can read every record through the API (an email
+  allowlist can narrow that). A real deployment needs per-agency access rules
+  and a proper account system.
 - **"Why FastAPI rather than Supabase alone?"** It keeps the OpenAI calls, the
   prompts and the API key on a server we control.
 - **"How do you handle duplicates?"** GPT-4o scores likely candidates 0-100, and

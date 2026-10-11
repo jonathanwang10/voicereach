@@ -33,6 +33,7 @@ Environment variables (`backend/.env`):
 | `SUPABASE_SERVICE_KEY` | All database access from the routes and services (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Only `api/auth.py`, to verify users' access tokens |
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
+| `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset = any user of the project |
 
 Then: API at `http://localhost:8001`, interactive docs at `/docs`, health check
 at `/health`.
@@ -67,8 +68,11 @@ tests/               Offline pytest suite; tests/integration/ needs a live backe
 Every `/api/*` route depends on `get_current_user` (`api/auth.py`), which expects
 `Authorization: Bearer <Supabase access token>` and checks it with
 `auth.get_user`. Valid tokens are cached for 60 seconds. Missing or invalid
-tokens get a 401; there is no demo fallback. The realtime WebSocket checks the
-same header before accepting and closes with code 1008 otherwise. Only `GET
+tokens get a 401; there is no demo fallback. When `ALLOWED_USER_EMAILS` is set
+(comma-separated, case-insensitive, read on every call), a valid user whose
+email isn't listed gets a 403 `{"detail": "This account is not allowed to use
+this service"}`; only allowed users are cached. The realtime WebSocket checks
+the same header before accepting and closes with code 1008 otherwise. Only `GET
 /health` and `GET /` are public. The root README shows how to get a token for
 curl.
 
@@ -136,8 +140,9 @@ escaped `ILIKE` in SQL; data matching is in memory (fine to about 1-5k people).
 
 **`PUT /api/individuals/{id}/urgency-override`** — Body:
 `{"urgency_override": 0-100 or null}`. Returns `urgency_score`,
-`urgency_override` and `display_score`; 404 if absent. It no longer touches
-`updated_at`.
+`urgency_override` and `display_score`; 404 if absent. It doesn't write
+`updated_at` itself; the database trigger `set_updated_at` (in
+`supabase/schema.sql`) sets it on every update.
 
 **`DELETE /api/individuals/{id}`** — Deletes the person (FK cascades remove their
 interactions and embeddings) and clears the assistant context cache. Returns
@@ -203,6 +208,12 @@ The pipeline end to end is in [`docs/VOICE_PIPELINE.md`](../docs/VOICE_PIPELINE.
   `is_active`, timestamps.
 - **`individual_embeddings`** — `individual_id` (unique), `embedding_data`
   (JSONB array of 3072 floats), `embedding_text`, timestamps.
+
+Row-level security is on with no policies, so only the service key can touch
+these tables. A `set_updated_at` trigger maintains `updated_at` on
+`individuals`, `categories` and `individual_embeddings`; `urgency_override`
+has a 0-100 `CHECK`, and `urgency_score`, `interactions.individual_id` and
+`interactions.user_name` are `NOT NULL`.
 
 ## Testing
 
