@@ -181,7 +181,6 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON individual_embeddings
 
 -- ---------------------------------------------------------------------------
 -- Indexes. Only the ones a query actually uses:
---   - individuals(name): ORDER BY name in the list endpoint
 --   - interactions(individual_id, created_at DESC): history and "latest
 --     interaction per person" (last seen); also serves individual_id lookups
 -- individual_embeddings(individual_id) is already indexed by its UNIQUE.
@@ -191,8 +190,9 @@ DROP INDEX IF EXISTS idx_individuals_urgency;       -- urgency sorting happens i
 DROP INDEX IF EXISTS idx_embeddings_individual;     -- duplicate of the UNIQUE index
 DROP INDEX IF EXISTS idx_interactions_individual;   -- prefix of the composite below
 DROP INDEX IF EXISTS idx_interactions_created;      -- superseded by the composite below
+DROP INDEX IF EXISTS idx_individuals_name;          -- names are sorted and matched in Python;
+                                                    -- a plain b-tree can't serve ILIKE
 
-CREATE INDEX IF NOT EXISTS idx_individuals_name       ON individuals(name);
 CREATE INDEX IF NOT EXISTS idx_interactions_latest    ON interactions(individual_id, created_at DESC);
 
 -- ---------------------------------------------------------------------------

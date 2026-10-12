@@ -175,6 +175,7 @@ def test_latest_interaction_index():
     "idx_embeddings_individual",   # duplicate of the UNIQUE (individual_id) index
     "idx_interactions_individual", # leading column of the composite index
     "idx_interactions_created",    # every interactions query filters by individual_id first
+    "idx_individuals_name",        # names are sorted and matched in Python; a b-tree can't serve ILIKE
 ])
 def test_unused_indexes_dropped(index):
     assert f"DROP INDEX IF EXISTS {index};" in FLAT
