@@ -198,6 +198,35 @@ describe('list reloads', () => {
     expect(queryByText('Loading individuals...')).toBeNull();
   });
 
+  // Minor 5: one toast at a time, so a refresh error would replace "Tap to undo".
+  it('a failed refresh shows no toast while a delete is waiting for undo', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
+    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    act(() => { scheduleDelete('someone-else', { delayMs: 60_000 }); });
+    refocus();
+    await waitFor(() => expect(api.searchIndividuals).toHaveBeenCalledTimes(2));
+    await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+    expect(Toast.show).not.toHaveBeenCalled();
+    expect(getByText('Ann Lee')).toBeTruthy();
+  });
+
+  it('a failed search refresh shows no toast while a delete is waiting for undo', async () => {
+    (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+    (api.semanticSearchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
+    const { getByText, getByPlaceholderText } = render(
+      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    await waitFor(() => getByText('Ann Lee'));
+    fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledTimes(1));
+    (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
+    act(() => { scheduleDelete('someone-else', { delayMs: 60_000 }); });
+    refocus();
+    await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledTimes(2));
+    await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+    expect(Toast.show).not.toHaveBeenCalled();
+  });
+
   it('a refresh shows new data without a full-screen spinner', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann])
       .mockResolvedValue([{ ...ann, name: 'Ann Updated' }]);

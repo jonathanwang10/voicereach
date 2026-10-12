@@ -80,6 +80,11 @@ export function isPendingDelete(id: string): boolean {
   return pending.has(id);
 }
 
+// True while any delete is pending (in its undo window or in flight).
+export function hasPendingDeletes(): boolean {
+  return pending.size > 0;
+}
+
 export function subscribePendingDeletes(cb: Listener): () => void {
   listeners.add(cb);
   return () => {

@@ -78,8 +78,9 @@ backend reads and writes the tables with the service key.
 **Deleting a person** (profile screen, trash icon) has a short undo window. The
 person disappears from Search at once and a "Tap to undo" toast shows for about
 5 seconds; the real `DELETE /api/individuals/{id}` is sent only when that
-window ends (`mobile/utils/delayedDelete.ts`). Undo cancels it. If the DELETE
-fails, the person reappears in Search and an error toast says so. The pending
+window ends (`mobile/utils/delayedDelete.ts`). Undo cancels it. While a delete
+is pending, Search doesn't toast a failed background refresh, so the undo toast
+stays up. If the DELETE fails, the person reappears in Search and an error toast says so. The pending
 delete lives only in memory, so **if the app is closed or killed within those
 5 seconds, the person is not deleted.** Once sent, the delete is permanent: it
 cascades to the person's interactions and embedding.

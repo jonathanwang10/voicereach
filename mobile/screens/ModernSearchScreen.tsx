@@ -21,7 +21,7 @@ import { FadeInView } from '../components/ui/AnimatedView';
 import { theme } from '../theme';
 import { formatLastSeen, getUrgencyLevel, UrgencyLevel, URGENCY_BADGE_VARIANT, URGENCY_LABELS } from '../utils/urgencyScore';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { isPendingDelete, subscribePendingDeletes } from '../utils/delayedDelete';
+import { hasPendingDeletes, isPendingDelete, subscribePendingDeletes } from '../utils/delayedDelete';
 
 // The backend's display score: the override if set, else the calculated score
 const scoreOf = (r: SearchResult): number => r.display_score ?? r.urgency_override ?? r.urgency_score ?? 0;
@@ -104,7 +104,8 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     } catch (error) {
       if (reqId !== listSeq.current) return;
       if (background) {
-        showApiError(error, "Couldn't refresh the list");
+        // One toast at a time: never replace a delete's "Tap to undo" (Minor 5)
+        if (!hasPendingDeletes()) showApiError(error, "Couldn't refresh the list");
       } else {
         setListError(errorMessage(error));
       }
@@ -132,7 +133,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
     } catch (error) {
       if (!isCurrent()) return;
       if (background) {
-        showApiError(error, "Couldn't refresh the search results");
+        if (!hasPendingDeletes()) showApiError(error, "Couldn't refresh the search results");
       } else {
         setSearchError(errorMessage(error));
       }
