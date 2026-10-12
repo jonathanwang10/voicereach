@@ -329,7 +329,8 @@ class IndividualService:
 
         - A search term goes through `match_individual` (services/search_matching.py):
           the name, or any string value / list item in `data`, never keys. One
-          table read, matched in Python (demo scale, fine to about 1-5k people).
+          table read, matched in Python (demo scale; one read returns at most Supabase's
+          API row limit, 1000 by default).
         - `last_seen`: latest interaction, else `created_at` (fetch_last_seen).
         - Sort: name matches first, then value matches; within each tier by
           `sort_by` (`urgency_score` means the display score). Then paginate.

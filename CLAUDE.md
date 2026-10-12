@@ -24,16 +24,21 @@ python3.11 -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt -r requirements-dev.txt
 cd backend && python -m uvicorn main:app --reload --port 8001   # always port 8001; add --host 0.0.0.0 for a physical phone
 python -m pytest                                # from the repo root; runs offline
+ruff check backend --select F,E9                # the lint CI runs
 cd mobile && npx jest && npx tsc --noEmit
 ```
 
 Backend needs `backend/.env` (see `backend/.env.example`); the app needs
-`mobile/.env` (see `mobile/.env.example`). Integration tests in
-`backend/tests/integration/` are skipped unless `VOICEREACH_INTEGRATION=1`.
+`mobile/.env` (see `mobile/.env.example`). The one live test,
+`backend/tests/integration/test_live_smoke.py`, is skipped unless both
+`VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN` are set. The app is iOS-only and
+`mobile/ios/` is committed (prebuilt), so an `app.json` change reaches the build
+only after `npx expo prebuild --platform ios`.
 
 ## Rules the code enforces
 
-- **Required fields:** `name`, `height`, `weight` (`backend/db/models.py:29`).
+- **Required fields:** `name`, `height`, `weight` (`SaveIndividualRequest` in
+  `backend/db/models.py`).
   Height is stored in inches; weight in pounds; both 0-300.
 - **Do not reintroduce `skin_color`.** It was removed on purpose (it was a scored
   field with different urgency values per skin tone). See `supabase/schema.sql`.
@@ -45,17 +50,23 @@ Backend needs `backend/.env` (see `backend/.env.example`); the app needs
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and
   `single_select` categories can have a weight or auto-trigger. Number →
   `min(value/300, 1) * weight`; select → `option_value * weight`; final score is
-  `int(sum / total_weight * 100)`. Auto-trigger pins 100 only when the chosen
-  select option's value is > 0 (or a number is non-zero). An `urgency_override`
-  is displayed instead of the score, and an override of 0 still counts.
-- **Duplicates:** GPT-4o scores up to 3 candidates; matches below 60 are dropped
-  and only the best is returned. There is no 95% auto-merge: every match opens the
-  merge UI. A merge replaces the whole `data` JSONB with what the client sends.
+  `int(sum / total_weight * 100)`, where `total_weight` sums the weight of every
+  weighted number/single_select category, so a missing value counts as 0.
+  Auto-trigger pins 100 only when the chosen select option's value is > 0 (or a
+  number is non-zero). An `urgency_override` is displayed instead of the score,
+  and an override of 0 still counts.
+- **Duplicates:** candidates are pre-ranked (name tokens, then height/weight
+  closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
+  are dropped and the backend returns only the best. Voice review may add a
+  re-check's match to the server's (`unionMatches`). There is no 95% auto-merge:
+  every match opens the merge UI. A merge replaces the whole `data` JSONB with
+  what the client sends.
 - **Auth:** every `/api/*` route except `/health`, and the realtime WebSocket,
   needs `Authorization: Bearer <Supabase access token>` (`backend/api/auth.py`).
-  The app auto-signs in as demo@sfgov.org. Don't add unauthenticated routes.
-- **Paid endpoints and the realtime proxy:** routes that call OpenAI take
-  `Depends(rate_limit(...))` (`backend/services/rate_limit.py`) instead of
+  The app auto-signs in as demo@sfgov.org. An optional `ALLOWED_USER_EMAILS`
+  allowlist gives other users a 403. Don't add unauthenticated routes.
+- **Paid endpoints and the realtime proxy:** routes that call OpenAI in the
+  request take `Depends(rate_limit(...))` (`backend/services/rate_limit.py`) instead of
   `get_current_user`, and large bodies are capped in `BODY_LIMITS` (`backend/main.py`).
   The proxy forwards only the client events in `services/realtime_guard.py`; database
   text goes to the model only as a delimited `user` item (`build_context_item`), never

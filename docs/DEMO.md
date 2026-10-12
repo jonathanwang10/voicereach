@@ -6,6 +6,12 @@ A 5-6 minute walkthrough of the app.
 
 - Complete the README's Setup: Supabase project with `supabase/schema.sql` run
   and the demo user created, backend running on port 8001, `mobile/.env` filled in.
+- **Generate the embeddings** (README Setup step 4). The seed people start
+  without them, so the semantic search in step 4 below finds nothing until you
+  run, from the repo root with the venv active:
+  `cd backend && python scripts/backfill_embeddings.py`
+  (or `POST /api/embeddings/generate-all` with a token). Run it again after
+  re-running `schema.sql` or upgrading.
 - Open the app in the iOS simulator (or on a phone with
   `EXPO_PUBLIC_API_BASE_URL` set to your machine's LAN address).
 - The seed data includes six people, among them **John Doe** (45, 6 ft, 180 lb,
@@ -79,7 +85,9 @@ encounter is logged as an interaction with only the fields that changed.
    - Search for "John". Show the results with their urgency scores and
      green/yellow/red colouring.
    - Try a descriptive search such as "veteran with heart disease" to show
-     semantic search (this needs embeddings; see `docs/EMBEDDINGS.md`).
+     semantic search (James Brown is the seeded veteran with heart disease; it
+     needs the embeddings from "Before the demo", as the text match alone finds
+     nobody).
 2. **Profile**
    - Open John Doe. Show the fields, the map of the last known location and the
      interaction history, including the encounter just recorded.
@@ -139,6 +147,12 @@ the assistant puts what we already know in front of the worker when they need it
 2. Use the seeded people so search and the assistant have something to find.
 3. If a live call fails, say so and move on; have screenshots ready.
 4. Keep to time.
+5. **Resetting between runs.** The merge changes John Doe, and re-running
+   `schema.sql` doesn't undo it (seed people are matched by name). Delete John
+   Doe in the app (and any extra "John" a run created with Create New), or run
+   `DELETE FROM individuals WHERE name = 'John Doe';` in the SQL Editor, then
+   re-run `supabase/schema.sql`: it re-adds him with his seed data and seed
+   interaction. Then run the backfill again so he has an embedding.
 
 ---
 

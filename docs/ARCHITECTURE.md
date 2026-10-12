@@ -13,7 +13,8 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
   work end to end against your own Supabase project; the original hosted demo is
   gone.
 - **Character:** simple solutions over patterns. Demo-grade auth (one shared
-  account) and open CORS. See the README's Shortcuts section.
+  account). CORS allows only the browser origins listed in `CORS_ALLOW_ORIGINS`
+  (none by default), never with credentials. See the README's Shortcuts section.
 
 ## Technology stack
 
@@ -24,10 +25,12 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
 - **Auth:** Supabase Auth. Every `/api/*` route verifies the bearer token with
   `auth.get_user` (`backend/api/auth.py`)
 - **AI:** `whisper-1`, `gpt-4o`, `text-embedding-3-large`, `gpt-realtime`
-- **Tests:** pytest, offline with mocks; integration tests opt-in
+- **Tests:** pytest, offline with mocks; one opt-in live smoke test. CI also
+  runs `ruff check backend --select F,E9`
 
 ### App
-- **Framework:** React Native with Expo SDK 53, built and demoed on iOS
+- **Framework:** React Native with Expo SDK 53, iOS only. `mobile/ios/` is
+  committed (prebuilt), so `app.json` changes need `npx expo prebuild --platform ios`
 - **Navigation:** bottom tabs (Record, Search, Assistant, Categories, Profile),
   with a stack inside Search for the individual profile
 - **State:** React Context (`AuthContext`, `CategoryContext`)
@@ -42,8 +45,9 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
   (it also upgrades a database made by an older version)
 - **Storage:** none. Audio is posted inline as base64 and only touches disk as a
   temp file during transcription
-- **Hosting:** runs locally. `railway.toml` and the root `main.py` remain for a
-  Railway deployment of the backend
+- **Hosting:** runs locally. `railway.toml` (with a `/health` deploy
+  healthcheck), `.python-version` and the root `main.py` remain for a Railway
+  deployment of the backend
 
 ## Database schema
 
@@ -52,23 +56,23 @@ From `supabase/schema.sql`:
 ```sql
 categories (
     id UUID PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,
-    display_name TEXT,
-    type TEXT,               -- text/number/single_select/multi_select/date/location
+    name TEXT UNIQUE NOT NULL,       -- the key used in data (category_key)
+    display_name TEXT,               -- the label as typed
+    type TEXT NOT NULL,      -- CHECK: text/number/single_select/multi_select/date/location
     options JSONB,           -- [{label, value}] for single_select, [text] for multi_select
-    priority TEXT NOT NULL,  -- high/medium/low (display only)
+    priority TEXT NOT NULL,  -- CHECK: high/medium/low (display only)
     urgency_weight INTEGER NOT NULL,  -- only meaningful for number/single_select
     auto_trigger BOOLEAN NOT NULL,    -- can pin the urgency score to 100
     is_required BOOLEAN NOT NULL,
     is_preset BOOLEAN NOT NULL,
-    is_active BOOLEAN NOT NULL,
+    is_active BOOLEAN NOT NULL,      -- reserved; not filtered on
     created_at, updated_at TIMESTAMPTZ NOT NULL
 )
 
 individuals (
     id UUID PRIMARY KEY,
     name TEXT NOT NULL,
-    data JSONB,              -- every field, keyed by category name
+    data JSONB NOT NULL,     -- every field, keyed by category name
     urgency_score INTEGER NOT NULL,  -- calculated
     urgency_override INTEGER,-- manual (CHECK 0-100), shown instead of the score when set
     last_location JSONB,     -- {latitude, longitude, address}
@@ -83,23 +87,25 @@ interactions (
     transcription TEXT,
     audio_url TEXT,
     location JSONB,
-    changes JSONB,           -- only the fields that changed (everything on the first visit)
-    created_at TIMESTAMPTZ
+    changes JSONB NOT NULL,  -- only the fields that changed (everything on the first visit)
+    created_at TIMESTAMPTZ NOT NULL
 )
 
 individual_embeddings (
     id UUID PRIMARY KEY,
-    individual_id UUID UNIQUE REFERENCES individuals ON DELETE CASCADE,
-    embedding_data JSONB,    -- 3072 floats
-    embedding_text TEXT,
-    created_at, updated_at TIMESTAMPTZ
+    individual_id UUID NOT NULL UNIQUE REFERENCES individuals ON DELETE CASCADE,
+    embedding_data JSONB NOT NULL,   -- 3072 floats
+    embedding_text TEXT NOT NULL,    -- exactly the text that was embedded
+    created_at, updated_at TIMESTAMPTZ NOT NULL
 )
 ```
 
 Row-level security is enabled on all four tables with **no policies**, so the
 anon key and users' own tokens can't read or write any row directly. The
 backend's service key bypasses RLS. A `set_updated_at` trigger maintains
-`updated_at` on `categories`, `individuals` and `individual_embeddings`. The app no longer queries tables directly: its Supabase client is
+`updated_at` on `categories`, `individuals` and `individual_embeddings`. The
+only extra index is `interactions(individual_id, created_at DESC)`. The app no
+longer queries tables directly: its Supabase client is
 used only to sign in, and every read and write goes through the backend routes
 below.
 
@@ -129,7 +135,7 @@ Details: [`backend/README.md`](../backend/README.md).
 
 ### Required fields
 `name`, `height` and `weight` are required by the save request model
-(`backend/db/models.py:29`) and by the preset categories. Height and weight must
+(`SaveIndividualRequest` in `backend/db/models.py`) and by the preset categories. Height and weight must
 be 0-300 (inches and pounds). Skin color was a required field in early drafts;
 it was removed on purpose and must not come back.
 
@@ -203,6 +209,7 @@ backend/
 │   ├── individuals.py         # /api/individuals routes, background embedding task
 │   ├── categories.py          # /api/categories and GET /api/export
 │   ├── embeddings.py          # /api/embeddings routes
+│   ├── errors.py              # internal_error: fixed "<action> failed" 500s
 │   └── voice_assistant.py     # /api/voice-assistant helper routes
 ├── services/
 │   ├── openai_service.py      # Whisper, GPT-4o extraction
@@ -212,10 +219,13 @@ backend/
 │   ├── urgency_calculator.py
 │   ├── validation_helper.py
 │   ├── embedding_service.py
+│   ├── search_matching.py     # match_individual: the one text matcher
+│   ├── rate_limit.py          # Per-account limits on the paid routes
+│   ├── realtime_guard.py      # Allowlist for client Realtime events, context item
 │   └── context_service.py     # Name lookup for the assistant
 ├── db/models.py               # Pydantic schemas
 ├── scripts/backfill_embeddings.py
-└── tests/                     # Offline suite; tests/integration/ is opt-in
+└── tests/                     # Offline suite; tests/integration/ is the opt-in live smoke test
 ```
 
 ### App
@@ -247,7 +257,9 @@ mobile/
 └── utils/                     # height parsing, urgency colours, error handling,
                                # categoryPayload (create form), categoryDisplay (field
                                # order and labels), duplicateMatches (incl. confidence
-                               # colours), csvExport (share sheet)
+                               # colours), csvExport (share sheet), fieldValues (typed
+                               # values), delayedDelete (undo window), assistantMessages
+                               # and audioProcessor (assistant replies), location
 ```
 
 ## Implementation patterns
@@ -325,7 +337,9 @@ Match-confidence colours mean the same on every screen (`confidenceColor` in
   numbers as numbers, select labels in the category's case, multi-selects as
   arrays (a quick option toggles membership). Empty fields are not sent, and
   screens skip empty values instead of showing "null".
-- **Several duplicate matches:** only the best one is returned and shown.
+- **Several duplicate matches:** the backend returns only the best. Voice review
+  adds its re-check's match (`unionMatches`), so its list can show two; Save
+  offers the best (`bestMergeableMatch`).
 - **Create new despite a match:** allowed from the merge UI.
 - **Failed save:** the backend's reason (for example "weight: Value 400 exceeds
   maximum of 300") is shown in the form, which keeps its data; problems found by
@@ -352,6 +366,9 @@ SUPABASE_URL=...
 SUPABASE_SERVICE_KEY=...      # server-side database access
 SUPABASE_ANON_KEY=...         # token verification only
 OPENAI_API_KEY=...
+# Optional: ALLOWED_USER_EMAILS, CORS_ALLOW_ORIGINS, RATE_LIMIT_*_PER_MIN,
+# REALTIME_MAX_SESSION_SECONDS, LOG_LEVEL (see the README). backend/.env is
+# read at startup: restart the backend after changing it.
 
 # mobile/.env
 EXPO_PUBLIC_API_BASE_URL=http://localhost:8001   # LAN address on a physical phone
@@ -367,15 +384,18 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 3. One shared demo account. Direct table access is closed (RLS, no policies),
    but every user the backend accepts can read and write every record through
    the API; `ALLOWED_USER_EMAILS` can limit which accounts that is.
-4. Built and demoed on iOS; Android has had little testing.
+4. iOS only: there is no Android build setup.
 5. English only.
 6. Two-minute recording limit, enforced in the app.
 7. Semantic search embeds every category's field (`build_embedding_text`), but
    stores vectors as JSONB and compares them in Python. A new category reaches
    existing people's vectors only when they are re-saved or re-embedded.
-8. List and search endpoints load whole tables and match text in Python
-   (`backend/services/search_matching.py`); fine to about 1-5k people.
+8. List, search and export load whole tables and match text in Python
+   (`backend/services/search_matching.py`): demo scale, and each read is capped
+   by Supabase's API row limit (1000 by default).
 9. No audit trail beyond the interactions log.
+10. Saves are not transactional: individual first, then the interaction (a new
+    person is deleted again if their interaction fails; a merge's update stays).
 
 ## Quick reference
 

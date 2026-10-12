@@ -57,7 +57,8 @@ cd backend && python scripts/backfill_embeddings.py
 ```
 
 or, with the backend running, `POST /api/embeddings/generate-all` (below). Both
-make one OpenAI call per individual.
+re-embed every individual, one OpenAI call each. Run one again after upgrading
+from an older version, so every stored text matches `build_embedding_text`.
 
 ### 5. Start the backend
 
@@ -136,8 +137,8 @@ GET /api/embeddings/status
    the text match.
 
 Both steps load the whole `individuals` / `individual_embeddings` table and work
-in Python, so search time grows linearly with the number of people: fine to about
-1-5k people.
+in Python, so search time grows linearly with the number of people: demo scale.
+Each read is also capped by Supabase's API row limit (1000 rows by default).
 
 ### 2. Text representation
 `build_embedding_text` (`backend/services/field_registry.py`) builds one line
@@ -146,10 +147,11 @@ category's `display_name` (else its key title-cased); data keys that match no
 category follow, labelled from the key. The category order is fixed whatever
 order a caller fetched them in (name, required, other presets, then the rest,
 each by `created_at` then key), so every path builds the same text. Lists are joined
-with ", " and a location is its address. For example:
+with ", " and a location is its address. For example, the seeded John Doe with a
+custom "HIV status" category added:
 
 ```
-Name: John Doe. Height: 72; Weight: 180; Age: 45; Gender: Male; Substance Abuse History: Moderate; Medical Conditions: Diabetes; Veteran Status: No; HIV status: Negative
+Name: John Doe. Height: 72; Weight: 180; Age: 45; Gender: Male; Substance Abuse History: Moderate; Housing Priority: High; Medical Conditions: Diabetes; Veteran Status: No; HIV status: Negative
 ```
 
 `EmbeddingService.store_individual_embedding` embeds that text and upserts the
@@ -203,8 +205,9 @@ fill gaps, and check `/status` for coverage.
 - Each vector is 3072 floats, stored as JSON text (tens of KB per row).
 - `text-embedding-3-large` costs $0.13 per million tokens; a profile is roughly
   50-100 tokens, so embedding 1,000 profiles costs well under a cent.
-- Search is O(n) in the number of individuals. Past a few thousand records, move
-  the vectors to pgvector and let Postgres do the nearest-neighbour search.
+- Search is O(n) in the number of individuals, and a single read returns at most
+  Supabase's row limit (1000 by default). Beyond demo scale, move the vectors to
+  pgvector and let Postgres do the nearest-neighbour search.
 
 ## Monitoring
 
@@ -222,8 +225,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 ## Troubleshooting
 
 - **401 from every endpoint:** missing or expired access token.
-- **500 "Failed to generate embedding":** check `OPENAI_API_KEY`, quota and rate
-  limits.
+- **500 "Generate embedding failed"** (or "Generate embeddings failed" from
+  `/generate-all`): check `OPENAI_API_KEY` and your OpenAI quota. A **429** is
+  this backend's own per-account limit (`RATE_LIMIT_*_PER_MIN`; `/generate-all`
+  allows one call a minute).
 - **A new person never shows up in semantic results:** look in the backend log
   for "Background embedding failed for <id>", then call `/generate` for that
   id. Text matches still work without a vector.

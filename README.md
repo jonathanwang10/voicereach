@@ -34,7 +34,7 @@ backend/          FastAPI service — all API logic and OpenAI calls
   db/             Pydantic models
   scripts/        backfill_embeddings.py — the only script
   tests/          pytest suites; tests/integration/ needs a live backend (see Testing)
-mobile/           React Native (Expo) app, built and demoed on iOS
+mobile/           React Native (Expo) app, iOS only; mobile/ios/ is the committed (prebuilt) Xcode project
   screens/        5 tab screens + the profile screen pushed from Search
   components/     Shared UI
   services/       API + Supabase clients
@@ -143,7 +143,9 @@ You need Python 3.11, a current Node.js LTS, a Supabase project and an OpenAI AP
    categories, six demo individuals with one seed interaction each, and
    row-level security switched on with **no policies**. There is no migration
    chain, and the file is safe to run again: it never duplicates the seed
-   people or adds seed history to anyone who already has some.
+   people or adds seed history to anyone who already has some. Seed people are
+   matched by name, though, so running it again re-adds a demo person you
+   deleted (or renamed).
 3. In **Authentication → Users → Add user**, create `demo@sfgov.org` with
    password `demo123456` and tick **Auto Confirm User**. The app signs in as
    this user; without it every request fails.
@@ -173,6 +175,12 @@ Run the current `supabase/schema.sql` again. On an existing database it:
   queries use;
 - recomputes the urgency score of a seed person only while their data is still
   exactly the seed data, and inserts nothing that already exists.
+
+Then rebuild everyone's embeddings (step 4 below: `POST /api/embeddings/generate-all`
+or `backend/scripts/backfill_embeddings.py`). The embedding text is now built
+from the categories (`build_embedding_text`), and vectors made by an older
+version still describe the old text (custom fields missing, for instance)
+until they are regenerated.
 
 The SQL Editor may ask you to confirm because the file contains `DROP` and
 `DELETE` statements. If you only want to close direct table access, this is
@@ -225,9 +233,9 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SERVICE_KEY` | All server-side database access (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
-| `ALLOWED_USER_EMAILS` | Optional. Comma-separated emails (case-insensitive) allowed to use the API, e.g. `demo@sfgov.org`. When set, any other signed-in user gets a 403. Unset means every user of the Supabase project is accepted. Read on every request. |
+| `ALLOWED_USER_EMAILS` | Optional. Comma-separated emails (case-insensitive) allowed to use the API, e.g. `demo@sfgov.org`. When set, any other signed-in user gets a 403. Unset, or set but empty, means every user of the Supabase project is accepted. Checked on every request, but `backend/.env` is loaded at startup, so restart the backend after changing it. |
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
-| `RATE_LIMIT_*_PER_MIN` | Optional. Per-user limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
+| `RATE_LIMIT_*_PER_MIN` | Optional. Per-account limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional. How long one voice-assistant connection may stay open (default 600). |
 | `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
 
@@ -265,21 +273,27 @@ Sign In button, and it **signs in again automatically the next time it
 starts**. If the session ends any other way (a failed refresh, for example), the
 app signs in again quietly without leaving the current screen.
 
+The app is **iOS only** (there is no Android script, Maps key or testing).
 Expo Go from the App Store may only support the latest Expo SDK; this app uses
 SDK 53, so a physical device may need a development build
-(`npx expo run:ios --device`; the `ios/` project is checked in). The simulator
-works with `npx expo start`.
+(`npx expo run:ios --device`). The simulator works with `npx expo start`.
+`mobile/ios/` is committed, already prebuilt: `npx expo run:ios` builds it as
+it is, so a change to `app.json` (permissions, Info.plist strings, plugins)
+reaches the iOS build only after `npx expo prebuild --platform ios`; review
+that diff before committing it.
 
 **After pulling, rebuild any existing development build** (`npx expo run:ios`):
 CSV export added the native module `expo-sharing`. An older build still opens,
 but Export CSV fails with "Rebuild it" until you rebuild.
 
-### 4. Optional: backfill embeddings
+### 4. Backfill embeddings (needed for semantic search)
 
-The seeded demo individuals start without embeddings; new and updated
-individuals get one automatically in the background. To embed the seed rows (or
-anything else that predates that), either call `POST /api/embeddings/generate-all`
-or run:
+The seeded demo individuals start without embeddings, so a descriptive search
+("veteran with heart disease") finds nothing among them until you run this;
+new and updated individuals get one automatically in the background. To embed
+the seed rows (or anything else that predates that, or after
+[upgrading](#upgrading-a-database-created-from-an-older-schemasql)), either call
+`POST /api/embeddings/generate-all` or run:
 
 ```bash
 cd backend && python scripts/backfill_embeddings.py
@@ -330,7 +344,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/` | API name (public) |
 | `POST` | `/api/transcribe` | Audio → transcript → structured fields → duplicate candidates |
 | `POST` | `/api/individuals` | Create a person, or merge into one with `merge_with_id` |
-| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory (fine to about 1-5k people) |
+| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory over the whole table (demo scale; see [Search](#search)) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
 | `GET` | `/api/individuals/{id}/interactions` | Encounter history |
 | `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings, clears the assistant cache); 404 if absent |
@@ -363,7 +377,7 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | Limit | Value | Over it |
 |---|---|---|
 | `POST /api/transcribe` body (base64 audio) | 8 MB | 413 |
-| `audio_url` download | 5 MB, same host as `SUPABASE_URL`, no redirects | 413 / 400 |
+| `audio_url` download | 5 MB, same host as `SUPABASE_URL` | 413; another host or a missing file 400; a redirect is not followed and fails like any other download error, with a 500 |
 | `POST /api/voice-assistant/transcribe` audio | 3 MB | 413 |
 | `POST /api/individuals/check-duplicates` body | 20 KB, a JSON object | 413 / 422 |
 | `POST /api/embeddings/search` | `query` ≤ 500 chars, `top_k` 1–50, `similarity_threshold` 0–1 | 422 |
@@ -371,8 +385,9 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | Realtime client frame | 1 MB; only the allowed event types (below) | error event, frame dropped |
 | Realtime session | `REALTIME_MAX_SESSION_SECONDS` (600) | close 1008 |
 
-Per-user requests per minute (a fixed 60 s window; a 429 carries `Retry-After`).
-Set the env var to a positive integer to change one:
+Requests per minute per account (a fixed 60 s window; a 429 carries
+`Retry-After`). Every phone on the shared demo account shares one budget. Set the
+env var to a positive integer to change one:
 
 | Env var | Default | Route |
 |---|---|---|
@@ -446,17 +461,19 @@ Doe" finds "John") and by a match on the data values
 (`services/search_matching.py`; never field names), ranks them by tokens matched
 and height/weight closeness, asks GPT-4o to score the top 8 0–100, drops
 anything below 60, and returns only the best match
-(`services/duplicate_detection_service.py`). If GPT-4o fails, a name comparison
+(`services/duplicate_detection_service.py`). Voice review adds the match from
+its own re-check to the server's (`unionMatches`), so its match list can show
+two; Save offers the best one. If GPT-4o fails, a name comparison
 stands in; if the search itself fails, the app is told
 (`duplicate_check_failed`, or a 500 from `check-duplicates`) and asks
 "Duplicate check unavailable. Save as new anyway?" rather than saving a possible
 duplicate silently. Voice review re-checks when the worker corrects a field.
 `docs/PRD.md` calls for an automatic merge at ≥ 95, but **that threshold is not
 implemented**: the frontend opens the same field-by-field merge UI for *every*
-surviving match (`mobile/components/TranscriptionResults.tsx:150`). The merge UI
+surviving match (`handleSave` in `mobile/components/TranscriptionResults.tsx`). The merge UI
 defaults each field to the newer value, but the worker can flip any field, or
 choose to create a new person instead. Note also that the backend does not merge
-server-side — `services/individual_service.py:152` replaces the whole `data`
+server-side — `IndividualService.save_individual` replaces the whole `data`
 JSONB with what the client posts, so any field the client omits is dropped.
 
 ### Search
@@ -471,7 +488,10 @@ match everyone through `veteran_status` or `age` keys. Numbers are not matched a
 text. Results are ranked in tiers: name match (`search_type: "exact"`, score 1.0),
 then a data-value match (`"value"`, 0.9), then semantic matches by cosine score.
 A strong semantic hit never outranks a text match. Matching runs in Python over the
-whole table, which is fine to about 1-5k people.
+whole table, and so does the semantic comparison (vectors are JSONB, not
+pgvector), so this is demo scale. Each of those whole-table reads is also capped
+by Supabase's API row limit ("Max rows", 1000 by default): past that, people
+silently drop out of the list, search and export.
 
 On the Search tab, typing runs one search per 300 ms pause, and only the newest
 response is shown. The list loads on each focus; after the first load it
@@ -527,7 +547,8 @@ out of those.
 
 ```bash
 python -m pip install -r requirements-dev.txt
-python -m pytest              # from the repo root
+python -m pytest                    # from the repo root
+ruff check backend --select F,E9    # the lint CI runs (rules in ruff.toml)
 ```
 
 The backend suite runs offline: OpenAI is mocked, Supabase is replaced by small
@@ -560,10 +581,15 @@ npx tsc --noEmit  # must report 0 errors
 ## Deployment
 
 `railway.toml` is kept for reference: Railway builds from the repo root and
-starts `python -m uvicorn main:app`, and the root `main.py` re-exports
-`backend.main:app` so the backend package resolves. Only the backend deploys;
+starts `python -m uvicorn main:app`, with `/health` as the deploy healthcheck;
+the root `main.py` re-exports `backend.main:app` so the backend package
+resolves, and `.python-version` pins Python 3.11. Only the backend deploys;
 `mobile/` and `docs/` are excluded via `.railwayignore`. The original deployment
 has been taken down.
+
+CI (`.github/workflows/ci.yml`) runs the ruff lint and the backend suite, then
+`tsc` and Jest for the app, with read-only repo permissions. A `pip-audit` step
+reports known-vulnerable Python dependencies without failing the build.
 
 ## Documentation
 
@@ -585,17 +611,27 @@ These are still true:
 - **Categories are create-only.** There is no edit, delete or on/off switch for
   a category, in the app or the API. The Categories tab lists them and creates
   new ones; any change to an existing category is a SQL edit in Supabase.
-- **The match list says "Streamlined confirmation" for matches ≥ 95%**
-  (`TranscriptionResults.tsx:437`), but Save opens the same merge UI as any other
-  match.
-- **Closing the app during the 5-second undo window cancels the delete.** The
-  pending delete is kept in memory only (see "Deleting a person" above), so the
-  person is still there on next launch and has to be deleted again.
-- **Embeddings are compared in Python.** They are stored as JSONB and search
-  loads the whole table; pgvector would be the scalable choice. After creating a
-  category, existing people's embeddings only pick up its label when they are
-  next saved (or re-run `POST /api/embeddings/generate-all` or the backfill
-  script).
+- **A delete is lost if the app is killed during the undo window.** The pending
+  delete is kept in memory only for about 5 seconds (`DELETE_UNDO_MS`, see
+  "Deleting a person" above), so the person is still there on next launch and
+  has to be deleted again.
+- **Search is demo-scale.** The list, text search, export and semantic search
+  each read the whole table and work in Python; embeddings are stored as JSONB
+  rather than in pgvector. Those reads are capped by Supabase's API row limit
+  (1000 by default). After creating a category, existing people's embeddings
+  only pick up its label when they are next saved (or re-run
+  `POST /api/embeddings/generate-all` or the backfill script).
+- **Saving is not transactional.** A save is two writes: the individual, then
+  the interaction. If a new person's first interaction fails, the new
+  individual is deleted again so a retry can't duplicate them; a merge updates
+  the individual first, and if the interaction then fails, the update stays
+  without its history entry.
+- **Re-running `schema.sql` re-adds a deleted demo person.** Seed people are
+  matched by name (see [Database](#1-database)).
+- **iOS only.** There is no Android build setup, and `mobile/ios/` is committed
+  prebuilt, so `app.json` changes need `npx expo prebuild --platform ios` (see
+  [Mobile](#3-mobile)). After pulling, rebuild any existing development build
+  (`npx expo run:ios`): CSV export needs the native `expo-sharing` module.
 - **Not yet re-verified against live services.** After the dependency upgrade,
   the OpenAI and Supabase calls were checked only offline (mocks and
   introspection). Run the curl check in [Auth](#auth) and one recording after
@@ -606,20 +642,18 @@ These are still true:
 
 Listed explicitly so nobody mistakes them for finished work:
 
-- **No per-agency or per-user scoping.** Row-level security now blocks all
-  direct table access, but every user the backend accepts (any user of the
-  Supabase project, or those in `ALLOWED_USER_EMAILS`) can read and change
-  every record through the API. A real deployment needs scoping — this is
-  sensitive personal and medical data.
+- **No per-agency or per-user scoping.** Row-level security blocks all direct
+  table access, but every user the backend accepts (any user of the Supabase
+  project, or those in `ALLOWED_USER_EMAILS`) can read and change every record
+  through the API. A real deployment needs scoping — this is sensitive personal
+  and medical data.
 - **Keys were once committed to git history** (in 2025: an OpenAI key and
   Supabase service-role keys for a project that has since been deleted). History
   was not rewritten; those keys are treated as compromised and must stay revoked.
 - **One shared demo account, auto-logged-in.** The credentials are hardcoded in
   `mobile/services/supabase.ts`, there is no email verification, and every
-  interaction is recorded as "Demo User" (`api/individuals.py:30-34`). Sign Out
-  (Profile tab) ends the session on the device, but the next launch signs in
-  again automatically, so it is not a lock on a shared or lost phone.
+  interaction is recorded as "Demo User" (`get_current_user_name` in
+  `backend/api/individuals.py`). Every phone shares the account's rate limits.
+  Sign Out (Profile tab) ends the session on the device, but the next launch
+  signs in again automatically, so it is not a lock on a shared or lost phone.
 - **No offline support.** The app requires connectivity throughout.
-- Audio is M4A/AAC, **5 s** minimum and 2 min maximum per recording
-  (`stopRecording` in `mobile/components/ModernAudioRecorder.tsx`). `docs/PRD.md`
-  says 10 s; the code says 5.

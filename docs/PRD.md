@@ -3,7 +3,9 @@
 > 5 s, not 10 s; embeddings use `text-embedding-3-large` stored as JSONB, not
 > `-3-small` with pgvector; there is no ≥ 95% auto-merge (every match ≥ 60 opens
 > the merge UI); and several listed endpoints (auth, upload-audio, POST
-> interactions, PUT/DELETE individuals) were never built. See the [README](../README.md).
+> interactions, PUT individuals) were never built, while `DELETE
+> /api/individuals/{id}` exists and the override is `PUT .../urgency-override`.
+> See the [README](../README.md).
 
 # Comprehensive Product Requirements Document
 ## Voice Transcription App for SF Homeless Outreach

@@ -39,10 +39,12 @@ Authorization: Bearer <access token>
 ```
 
 There is no Storage upload. The backend strips the optional `data:` prefix. The
-body is capped at 8 MB (413), and each user may transcribe 30 times a minute
-(429; `RATE_LIMIT_TRANSCRIBE_PER_MIN`). It also accepts `{"audio_url": ...}`, but
-only on the same host as `SUPABASE_URL`, at most 5 MB and without redirects; the
-app never uses that path. The route answers within 110 s (504 after that), before
+body is capped at 8 MB (413), and each account may transcribe 30 times a minute
+(429; `RATE_LIMIT_TRANSCRIBE_PER_MIN`; every phone on the shared demo account
+counts against the same budget). It also accepts `{"audio_url": ...}`, but only
+on the same host as `SUPABASE_URL` (400 otherwise) and at most 5 MB (413); a
+redirect is not followed and the request fails with a 500. The app never uses
+that path. The route answers within 110 s (504 after that), before
 the app's 120 s timeout.
 
 ## 3. Backend processing
@@ -185,7 +187,7 @@ is cleared.
    (600).
 3. When the worker speaks a question, the app records it and posts it to
    `POST /api/voice-assistant/transcribe` (multipart `audio` up to 3 MB,
-   `whisper-1` only, 30 a minute per user).
+   `whisper-1` only, 30 a minute per account).
    It then sends the text over the socket as a `conversation.item.create` with
    `input_text`, followed by `response.create`. Typed questions take the same
    route. If transcription fails or comes back empty, the app shows "Couldn't

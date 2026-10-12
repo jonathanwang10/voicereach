@@ -11,7 +11,8 @@ It never looks at dict keys or at Python's
 str(dict) repr, so words like "veteran", "age" or "none" no longer match every
 person through keys such as `veteran_status` or a `None` literal.
 
-Runs in Python over the whole table: fine for a demo, to about 1-5k people.
+Runs in Python over the whole table: demo scale (one read returns at most
+Supabase's API row limit, 1000 by default).
 """
 import re
 from typing import Any, Iterator, Literal, Optional

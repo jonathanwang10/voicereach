@@ -33,12 +33,16 @@ Environment variables (`backend/.env`):
 | `SUPABASE_SERVICE_KEY` | All database access from the routes and services (bypasses RLS) |
 | `SUPABASE_ANON_KEY` | Only `api/auth.py`, to verify users' access tokens |
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
-| `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset = any user of the project |
-| `RATE_LIMIT_*_PER_MIN` | Optional per-user limits on the paid endpoints (see [Limits](#limits)) |
+| `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset, or set but empty = any user of the project |
+| `CORS_ALLOW_ORIGINS` | Optional comma-separated browser origins (unset = none); the app doesn't need it |
+| `RATE_LIMIT_*_PER_MIN` | Optional per-account limits on the paid endpoints (see [Limits](#limits)) |
+| `LOG_LEVEL` | Optional backend log level (default `INFO`) |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 
 Then: API at `http://localhost:8001`, interactive docs at `/docs`, health check
-at `/health`.
+at `/health`. `backend/.env` is loaded once at startup (`load_dotenv()` never
+overwrites a variable that is already set), so restart the backend after
+editing it, `ALLOWED_USER_EMAILS` included.
 
 ## Layout
 
@@ -72,7 +76,7 @@ Every `/api/*` route depends on `get_current_user` (`api/auth.py`), which expect
 `Authorization: Bearer <Supabase access token>` and checks it with
 `auth.get_user`. Valid tokens are cached for 60 seconds. Missing or invalid
 tokens get a 401; there is no demo fallback. When `ALLOWED_USER_EMAILS` is set
-(comma-separated, case-insensitive, read on every call), a valid user whose
+(comma-separated, case-insensitive, checked on every call), a valid user whose
 email isn't listed gets a 403 `{"detail": "This account is not allowed to use
 this service"}`; only allowed users are cached. The realtime WebSocket checks
 the same header before accepting and refuses the handshake otherwise, which the
@@ -87,8 +91,9 @@ curl.
 
 **`POST /api/transcribe`** — Body: `{"audio_data": "<base64>"}` (a `data:` URL
 prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
-same host as `SUPABASE_URL` (other hosts are rejected; the download stops at 5 MB
-and doesn't follow redirects). Loads categories, transcribes with `whisper-1`,
+same host as `SUPABASE_URL` (other hosts are a 400; the download stops at 5 MB
+and doesn't follow redirects: a 3xx fails like any other download error, with a
+500 "Transcription failed"). Loads categories, transcribes with `whisper-1`,
 extracts fields with `gpt-4o`, validates, and looks for duplicates. 413 over a
 size cap, 429 over the rate limit, 504 after 110 s. Returns:
 
@@ -143,7 +148,8 @@ matches sort before value matches, then `sort_by` orders each group
 and an abbreviated `last_location`. `last_seen` is the latest interaction's
 `created_at`, falling back to the person's `created_at` (never `updated_at`),
 fetched by `fetch_last_seen` in chunks of 50 ids per `interactions` query. The
-table is read once and matched in memory (fine to about 1-5k people).
+table is read once and matched in memory: demo scale, and the read is capped by
+Supabase's API row limit (1000 by default).
 
 **`GET /api/individuals/{id}`** — Returns `{individual, recent_interactions}`
 (the last 10). 404 if not found; a database error is a 500.
@@ -274,6 +280,8 @@ has a 0-100 `CHECK`, and `urgency_score`, `interactions.individual_id` and
 python -m pytest     # from the repo root
 ```
 
+CI also runs `ruff check backend --select F,E9` (rules in `../ruff.toml`).
+
 The suite is offline: OpenAI is mocked, Supabase is faked (`tests/helpers.py`:
 the strict `FakeSupabase` raises on any query a test didn't script and records
 every insert/update payload), and a fake user stands in for token verification
@@ -290,8 +298,9 @@ test against a running backend. It runs only when `VOICEREACH_API_URL` and
 
 Railway builds from the repo root, not this directory:
 
-- `../railway.toml` — build and start command (`python -m uvicorn main:app`)
-- `../runtime.txt` — Python 3.11
+- `../railway.toml` — build and start command (`python -m uvicorn main:app`),
+  and `/health` as the deploy healthcheck (`healthcheckPath` under `[deploy]`)
+- `../.python-version` — Python 3.11
 - `../requirements.txt` — pinned dependencies
 - `../main.py` — entrypoint; adds `backend/` to the path and re-exports `backend.main:app`
 - `../.railwayignore` — excludes `mobile/` and `docs/`
@@ -305,8 +314,9 @@ Size caps (`BODY_LIMITS` in `main.py`, plus the route checks) give a 413
 download 5 MB, `check-duplicates` body 20 KB. A saved `name` is at most 200
 characters (422).
 
-Per-user rate limits (`services/rate_limit.py`, a fixed 60 s window in memory,
-per process) give a 429 with `Retry-After`. Each is read from its env var on every
+Per-account rate limits (`services/rate_limit.py`, keyed by the user id, a fixed
+60 s window in memory, per process) give a 429 with `Retry-After`. Every phone on
+the shared demo account shares one budget. Each is read from its env var on every
 request; a missing or invalid value uses the default:
 
 | Env var | Default / min | Applies to |
@@ -348,4 +358,5 @@ first 2,000 characters of a message, looks up at most 3 names and keeps at most
 - Interactions record the user id from the token, but `user_name` is always
   "Demo User".
 - Several handlers make synchronous Supabase calls inside `async` functions, and
-  list/search loads whole tables. Fine at demo scale, not beyond it.
+  list, search and export load whole tables, each read capped by Supabase's API
+  row limit (1000 by default). Fine at demo scale, not beyond it.
