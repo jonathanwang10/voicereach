@@ -123,7 +123,7 @@ async def save_individual(
             # Combine missing required and validation errors
             error_detail = []
             if validation_result.missing_required:
-                error_detail.append(f"Missing required fields: {validation_result.missing_required}")
+                error_detail.append("Missing required fields: " + ", ".join(validation_result.missing_required))
             if validation_result.validation_errors:
                 for error in validation_result.validation_errors:
                     error_detail.append(f"{error['field']}: {error['message']}")

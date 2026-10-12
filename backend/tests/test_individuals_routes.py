@@ -128,6 +128,18 @@ def test_missing_required_field_is_422_and_writes_nothing():
     assert sb.calls == []
 
 
+def test_missing_custom_required_field_is_400_with_a_readable_list():
+    """Minor 7: the route's own required check names fields with ", ", not a Python list repr."""
+    sb = FakeSupabase()
+    sb.on("categories", "select", data=CATEGORIES + [
+        {"name": "case_number", "type": "text", "is_required": True, "urgency_weight": 0},
+        {"name": "shelter", "type": "text", "is_required": True, "urgency_weight": 0}])
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "Missing required fields: case_number, shelter"
+    assert _writes(sb) == []
+
+
 def test_invalid_select_option_is_400_and_writes_nothing():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals",
