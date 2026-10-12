@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import { api, getAuthToken } from '../services/api';
 import { AudioProcessor, configureAudioPlayback, configureAudioRecording } from '../utils/audioProcessor';
@@ -265,6 +266,10 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   // True while startRecording sets up the recorder (before recordingRef is set), so a reply
   // that arrives then can't switch the audio mode to playback mid-start.
   const startingRecordingRef = useRef(false);
+  // I-2: bottom tabs keep this screen mounted with its socket open. While another tab is
+  // focused (e.g. Record is recording a field note), a reply must not switch the shared iOS
+  // audio session out of record mode, which pauses that recording: show the text only.
+  const isFocusedRef = useRef(true);
 
   const nextId = (prefix: string) => `${prefix}_${Date.now()}_${++idCounterRef.current}`;
 
@@ -311,7 +316,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     const gen = ++playbackGenRef.current;
     const cancelled = () =>
       gen !== playbackGenRef.current || !isMountedRef.current || isMutedRef.current ||
-      !!recordingRef.current || startingRecordingRef.current;
+      !isFocusedRef.current || !!recordingRef.current || startingRecordingRef.current;
     let fileUri: string | null = null;
     try {
       if (!AudioProcessor.validatePCMData(pcm)) throw new Error('Invalid PCM data');
@@ -354,6 +359,18 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     awaitingPlaybackRef.current = new Set();
     lastAssistantIdRef.current = null;
   };
+
+  // Leaving the tab stops the reply that is playing (its text still shows), so it never
+  // plays over, or re-routes, a recording on the Record tab.
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      return () => {
+        isFocusedRef.current = false;
+        stopPlayback();
+      };
+    }, [])
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -421,7 +438,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         if (!id) break;
         const chunks = audioChunksRef.current[id] || [];
         delete audioChunksRef.current[id];
-        if (chunks.length && !isMutedRef.current && !recordingRef.current && !startingRecordingRef.current) {
+        if (chunks.length && !isMutedRef.current && isFocusedRef.current &&
+            !recordingRef.current && !startingRecordingRef.current) {
           awaitingPlaybackRef.current.add(id);
           playReply(AudioProcessor.concatChunks(chunks), () => {
             awaitingPlaybackRef.current.delete(id);

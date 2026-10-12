@@ -244,6 +244,10 @@ is cleared.
      leaving the screen stop and unload it and delete its WAV file. A reply that
      finishes while a recording is starting isn't played (its text still shows),
      so it can't switch the audio mode back to playback mid-start.
+   - The tab stays mounted, socket open, when the worker switches tabs. While it
+     isn't focused, a reply is shown as text only: no audio mode change and no
+     playback, so it can't pause a recording on the Record tab. Leaving the tab
+     stops the reply that is playing.
    - On `response.done`, audio still buffered for the response's items is
      dropped: an interrupted item never gets `output_audio.done`.
    - The `ctx_` reference-data item is never shown. Server `error` events (such

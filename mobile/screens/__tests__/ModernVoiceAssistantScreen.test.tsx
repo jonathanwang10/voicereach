@@ -10,6 +10,22 @@ import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
+// Tab focus: focused on mount; blurScreen()/focusScreen() run the focus effects' cleanup / callback.
+const mockFocus = { callbacks: new Set<() => any>(), cleanups: new Map<() => any, any>() };
+jest.mock('@react-navigation/native', () => {
+  const React = require('react');
+  return {
+    useFocusEffect: (cb: any) => React.useEffect(() => {
+      mockFocus.callbacks.add(cb);
+      mockFocus.cleanups.set(cb, cb());
+      return () => {
+        mockFocus.callbacks.delete(cb);
+        mockFocus.cleanups.get(cb)?.();
+        mockFocus.cleanups.delete(cb);
+      };
+    }, [cb]),
+  };
+});
 jest.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u' }, loading: false }) }));
 jest.mock('../../services/api', () => ({
   api: { transcribeForAssistant: jest.fn() },
@@ -163,6 +179,11 @@ async function askByVoice(screen: any) {
   await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
   await waitFor(() => expect(screen.queryByLabelText('Processing question')).toBeNull());
 }
+
+const blurScreen = () => act(() => {
+  mockFocus.callbacks.forEach(cb => { mockFocus.cleanups.get(cb)?.(); mockFocus.cleanups.delete(cb); });
+});
+const focusScreen = () => act(() => { mockFocus.callbacks.forEach(cb => mockFocus.cleanups.set(cb, cb())); });
 
 const sentTypes = (ws: MockWebSocket) => ws.sent.map(e => e.type);
 const toastTexts = () => (Toast.show as jest.Mock).mock.calls.map(c => `${c[0].text1} ${c[0].text2 ?? ''}`);
@@ -596,5 +617,47 @@ describe('T14 fix round 1: the microphone never outlives the screen', () => {
 
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
     expect(ws.send).not.toHaveBeenCalled();
+  });
+});
+
+// --- I-2: the Assistant tab stays mounted; it must not touch the audio session when blurred ---
+
+describe('I-2 not focused', () => {
+  it('a reply that arrives while another tab is focused shows text only: no audio mode change, no playback', async () => {
+    const s = sound();
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
+    const { screen, ws } = await renderConnected();
+    blurScreen();
+    (Audio.setAudioModeAsync as jest.Mock).mockClear();
+
+    streamAnswer(ws, 'a1', 'Answer while away', UNPADDED);
+
+    await waitFor(() => expect(screen.getByText('Answer while away')).toBeTruthy());
+    expect(Audio.setAudioModeAsync).not.toHaveBeenCalled();
+    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
+    expect(s.playAsync).not.toHaveBeenCalled();
+  });
+
+  it('leaving the tab stops the reply that is playing, keeping its text', async () => {
+    const s = sound();
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one');
+    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
+
+    blurScreen();
+    await waitFor(() => expect(s.unloadAsync).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('Answer one')).toBeTruthy());
+  });
+
+  it('plays replies again once the tab is focused again', async () => {
+    const s = sound();
+    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
+    const { ws } = await renderConnected();
+    blurScreen();
+    focusScreen();
+
+    streamAnswer(ws, 'a2', 'Back again', UNPADDED);
+    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
   });
 });
