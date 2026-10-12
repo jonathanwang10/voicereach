@@ -6,6 +6,7 @@ import { render, act, waitFor } from '@testing-library/react-native';
 
 let mockAuthListener: ((event: string, session: any) => void) | null = null;
 const mockAutoLogin = jest.fn();
+const mockSignIn = jest.fn((...a: any[]) => mockAutoLogin(...a));
 const mockSignOut = jest.fn();
 jest.mock('../../services/supabase', () => ({
   supabase: {
@@ -17,6 +18,7 @@ jest.mock('../../services/supabase', () => ({
     },
   },
   autoLogin: (...a: any[]) => mockAutoLogin(...a),
+  signIn: (...a: any[]) => mockSignIn(...a),
   signOut: (...a: any[]) => mockSignOut(...a),
 }));
 
@@ -116,3 +118,15 @@ it('a requested sign-out stays signed out when its SIGNED_OUT arrives', async ()
   expect(screen.getByText('none:')).toBeTruthy();
   expect(mockAutoLogin).toHaveBeenCalledTimes(1);
 });
+
+// Minor 3: the launch sign-in and Retry are the worker's own sign-in, so they clear the
+// signed-out state (services/supabase signIn); a quiet re-sign-in after a revoked
+// session does not.
+it('launch and Retry sign in through signIn, which clears a user sign-out', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  mount();
+  await waitFor(() => expect(mockSignIn).toHaveBeenCalledTimes(1));
+  await act(async () => { await latest.retry(); });
+  expect(mockSignIn).toHaveBeenCalledTimes(2);
+});
+

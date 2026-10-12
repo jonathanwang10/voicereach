@@ -5,7 +5,9 @@ const mockGetSession = jest.fn<any, any[]>();
 const mockRefreshSession = jest.fn<any, any[]>();
 const mockAutoLogin = jest.fn<any, any[]>(async () => ({}));
 const mockFrom = jest.fn<any, any[]>();
+let mockSignedOut = false;
 jest.mock('../supabase', () => ({
+  isSignedOutByUser: () => mockSignedOut,
   supabase: {
     auth: {
       getSession: (...a: any[]) => mockGetSession(...a),
@@ -105,6 +107,21 @@ describe('authedFetch auth', () => {
     await expect(apiRequest('/x')).resolves.toEqual({ ok: 1 });
     expect(mockAutoLogin).toHaveBeenCalledTimes(1);
     expect(authHeader(1)).toBe('Bearer signed-in-token');
+  });
+
+  // Minor 3: after the worker's Sign Out, a 401 never signs the device back in.
+  it('after Sign Out, a failed refresh is reported instead of signing in again', async () => {
+    mockSignedOut = true;
+    try {
+      mockRefreshSession.mockResolvedValue({ data: { session: null }, error: new Error('signed out') });
+      mockGetSession.mockResolvedValueOnce(session('old-token'));
+      (global as any).fetch = jest.fn(async () => jsonResponse(401, { detail: 'Invalid or expired session' }));
+      await expect(apiRequest('/x')).rejects.toMatchObject({ status: 0, kind: 'auth' });
+      expect(mockAutoLogin).not.toHaveBeenCalled();
+      expect(fetchMock()).toHaveBeenCalledTimes(1);
+    } finally {
+      mockSignedOut = false;
+    }
   });
 
   it('a second 401 is reported, not retried again', async () => {

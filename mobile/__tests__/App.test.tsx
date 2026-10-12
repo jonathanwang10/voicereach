@@ -17,6 +17,7 @@ jest.mock('../services/supabase', () => ({
     },
   },
   autoLogin: (...a: any[]) => mockAutoLogin(...a),
+  signIn: (...a: any[]) => mockAutoLogin(...a),
   signOut: jest.fn(async () => {
     mockAuthListener?.('SIGNED_OUT', null); // Supabase emits it before resolving
     return { error: null };

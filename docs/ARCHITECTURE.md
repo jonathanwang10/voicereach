@@ -324,6 +324,10 @@ forms show a failed category load with Retry. Sign Out on the Profile tab calls
 account), and reports a failure; the next launch signs in again. Only a sign-out
 the worker asked for shows "Signed out": any other `SIGNED_OUT` event keeps the
 screens mounted and signs in again quietly through the shared `autoLogin`.
+After the worker's Sign Out, `getAuthToken` and the 401 retry in `services/api.ts`
+never call `autoLogin` (`isSignedOutByUser` in `services/supabase.ts`, cleared by
+the next launch, Retry or Sign In), so a request that runs late, such as a delayed
+delete committing, fails instead of signing the device back in.
 
 Match-confidence colours mean the same on every screen (`confidenceColor` in
 `mobile/utils/duplicateMatches.ts`): 95 and up green, 60-94 yellow.

@@ -9,7 +9,7 @@ const mockAuth = {
 // A getter: the client is created when supabase.ts loads, before mockAuth is initialised
 jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ get auth() { return mockAuth; } }) }));
 
-import { autoLogin, signOut } from '../supabase';
+import { autoLogin, signOut, signIn, isSignedOutByUser } from '../supabase';
 
 const session = { access_token: 't', user: { id: 'u1', email: 'demo@sfgov.org' } };
 
@@ -63,3 +63,21 @@ it('signs out this device only (scope local)', async () => {
   await signOut();
   expect(mockAuth.signOut).toHaveBeenCalledWith({ scope: 'local' });
 });
+
+// Minor 3: after the worker's Sign Out, nothing may sign the device back in on its own.
+it('Sign Out marks the device signed out by the user until the next explicit sign-in', async () => {
+  mockAuth.signOut.mockResolvedValueOnce({ error: null });
+  await signOut();
+  expect(isSignedOutByUser()).toBe(true);
+
+  mockAuth.getSession.mockResolvedValue({ data: { session } });
+  await signIn();
+  expect(isSignedOutByUser()).toBe(false);
+});
+
+it('a failed Sign Out leaves the device signed in', async () => {
+  mockAuth.signOut.mockResolvedValueOnce({ error: new Error('network down') });
+  await signOut();
+  expect(isSignedOutByUser()).toBe(false);
+});
+

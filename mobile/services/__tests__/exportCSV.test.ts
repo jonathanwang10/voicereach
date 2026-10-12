@@ -6,6 +6,7 @@ jest.mock('../supabase', () => ({
     },
   },
   autoLogin: jest.fn(async () => ({})),
+  isSignedOutByUser: () => false,
 }));
 import { api } from '../api';
 

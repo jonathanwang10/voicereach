@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase, autoLogin, signOut } from '../services/supabase';
+import { supabase, autoLogin, signIn as signInAsWorker, signOut } from '../services/supabase';
 import { errorMessage } from '../utils/errorHandler';
 
 interface AuthContextType {
@@ -45,7 +45,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signedOutByUser.current = false;
     setLoading(true);
     setError(null);
-    const result = await autoLogin();
+    const result = await signInAsWorker(); // clears a user sign-out, so the API may sign in again
     if (result.user && result.session) {
       setUser(result.user);
       setSession(result.session);

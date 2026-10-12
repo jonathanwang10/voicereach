@@ -283,7 +283,8 @@ tabs. The Profile tab shows the signed-in account's email and last sign-in time.
 **Sign Out** there really ends the session on that device (other phones on the
 shared demo account stay signed in): the app shows a "Signed out" screen with a
 Sign In button, and it **signs in again automatically the next time it
-starts**. If the session ends any other way (a failed refresh, for example), the
+starts**. Until then no request signs in on its own: a delete still in its undo
+window when the worker signs out fails ("the profile was kept"). If the session ends any other way (a failed refresh, for example), the
 app signs in again quietly without leaving the current screen.
 
 The app is **iOS only** (there is no Android script, Maps key or testing).

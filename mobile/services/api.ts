@@ -1,4 +1,4 @@
-import { supabase, autoLogin } from './supabase';
+import { supabase, autoLogin, isSignedOutByUser } from './supabase';
 import { getApiUrl } from '../config/api';
 import { daysSince } from '../utils/urgencyScore';
 import { stripEmpty } from '../utils/fieldValues';
@@ -29,11 +29,14 @@ const TRANSCRIBE_TIMEOUT_MS = 120_000;
 const ASSISTANT_TRANSCRIBE_TIMEOUT_MS = 60_000;
 const NETWORK_RETRY_DELAY_MS = 500;
 const NOT_SIGNED_IN = 'Not signed in. Check that the demo user exists in Supabase (see README setup).';
+const SIGNED_OUT = 'You signed out. Sign in again to continue.';
 
-// Every backend route needs a signed-in session.
+// Every backend route needs a signed-in session. After the worker's own Sign Out
+// there is no automatic sign-in: the request fails (Minor 3).
 export const getAuthToken = async (): Promise<string> => {
   let { data: { session } } = await supabase.auth.getSession();
   if (!session) {
+    if (isSignedOutByUser()) throw new ApiError(0, SIGNED_OUT, 'auth');
     await autoLogin();
     ({ data: { session } } = await supabase.auth.getSession());
   }
@@ -52,6 +55,7 @@ const renewAuthToken = async (): Promise<string> => {
   } catch {
     // fall through to a fresh sign-in
   }
+  if (isSignedOutByUser()) throw new ApiError(0, SIGNED_OUT, 'auth');
   await autoLogin();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new ApiError(0, NOT_SIGNED_IN, 'auth');

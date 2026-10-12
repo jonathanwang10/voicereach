@@ -72,10 +72,27 @@ export const autoLogin = (): Promise<AutoLoginResult> => {
   return inFlight;
 };
 
+// True from the worker's Sign Out until their next sign-in (launch, Retry or Sign In).
+// While set, the API layer never signs in on its own (getAuthToken, the 401 retry), so a
+// request that runs after Sign Out, such as a delayed delete committing, fails instead of
+// signing the device back in.
+let signedOutByUser = false;
+
+export const isSignedOutByUser = (): boolean => signedOutByUser;
+
+// The worker's own sign-in: clears the signed-out state, then signs in as autoLogin does.
+export const signIn = (): Promise<AutoLoginResult> => {
+  signedOutByUser = false;
+  return autoLogin();
+};
+
 // A real sign-out of THIS device (OD-4). Every phone shares the demo account, and
 // the default 'global' scope would revoke all of its sessions, signing every other
-// phone out too. Returns Supabase's error rather than throwing.
+// phone out too. Returns Supabase's error rather than throwing; on an error the
+// device stays signed in.
 export const signOut = async (): Promise<{ error: Error | null }> => {
+  signedOutByUser = true;
   const { error } = await supabase.auth.signOut({ scope: 'local' });
+  if (error) signedOutByUser = false;
   return { error };
 };

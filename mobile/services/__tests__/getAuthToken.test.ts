@@ -1,13 +1,15 @@
 const mockGetSession = jest.fn<any, any[]>();
 const mockAutoLogin = jest.fn<any, any[]>(async () => ({}));
+let mockSignedOut = false;
 jest.mock('../supabase', () => ({
   supabase: { auth: { getSession: (...a: any[]) => mockGetSession(...a), refreshSession: jest.fn() } },
   autoLogin: (...a: any[]) => mockAutoLogin(...a),
+  isSignedOutByUser: () => mockSignedOut,
 }));
 
 import { getAuthToken } from '../api';
 
-beforeEach(() => { mockGetSession.mockReset(); mockAutoLogin.mockClear(); });
+beforeEach(() => { mockGetSession.mockReset(); mockAutoLogin.mockClear(); mockSignedOut = false; });
 
 it('returns the current session token', async () => {
   mockGetSession.mockResolvedValue({ data: { session: { access_token: 'abc' } } });
@@ -32,3 +34,13 @@ it('the sign-in failure is an ApiError of kind auth', async () => {
   mockGetSession.mockResolvedValue({ data: { session: null } });
   await expect(getAuthToken()).rejects.toMatchObject({ name: 'ApiError', kind: 'auth', status: 0 });
 });
+
+// Minor 3: a request after the worker's Sign Out (a delayed delete committing) must fail,
+// not sign the device back in (autoLogin emits SIGNED_IN and the tabs come back).
+it('after Sign Out, a request without a session fails instead of signing in again', async () => {
+  mockSignedOut = true;
+  mockGetSession.mockResolvedValue({ data: { session: null } });
+  await expect(getAuthToken()).rejects.toMatchObject({ name: 'ApiError', kind: 'auth', status: 0 });
+  expect(mockAutoLogin).not.toHaveBeenCalled();
+});
+
