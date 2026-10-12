@@ -1,0 +1,6 @@
+# Lint for real bugs only: pyflakes (undefined names, unused imports/variables)
+# and syntax errors. CI runs `ruff check backend --select F,E9`.
+target-version = "py311"
+
+[lint]
+select = ["F", "E9"]

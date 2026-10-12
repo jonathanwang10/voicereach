@@ -36,3 +36,8 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Local tool state
+.claude/settings.local.json
+.superpowers/
+.ruff_cache/
