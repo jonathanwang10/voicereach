@@ -272,6 +272,7 @@ def test_history_is_newest_first_and_paged_by_range():
     [item] = r.json()["interactions"]
     assert item["location"]["address"] == LOCATION["address"]  # full address, not abbreviated
     assert item["changes"] == {"height": 71}
+    assert item["transcription"] == "Met Ann"
     assert item["user_name"] is None  # C-55: one NULL user_name does not 500 the route
 
 
