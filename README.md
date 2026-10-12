@@ -167,8 +167,10 @@ Audio is sent to the backend inline (base64), so no Storage bucket is needed.
 Run the current `supabase/schema.sql` again. On an existing database it:
 
 - drops every policy earlier versions created, leaving RLS on with none;
-- adds the `NOT NULL` and `CHECK (urgency_override BETWEEN 0 AND 100)`
-  constraints, after filling NULLs with the column defaults, clamping
+- adds `NOT NULL` to the timestamp, flag, weight and score columns (the
+  `ALTER COLUMN ... SET NOT NULL` lines; columns such as `individuals.data`
+  and `interactions.changes` are `NOT NULL` only on a fresh install) and the
+  `CHECK (urgency_override BETWEEN 0 AND 100)` constraint, after filling NULLs with the column defaults, clamping
   out-of-range overrides, and deleting interactions that have no individual
   (no route can reach those);
 - adds the `updated_at` trigger and swaps the old indexes for the ones the
@@ -618,7 +620,8 @@ These are still true:
 - **Search is demo-scale.** The list, text search, export and semantic search
   each read the whole table and work in Python; embeddings are stored as JSONB
   rather than in pgvector. Those reads are capped by Supabase's API row limit
-  (1000 by default). After creating a category, existing people's embeddings
+  (1000 by default), and so are `POST /api/embeddings/generate-all` and the
+  backfill script, which embed only the first 1000 people they read. After creating a category, existing people's embeddings
   only pick up its label when they are next saved (or re-run
   `POST /api/embeddings/generate-all` or the backfill script).
 - **Saving is not transactional.** A save is two writes: the individual, then

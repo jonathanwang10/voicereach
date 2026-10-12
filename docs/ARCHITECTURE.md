@@ -51,7 +51,9 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
 
 ## Database schema
 
-From `supabase/schema.sql`:
+From `supabase/schema.sql`, as a fresh install creates it. A database upgraded by
+re-running the file gets only the `NOT NULL`s its `ALTER TABLE` statements add
+(see "Upgrading" in the README), not every one shown here:
 
 ```sql
 categories (

@@ -26,6 +26,7 @@ jobs:
       - run: python -m pytest -q
       - name: pip-audit (advisory, never fails the build)
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           pip install pip-audit
           pip-audit -r requirements.txt
