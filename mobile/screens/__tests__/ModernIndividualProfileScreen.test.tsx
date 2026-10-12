@@ -12,6 +12,10 @@ jest.mock('../../components/UrgencyScore', () => (props: any) => {
   return null;
 });
 jest.mock('../../components/InteractionDetailModal', () => () => null);
+const mockCategories: any[] = [];
+jest.mock('../../contexts/CategoryContext', () => ({
+  useCategories: () => ({ categories: mockCategories, isLoading: false, error: null, refreshCategories: jest.fn() }),
+}));
 jest.mock('../../services/api', () => ({
   api: { getIndividualProfile: jest.fn(), updateUrgencyOverride: jest.fn(), deleteIndividual: jest.fn(), saveIndividual: jest.fn() },
 }));
@@ -228,3 +232,17 @@ describe('field rendering (C-09)', () => {
     expect(screen.getByText('Weight *')).toBeTruthy();
   });
 });
+
+// Minor 1: profile fields are labelled with the category's display_name.
+it('labels fields with the category display_name', async () => {
+  mockCategories.splice(0, mockCategories.length,
+    { name: 'hiv_status', display_name: 'HIV status', type: 'text', is_required: false },
+    { name: 'height', display_name: 'Height', type: 'number', is_required: true });
+  (api.getIndividualProfile as jest.Mock).mockResolvedValue({ ...profile, data: { height: 60, hiv_status: 'Unknown' } });
+  const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+  await waitFor(() => screen.getByText('Ann Lee'));
+  expect(screen.getByText('HIV status')).toBeTruthy();
+  expect(screen.queryByText('Hiv Status')).toBeNull();
+  mockCategories.length = 0;
+});
+

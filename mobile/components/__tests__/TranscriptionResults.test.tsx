@@ -477,3 +477,21 @@ it('guard: colours a strong match with the shared confidence colours', async () 
   const { confidenceColor } = require('../../utils/duplicateMatches');
   expect(StyleSheet.flatten(screen.getByText(/97% match/).props.style).color).toBe(confidenceColor(97).text);
 });
+
+// Minor 2: the missing-fields alert names fields by their labels, not their keys.
+it('the Missing Required Fields alert names fields by label', async () => {
+  const { alert } = spyAlert();
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult({ categorized_data: { weight: 150 } })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+
+  await waitFor(() => expect(alert).toHaveBeenCalled());
+  const [title, message] = alert.mock.calls[0];
+  expect(title).toBe('Missing Required Fields');
+  expect(message).toBe('Please fill in: Name, Height');
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+

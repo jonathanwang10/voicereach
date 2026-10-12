@@ -17,6 +17,7 @@ import {
   isEmptyValue,
   toggleMultiSelect,
   validateFieldValue,
+  fieldLabel,
 } from '../utils/fieldValues';
 import { Category, categoryLabel } from '../utils/categoryPayload';
 import {
@@ -134,7 +135,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     if (missingFields.length > 0) {
       Alert.alert(
         'Missing Required Fields',
-        `Please fill in: ${missingFields.join(', ')}`,
+        `Please fill in: ${missingFields.map(field => fieldLabel(field, categories)).join(', ')}`,
         [{ text: 'OK' }]
       );
       return;
@@ -323,6 +324,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}
         onCancel={handleMergeCancel}
+        categories={categories}
       />
     );
   }

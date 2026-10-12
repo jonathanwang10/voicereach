@@ -306,6 +306,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}
         onCancel={handleMergeCancel}
+        categories={categories}
       />
     );
   }

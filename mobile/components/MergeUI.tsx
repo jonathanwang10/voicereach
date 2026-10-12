@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { api } from '../services/api';
 import { showApiError } from '../utils/errorHandler';
-import { formatFieldValue, isEmptyValue } from '../utils/fieldValues';
+import { FieldCategory, fieldLabel, formatFieldValue, isEmptyValue } from '../utils/fieldValues';
 import { confidenceColor } from '../utils/duplicateMatches';
 
 interface PotentialMatch {
@@ -20,6 +20,8 @@ interface MergeUIProps {
   onMerge: (mergedData: Record<string, any>, mergeWithId: string) => void | Promise<void>;
   onCreateNew: (data: Record<string, any>) => void | Promise<void>;
   onCancel: () => void;
+  // The categories, for field labels (display_name); a key without one is title-cased.
+  categories?: FieldCategory[];
 }
 
 type Source = 'new' | 'existing';
@@ -40,6 +42,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   onMerge,
   onCreateNew,
   onCancel,
+  categories = [],
 }) => {
   // Validate that potentialMatch has a valid UUID
   const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialMatch.id);
@@ -145,7 +148,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     return (
       <View key={fieldName} style={styles.fieldRow}>
         <Text style={styles.fieldName}>
-          {fieldName.charAt(0).toUpperCase() + fieldName.slice(1).replace(/_/g, ' ')}
+          {fieldLabel(fieldName, categories)}
         </Text>
         
         <View style={styles.fieldValues}>

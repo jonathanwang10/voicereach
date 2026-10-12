@@ -33,3 +33,19 @@ it('has no placeholder Share or Export actions', () => {
   expect(screen.queryByText('Export')).toBeNull();
   expect(screen.queryByText('Actions')).toBeNull();
 });
+
+// Minor 1: changed fields are labelled with the category's display_name.
+it('labels changed fields with the category display_name', () => {
+  const interaction: any = {
+    id: 'i1', individual_id: 'p1', user_id: '', created_at: '2026-01-01T00:00:00Z',
+    data: { hiv_status: 'Unknown', shoe_size: 9 },
+  };
+  const screen = render(
+    <InteractionDetailModal visible interaction={interaction} onClose={jest.fn()}
+      categories={[{ name: 'hiv_status', display_name: 'HIV status', type: 'text' }]} />
+  );
+  expect(screen.getByText('HIV status:')).toBeTruthy();
+  expect(screen.queryByText('Hiv Status:')).toBeNull();
+  expect(screen.getByText('Shoe Size:')).toBeTruthy(); // no category: the key title-cased
+});
+

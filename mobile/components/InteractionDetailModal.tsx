@@ -8,18 +8,21 @@ import {
   ScrollView,
 } from 'react-native';
 import { Interaction } from '../types';
-import { formatFieldValue } from '../utils/fieldValues';
+import { FieldCategory, fieldLabel, formatFieldValue } from '../utils/fieldValues';
 
 interface InteractionDetailModalProps {
   visible: boolean;
   interaction: Interaction | null;
   onClose: () => void;
+  // The categories, for field labels (display_name); a key without one is title-cased.
+  categories?: FieldCategory[];
 }
 
 export default function InteractionDetailModal({
   visible,
   interaction,
   onClose,
+  categories = [],
 }: InteractionDetailModalProps) {
   if (!interaction) return null;
 
@@ -95,11 +98,7 @@ export default function InteractionDetailModal({
                 <Text style={styles.sectionTitle}>Additional Data</Text>
                 {changedFields.map(([key, text]) => (
                   <View key={key} style={styles.infoRow}>
-                    <Text style={styles.label}>
-                      {key.split('_').map(word => 
-                        word.charAt(0).toUpperCase() + word.slice(1)
-                      ).join(' ')}:
-                    </Text>
+                    <Text style={styles.label}>{fieldLabel(key, categories)}:</Text>
                     <Text style={styles.value}>{text}</Text>
                   </View>
                 ))}

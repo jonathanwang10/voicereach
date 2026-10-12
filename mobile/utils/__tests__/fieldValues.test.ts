@@ -8,6 +8,7 @@ import {
   toggleMultiSelect,
   coerceFieldData,
   validateFieldValue,
+  fieldLabel,
 } from '../fieldValues';
 
 const categories = [
@@ -121,3 +122,26 @@ describe('validateFieldValue', () => {
     expect(validateFieldValue(cat('age'), '-1')).toMatch(/positive/);
   });
 });
+
+// Minor 1: messages and labels use the category's display_name, not the key title-cased.
+describe('labels from display_name', () => {
+  const hiv = { name: 'hiv_status', display_name: 'HIV status', type: 'text', is_required: true };
+  const shoes = { name: 'shoe_size', display_name: 'Shoe size (US)', type: 'number', is_required: false };
+
+  it('validateFieldValue names the field by its label', () => {
+    expect(validateFieldValue(hiv, '')).toBe('HIV status is required');
+    expect(validateFieldValue(shoes, 'big')).toBe('Shoe size (US) must be a number');
+  });
+
+  it('validateFieldValue falls back to the key title-cased', () => {
+    expect(validateFieldValue({ name: 'hiv_status', type: 'text', is_required: true }, '')).toBe('Hiv Status is required');
+  });
+
+  it('fieldLabel maps a data key to its category label, matching keys like the backend', () => {
+    expect(fieldLabel('hiv_status', [hiv])).toBe('HIV status');
+    expect(fieldLabel('HIV status', [hiv])).toBe('HIV status');
+    expect(fieldLabel('veteran_status', [hiv])).toBe('Veteran Status');
+    expect(fieldLabel('veteran_status')).toBe('Veteran Status');
+  });
+});
+

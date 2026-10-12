@@ -88,7 +88,29 @@ describe('MergeUI', () => {
     expect(getByText('Age')).toBeTruthy();
     expect(getByText('Height')).toBeTruthy();
     expect(getByText('Weight')).toBeTruthy();
-    expect(getByText('Medical conditions')).toBeTruthy();
+    // No categories passed: the key title-cased, as everywhere else (categoryLabel)
+    expect(getByText('Medical Conditions')).toBeTruthy();
+  });
+
+  // Minor 1: a field is labelled with its category's display_name.
+  it('labels fields with the category display_name', () => {
+    const { getByText, queryByText } = render(
+      <MergeUI
+        newData={{ ...mockNewData, hiv_status: 'Unknown' }}
+        potentialMatch={mockPotentialMatch}
+        existingData={mockExistingData}
+        categories={[
+          { name: 'hiv_status', display_name: 'HIV status', type: 'text' },
+          { name: 'medical_conditions', display_name: 'Medical Conditions', type: 'multi_select' },
+        ]}
+        onMerge={mockOnMerge}
+        onCreateNew={mockOnCreateNew}
+        onCancel={mockOnCancel}
+      />
+    );
+    expect(getByText('HIV status')).toBeTruthy();
+    expect(queryByText('Hiv status')).toBeNull();
+    expect(getByText('Medical Conditions')).toBeTruthy();
   });
 
   it('calls onCancel when cancel button is pressed', () => {

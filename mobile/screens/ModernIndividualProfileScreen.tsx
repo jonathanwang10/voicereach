@@ -26,7 +26,8 @@ import {
   URGENCY_LABELS,
 } from '../utils/urgencyScore';
 import { scheduleDelete, DELETE_UNDO_MS } from '../utils/delayedDelete';
-import { formatFieldValue } from '../utils/fieldValues';
+import { fieldLabel, formatFieldValue } from '../utils/fieldValues';
+import { useCategories } from '../contexts/CategoryContext';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -43,6 +44,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
   route,
 }) => {
   const [profile, setProfile] = useState<IndividualProfile | null>(null);
+  const { categories } = useCategories(); // for field labels (display_name)
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Set when the first load failed for a reason other than "not found" (C-17)
@@ -172,9 +174,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
     const text = formatFieldValue(value);
     if (text === null) return null;
 
-    const label = key.split('_').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
+    const label = fieldLabel(key, categories);
 
     return (
       <View key={key} style={styles.fieldItem}>
@@ -409,6 +409,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
         visible={modalVisible}
         interaction={selectedInteraction}
         onClose={handleCloseModal}
+        categories={categories}
       />
     </SafeAreaView>
   );

@@ -6,9 +6,11 @@
 // - Numbers are sent as numbers, height as inches, single-select labels in the
 //   category's case, multi-selects as arrays of labels (C-14, C-15).
 import { parseHeightToInches } from './height';
+import { categoryLabel } from './categoryPayload';
 
 export interface FieldCategory {
   name: string;
+  display_name?: string | null;
   type: string;
   is_required?: boolean;
   options?: any;
@@ -118,13 +120,18 @@ export const coerceFieldData = (data: Record<string, any>, categories: FieldCate
   return stripEmpty(out);
 };
 
-const prettyLabel = (name: string) =>
-  name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+// The label for a `data` key: its category's label (categoryLabel: display_name, else the
+// key title-cased), found by the same key rule as the backend. A key with no category is
+// title-cased.
+export const fieldLabel = (key: string, categories: FieldCategory[] = []): string => {
+  const wanted = categoryKey(key);
+  return categoryLabel(categories.find(c => categoryKey(c.name) === wanted) ?? { name: key });
+};
 
 // The client-side check for one field ('' when fine), mirroring the backend
 // normaliser so a value the backend would reject is caught next to its field.
 export const validateFieldValue = (category: FieldCategory, value: any): string => {
-  const label = prettyLabel(category.name);
+  const label = categoryLabel(category);
   if (isEmptyValue(value)) return category.is_required ? `${label} is required` : '';
 
   const key = categoryKey(category.name);
