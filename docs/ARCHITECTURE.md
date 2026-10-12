@@ -158,6 +158,9 @@ it was removed on purpose and must not come back.
    labels are canonical.
 3. The display score is `urgency_override` if it is set (0 included), else the
    calculated score.
+   The stored score is computed on every save, and creating a weighted or
+   auto-trigger category re-scores everyone (`rescore_all_individuals`;
+   `backend/scripts/rescore_urgency.py` does the same after an upgrade).
 4. Colours in the app: 0-33 green `#10B981`, 34-66 yellow `#F59E0B`, 67-100 red
    `#EF4444`, as half-open bands (below 34, 34 up to 67, 67 and up), so 33.5 is
    green and 66.5 yellow; a missing score counts as green. One helper decides the
@@ -226,7 +229,7 @@ backend/
 │   ├── realtime_guard.py      # Allowlist for client Realtime events, context item
 │   └── context_service.py     # Name lookup for the assistant
 ├── db/models.py               # Pydantic schemas
-├── scripts/backfill_embeddings.py
+├── scripts/                   # backfill_embeddings.py, rescore_urgency.py
 └── tests/                     # Offline suite; tests/integration/ is the opt-in live smoke test
 ```
 

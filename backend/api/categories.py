@@ -13,12 +13,14 @@ from api.auth import get_current_user
 from api.errors import internal_error
 from db.models import CreateCategoryRequest, CategoryResponse
 from services.field_registry import category_key, export_columns, format_field_value
-from services.individual_service import fetch_last_seen
+from services.individual_service import fetch_last_seen, rescore_all_individuals
 from services.urgency_calculator import get_display_urgency_score
 from datetime import datetime, timezone
 from uuid import uuid4
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # A cell starting with one of these runs as a formula when the CSV is opened in a
 # spreadsheet (OWASP "CSV injection"); such cells get a leading "'".
@@ -168,6 +170,11 @@ async def create_category(
 
     Type rules (options, weight, auto-trigger) are enforced by
     CreateCategoryRequest, so a bad request is a 422 before this runs.
+
+    A category with `urgency_weight > 0` or `auto_trigger` changes the urgency
+    maths for everyone, so every individual is re-scored
+    (`rescore_all_individuals`). A re-score failure is logged and the 201 stands;
+    scripts/rescore_urgency.py repairs the scores later.
     """
     try:
         supabase: Client = create_client(
@@ -215,6 +222,16 @@ async def create_category(
             )
 
         created = result.data[0]
+
+        # OD-1: a weighted category joins everyone's denominator, so re-score all
+        # stored scores now. The category exists either way, so a failure here is
+        # logged (error type only) and the create still succeeds.
+        if (created.get("urgency_weight") or 0) > 0 or created.get("auto_trigger"):
+            try:
+                rescore_all_individuals(supabase)
+            except Exception as e:
+                logger.warning("Re-scoring after category create failed: %s", type(e).__name__)
+
         return CategoryResponse(
             id=created["id"],
             name=created["name"],

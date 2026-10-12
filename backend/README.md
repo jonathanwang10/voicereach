@@ -67,6 +67,7 @@ services/
   context_service.py            Name extraction and DB context for the assistant
 db/models.py         Pydantic request/response models
 scripts/backfill_embeddings.py  Embed every individual
+scripts/rescore_urgency.py      Re-score every individual (run after upgrading)
 tests/               Offline pytest suite; tests/integration/ needs a live backend
 ```
 
@@ -194,6 +195,16 @@ presets created without one), `type`, `is_required`, `is_preset`, `priority`,
   multi-select options are strings. Labels are stripped, non-blank, at most 50
   characters, unique ignoring case, and can't contain commas. Other types
   can't have options.
+
+A category with `urgency_weight > 0` or `auto_trigger` changes everyone's
+urgency (every weighted category is in the denominator), so after the insert
+`rescore_all_individuals` (`services/individual_service.py`) recomputes every
+stored `urgency_score` and writes only the rows that changed (the `updated_at`
+trigger bumps them; `urgency_override` is never touched), then clears the
+assistant's context cache. It reads up to Supabase's API row limit (1000 by
+default). If the re-score fails, the error type is logged and the 201 stands;
+`scripts/rescore_urgency.py` runs the same function, and is also the step to
+run after upgrading a database (next to `scripts/backfill_embeddings.py`).
 
 A name whose key equals the key of an existing category's `name` or
 `display_name` is a 409 (`"Veteran status"` vs the preset `veteran_status`,

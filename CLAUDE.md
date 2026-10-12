@@ -54,7 +54,8 @@ only after `npx expo prebuild --platform ios`.
   weighted number/single_select category, so a missing value counts as 0.
   Auto-trigger pins 100 only when the chosen select option's value is > 0 (or a
   number is non-zero). An `urgency_override` is displayed instead of the score,
-  and an override of 0 still counts.
+  and an override of 0 still counts. Creating a weighted or auto-trigger category
+  re-scores everyone (`rescore_all_individuals`; run `backend/scripts/rescore_urgency.py` after upgrading).
 - **Duplicates:** candidates are pre-ranked (name tokens, then height/weight
   closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
   are dropped and the backend returns only the best. Voice review may add a

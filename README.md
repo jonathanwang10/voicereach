@@ -32,7 +32,7 @@ backend/          FastAPI service — all API logic and OpenAI calls
   api/            HTTP routers, one per resource (auth.py is a dependency, not a router)
   services/       Business logic (categorization, dedup, embeddings, urgency)
   db/             Pydantic models
-  scripts/        backfill_embeddings.py — the only script
+  scripts/        backfill_embeddings.py, rescore_urgency.py — run after upgrading
   tests/          pytest suites; tests/integration/ needs a live backend (see Testing)
 mobile/           React Native (Expo) app, iOS only; mobile/ios/ is the committed (prebuilt) Xcode project
   screens/        5 tab screens + the profile screen pushed from Search
@@ -120,9 +120,12 @@ rejected (409), so "Veteran status" can't duplicate the preset. Single- and
 multi-select fields need options, typed comma-separated; for single-select,
 `Label=0.5` gives an option a value from 0 to 1 (default 0), which is the share
 of the category's weight it adds to urgency. The weight box (0–100) appears for
-number and single-select fields only. Every category, custom ones included,
-becomes an export column, part of each person's semantic-search text, and a
-field the voice assistant is shown (`services/field_registry.py`).
+number and single-select fields only. A weighted or auto-trigger category
+changes everyone's urgency (every weighted category is in the denominator), so
+creating one re-scores every stored person (`rescore_all_individuals`; only
+changed scores are written, overrides are kept). Every category, custom ones
+included, becomes an export column, part of each person's semantic-search text,
+and a field the voice assistant is shown (`services/field_registry.py`).
 
 **Export CSV** (Categories tab) writes the file to the app's cache and opens the
 share sheet, so the worker chooses where it goes; the cached copy is deleted
@@ -183,6 +186,14 @@ or `backend/scripts/backfill_embeddings.py`). The embedding text is now built
 from the categories (`build_embedding_text`), and vectors made by an older
 version still describe the old text (custom fields missing, for instance)
 until they are regenerated.
+
+Also re-score everyone's urgency: `cd backend && python scripts/rescore_urgency.py`.
+The SQL above re-scores only untouched seed rows, so every other person keeps a
+score from the older maths until re-saved. The script recomputes each stored
+`urgency_score` with the current categories and writes only the rows that
+changed (the `updated_at` trigger bumps those rows); `urgency_override` is never
+touched. Like `generate-all`, it reads up to Supabase's API row limit (1000 by
+default).
 
 The SQL Editor may ask you to confirm because the file contains `DROP` and
 `DELETE` statements. If you only want to close direct table access, this is

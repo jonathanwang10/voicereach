@@ -22,6 +22,7 @@ from db.models import (
 from services.urgency_calculator import calculate_urgency_score, get_display_urgency_score
 from services.field_registry import normalize_individual_data
 from services.search_matching import MATCH_TIER, match_individual
+from services import context_service
 
 
 LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
@@ -53,6 +54,36 @@ def fetch_last_seen(supabase: Client, individual_ids: list) -> Dict[str, Dict[st
                 "location": row.get("location"),
             })
     return latest
+
+
+def rescore_all_individuals(supabase: Client) -> int:
+    """
+    Recompute every individual's stored `urgency_score` with the current categories.
+
+    OD-1 puts every weighted category in the denominator, so creating one changes
+    everyone's score. Called by `create_category` for a weighted or auto-trigger
+    category, and by scripts/rescore_urgency.py after an upgrade.
+    - One read of individuals and categories (PostgREST's ~1000-row cap applies,
+      as for generate-all and export), then one update per row whose score changed.
+    - Scores the normalised data, as a save would; `data` itself is not rewritten.
+    - Writes only `urgency_score`: `urgency_override` is never touched. The
+      `updated_at` trigger bumps each re-scored row.
+    - Clears the assistant's context cache if anything changed.
+    Returns the number of rows updated.
+    """
+    individuals = supabase.table("individuals").select("id, urgency_score, data").execute().data or []
+    categories = supabase.table("categories").select("*").execute().data or []
+    updated = 0
+    for row in individuals:
+        stored = row.get("data")
+        data, _ = normalize_individual_data(stored if isinstance(stored, dict) else {}, categories)
+        score = calculate_urgency_score(data, categories)
+        if score != row.get("urgency_score"):
+            supabase.table("individuals").update({"urgency_score": score}).eq("id", str(row["id"])).execute()
+            updated += 1
+    if updated:
+        context_service.invalidate_context_cache()
+    return updated
 
 
 def _parse_timestamp(value: Any) -> datetime:

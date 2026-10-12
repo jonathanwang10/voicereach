@@ -11,7 +11,9 @@ A 5-6 minute walkthrough of the app.
   run, from the repo root with the venv active:
   `cd backend && python scripts/backfill_embeddings.py`
   (or `POST /api/embeddings/generate-all` with a token). Run it again after
-  re-running `schema.sql` or upgrading.
+  re-running `schema.sql` or upgrading. After upgrading, also run
+  `cd backend && python scripts/rescore_urgency.py` so stored urgency scores
+  use the current maths.
 - Open the app in the iOS simulator (or on a phone with
   `EXPO_PUBLIC_API_BASE_URL` set to your machine's LAN address).
 - The seed data includes six people, among them **John Doe** (45, 6 ft, 180 lb,
