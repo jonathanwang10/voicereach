@@ -150,7 +150,7 @@ def test_transcribe_path_logs_no_transcript(capture, capsys):
     openai_mock.categorize_transcription = AsyncMock(return_value={"name": SENTINEL_NAME, "height": 70})
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(side_effect=RuntimeError(f"no match for {SENTINEL_NAME}"))
-    with patch("api.transcription.OpenAIService", return_value=openai_mock), \
+    with patch("api.transcription.get_openai_service", return_value=openai_mock), \
          patch("api.transcription.get_supabase", return_value=FakeDB()), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})

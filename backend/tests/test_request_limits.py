@@ -66,7 +66,7 @@ def test_chunked_body_through_fastapi_is_413_not_400():
 
 
 def test_assistant_audio_over_3mb_is_413():
-    with patch("api.voice_assistant.OpenAIService") as svc:
+    with patch("api.voice_assistant.get_openai_service") as svc:
         r = _client().post("/api/voice-assistant/transcribe",
                            files={"audio": ("q.m4a", b"\x00" * (3 * MB + 1), "audio/m4a")})
     assert r.status_code == 413
@@ -76,7 +76,7 @@ def test_assistant_audio_over_3mb_is_413():
 def test_assistant_audio_under_cap_is_transcribed():
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = AsyncMock(return_value="hello")
-    with patch("api.voice_assistant.OpenAIService", svc):
+    with patch("api.voice_assistant.get_openai_service", svc):
         r = _client().post("/api/voice-assistant/transcribe",
                            files={"audio": ("q.m4a", b"\x00\x00\x00\x18ftypM4A ", "audio/m4a")})
     assert r.status_code == 200
@@ -209,7 +209,7 @@ def test_audio_url_too_large_is_413_from_the_route(monkeypatch):
     svc = MagicMock()
     svc.return_value.transcribe_audio = AsyncMock(side_effect=AudioTooLarge("Audio file is larger than 5 MB"))
     with patch("api.transcription.get_supabase", return_value=sb), \
-         patch("api.transcription.OpenAIService", svc):
+         patch("api.transcription.get_openai_service", svc):
         r = _client().post("/api/transcribe", json={"audio_url": "https://x.supabase.co/a.m4a"})
     assert r.status_code == 413
 
@@ -248,7 +248,7 @@ def test_transcribe_route_answers_before_the_app_gives_up(monkeypatch):
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = slow
     with patch("api.transcription.get_supabase", return_value=sb), \
-         patch("api.transcription.OpenAIService", svc):
+         patch("api.transcription.get_openai_service", svc):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
     assert r.status_code == 504
     assert transcription.TRANSCRIBE_DEADLINE_SECONDS < 120
@@ -302,8 +302,8 @@ def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = failing
     with patch("api.transcription.get_supabase", return_value=sb), \
-         patch("api.transcription.OpenAIService", svc), \
-         patch("api.voice_assistant.OpenAIService", svc):
+         patch("api.transcription.get_openai_service", svc), \
+         patch("api.voice_assistant.get_openai_service", svc):
         r = _client().post(route, **kwargs)
     assert r.status_code == 500
     assert seen and not os.path.exists(seen[0])

@@ -37,7 +37,7 @@ def _run(body, categorized=None, categories=CATEGORIES, openai=None, matches=(MA
     sb = FakeSupabase().on("categories", "select", data=categories)
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(return_value=list(matches))
-    with patch("api.transcription.OpenAIService", return_value=openai), \
+    with patch("api.transcription.get_openai_service", return_value=openai), \
          patch("api.transcription.get_supabase", return_value=sb), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         response = TestClient(app).post("/api/transcribe", json=body)

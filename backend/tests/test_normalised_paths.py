@@ -44,7 +44,7 @@ def _transcribe(raw_categorized):
         {**c, "options": c.get("options")} for c in CATEGORIES]
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(return_value=[])
-    with patch("api.transcription.OpenAIService", return_value=openai_mock), \
+    with patch("api.transcription.get_openai_service", return_value=openai_mock), \
          patch("api.transcription.get_supabase", return_value=supabase), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         response = TestClient(app).post("/api/transcribe", json={"audio_data": "AAAA"})

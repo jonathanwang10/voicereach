@@ -378,3 +378,14 @@ Return JSON only."""
             logger.warning("compare_individuals failed: %s", type(e).__name__)
             # Return empty scores on error
             return {}
+
+_service: Optional[OpenAIService] = None
+
+
+def get_openai_service() -> OpenAIService:
+    """The process's one OpenAIService, built on first use: one AsyncOpenAI client and
+    its connection pool shared by every request, instead of one per call (H2-1.2)."""
+    global _service
+    if _service is None:
+        _service = OpenAIService()
+    return _service

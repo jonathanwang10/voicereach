@@ -276,7 +276,7 @@ def _transcribe_with(find_duplicates):
     ]
     dup = MagicMock()
     dup.return_value.find_duplicates = find_duplicates
-    with patch("api.transcription.OpenAIService", return_value=openai_mock), \
+    with patch("api.transcription.get_openai_service", return_value=openai_mock), \
          patch("api.transcription.get_supabase", return_value=supabase), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         return TestClient(app).post("/api/transcribe", json={"audio_data": "AAAA"})
@@ -299,7 +299,7 @@ def test_transcribe_duplicate_check_failed_is_false_when_the_check_ran():
 def test_check_duplicates_database_failure_is_a_500_not_an_empty_list():
     from main import app
     with patch("api.individuals.get_supabase", return_value=FakePeopleDB([], fail=True)), \
-         patch("services.openai_service.OpenAIService"):
+         patch("api.individuals.get_openai_service"):
         response = TestClient(app).post("/api/individuals/check-duplicates", json={"name": "Ann Lee"})
     assert response.status_code == 500
     assert response.json() == {"detail": "Duplicate check failed"}

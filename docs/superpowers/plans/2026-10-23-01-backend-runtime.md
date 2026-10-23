@@ -50,6 +50,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 
 - Task 1: the roadmap and phase plans were already committed on `hardening-2` (15251d2), so Task 1's commit adds only the manual-steps file (`docs: add hardening-2 manual-steps file`). Baseline: 718 passed, 5 skipped (all five are the live smoke tests in `test_live_smoke.py`), not 1 skipped; jest 40/40 suites (the first cold run timed out 4 suites, a rerun passed; not a code failure).
 - Task 4: `test_schema_contract.py`'s static scan matched `.table("t")...execute()`; a `fetch_all` builder has no `.execute()`, so the regex ran on into the next chain. The scan now also ends a chain at the `.order("id"))` that closes a builder and never crosses another `.table(` call. `fetch_last_seen` also selects `id`, so `fetch_all` can skip a shifted row. The MagicMock chains in `test_rate_limit.py` / `test_request_limits.py` became self-returning chains (they could not just add one `range` link).
+- Task 5: `check_duplicates` now imports `DuplicateDetectionService` at module top (as the task says), so `test_error_contract.py`'s patch target moved to `api.individuals.DuplicateDetectionService`.
 
 ## Decisions the roadmap left open
 
@@ -491,7 +492,7 @@ Roadmap item 2, second half.
 **Interfaces:**
 - Produces: `services/openai_service.py: def get_openai_service() -> OpenAIService` (lazy, module-level `_service`). Tests patch it per module: `patch("api.transcription.get_openai_service", return_value=fake)`.
 
-- [ ] **Step 1: Write the failing tests** in `test_openai_service.py`
+- [x] **Step 1: Write the failing tests** in `test_openai_service.py`
 
 ```python
 from pathlib import Path
@@ -506,12 +507,12 @@ def test_no_route_builds_its_own_openai_service():
     assert not [p.name for p in api_dir.glob("*.py") if "OpenAIService()" in p.read_text()]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_openai_service.py -v`
 Expected: FAIL with `ImportError: cannot import name 'get_openai_service'`.
 
-- [ ] **Step 3: Implement `get_openai_service() -> OpenAIService`, then switch the three routes to it.** Rename the test patch targets:
+- [x] **Step 3: Implement `get_openai_service() -> OpenAIService`, then switch the three routes to it.** Rename the test patch targets:
 
 ```bash
 grep -rl "OpenAIService" backend/tests | xargs sed -i '' \
@@ -522,9 +523,9 @@ grep -rl "OpenAIService" backend/tests | xargs sed -i '' \
 
 The calling convention is unchanged (`get_openai_service()` replaces `OpenAIService()`), so a patched `return_value` behaves as before.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/openai_service.py backend/api backend/tests

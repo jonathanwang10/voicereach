@@ -70,7 +70,7 @@ BROKEN_ROUTES = [
 @pytest.mark.parametrize("method,path,body,target", BROKEN_ROUTES)
 def test_database_failure_returns_generic_500(method, path, body, target):
     with patch(target, return_value=_broken_supabase()), \
-         patch("api.transcription.OpenAIService"):
+         patch("api.transcription.get_openai_service"):
         kwargs = {"json": body} if body is not None else {}
         response = getattr(_client(), method)(path, **kwargs)
     assert response.status_code == 500, response.text
@@ -84,8 +84,8 @@ def test_check_duplicates_failure_is_generic_500():
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(side_effect=RuntimeError(SECRET))
     with patch("api.individuals.get_supabase", return_value=MagicMock()), \
-         patch("services.openai_service.OpenAIService"), \
-         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+         patch("api.individuals.get_openai_service"), \
+         patch("api.individuals.DuplicateDetectionService", dup):
         response = _client().post("/api/individuals/check-duplicates", json={"name": "Ann"})
     assert response.status_code == 500
     assert response.json() == {"detail": "Duplicate check failed"}
@@ -94,7 +94,7 @@ def test_check_duplicates_failure_is_generic_500():
 def test_assistant_transcribe_failure_is_generic_500():
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = AsyncMock(side_effect=RuntimeError(SECRET))
-    with patch("api.voice_assistant.OpenAIService", svc):
+    with patch("api.voice_assistant.get_openai_service", svc):
         response = _client().post(
             "/api/voice-assistant/transcribe",
             files={"audio": ("q.m4a", b"\x00\x00\x00\x18ftypM4A ", "audio/m4a")},
@@ -123,7 +123,7 @@ def _categories_supabase():
 
 def test_transcribe_without_audio_is_400_not_500():
     with patch("api.transcription.get_supabase", return_value=_categories_supabase()), \
-         patch("api.transcription.OpenAIService"):
+         patch("api.transcription.get_openai_service"):
         response = _client().post("/api/transcribe", json={})
     assert response.status_code == 400
     assert response.json() == {"detail": "Either audio_url or audio_data must be provided"}

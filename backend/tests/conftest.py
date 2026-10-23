@@ -44,7 +44,8 @@ def _reset_process_state():
     - rate-limit windows (services.rate_limit)
     - the shared ContextService and its cache (services.context_service._context_service)
     - the verified-token cache and the Supabase Auth client (api.auth._cache, _auth_client)
-    - the shared service-key Supabase client (db.client._client)
+    - the shared service-key Supabase client (db.client._client) and OpenAIService
+      (services.openai_service._service)
     - app.dependency_overrides: restored to exactly what it was, so a test that
       installs an override (or pops the fake user) can't leak it into the next one
     """
@@ -52,6 +53,7 @@ def _reset_process_state():
     from api import auth
     from services import context_service
     from db import client as db_client
+    from services import openai_service
     from services.rate_limit import reset_rate_limits
 
     def reset():
@@ -60,6 +62,7 @@ def _reset_process_state():
         auth._cache.clear()
         auth._auth_client = None
         db_client._client = None
+        openai_service._service = None
 
     overrides = dict(app.dependency_overrides)
     reset()

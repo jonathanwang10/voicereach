@@ -73,3 +73,15 @@ def test_whisper_duration_errors_become_client_messages(svc, whisper_error, mess
     svc._whisper.side_effect = Exception(whisper_error)
     with pytest.raises(ValueError, match=message):
         _transcribe(svc, f"{PROJECT_URL}/storage/v1/object/audio/a.m4a")
+
+
+from pathlib import Path
+from services.openai_service import get_openai_service
+
+def test_get_openai_service_returns_one_shared_service():
+    assert get_openai_service() is get_openai_service()
+    assert isinstance(get_openai_service(), OpenAIService)
+
+def test_no_route_builds_its_own_openai_service():
+    api_dir = Path(__file__).resolve().parents[1] / "api"
+    assert not [p.name for p in api_dir.glob("*.py") if "OpenAIService()" in p.read_text()]

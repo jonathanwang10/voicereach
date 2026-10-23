@@ -19,7 +19,9 @@ from db.models import (
     InteractionsResponse,
     DeleteIndividualResponse
 )
+from services.duplicate_detection_service import DuplicateDetectionService
 from services.individual_service import IndividualService
+from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
 from services.rate_limit import rate_limit
@@ -347,12 +349,7 @@ async def check_duplicates(
         # Get Supabase client
         supabase = get_supabase()
         
-        # Initialize duplicate detection service
-        from services.duplicate_detection_service import DuplicateDetectionService
-        from services.openai_service import OpenAIService
-        
-        openai_service = OpenAIService()
-        duplicate_service = DuplicateDetectionService(supabase, openai_service)
+        duplicate_service = DuplicateDetectionService(supabase, get_openai_service())
         
         # Find potential duplicates using the same logic as transcription
         potential_matches = await duplicate_service.find_duplicates(data)
