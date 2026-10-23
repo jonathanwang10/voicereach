@@ -2,6 +2,7 @@
 cap (C-28), the bounded Whisper budget, and temp-file cleanup (C-65)."""
 import asyncio
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -223,7 +224,7 @@ def test_audio_url_download_within_cap_is_transcribed(monkeypatch):
     monkeypatch.setattr(openai_service.httpx, "AsyncClient", lambda *a, **k: _StreamClient(ok))
     svc = _svc()
     svc.whisper_client = MagicMock()
-    svc.whisper_client.audio.transcriptions.create = AsyncMock(return_value=" words ")
+    svc.whisper_client.audio.transcriptions.create = AsyncMock(return_value=SimpleNamespace(text=" words "))
     text = asyncio.run(svc.transcribe_audio("https://ourproject.supabase.co/storage/v1/object/a.m4a"))
     assert text == "words"
 

@@ -16,7 +16,7 @@ def test_defaults(monkeypatch):
     for n in NAMES: monkeypatch.delenv(n, raising=False)
     importlib.reload(model_config)
     assert [getattr(model_config, n) for n in NAMES] == \
-        ["gpt-4o", "whisper-1", "gpt-realtime", "text-embedding-3-large"]
+        ["gpt-4o", "gpt-transcribe", "gpt-realtime", "text-embedding-3-large"]   # H2-3.4
 
 def test_env_overrides_and_blank_means_default(monkeypatch):
     monkeypatch.setenv("CHAT_MODEL", "gpt-test"); monkeypatch.setenv("REALTIME_MODEL", "  ")
@@ -37,7 +37,7 @@ async def test_categorize_and_compare_use_chat_model(monkeypatch):
 async def test_whisper_uses_transcribe_model(monkeypatch, tmp_path):
     from services.openai_service import OpenAIService
     monkeypatch.setattr(model_config, "TRANSCRIBE_MODEL", "stt-x")
-    svc = OpenAIService(); create = AsyncMock(return_value=" hello ")
+    svc = OpenAIService(); create = AsyncMock(return_value=SimpleNamespace(text=" hello "))
     monkeypatch.setattr(svc.whisper_client.audio.transcriptions, "create", create)
     path = tmp_path / "a.m4a"; path.write_bytes(b"x")
     assert await svc._whisper(str(path)) == "hello"

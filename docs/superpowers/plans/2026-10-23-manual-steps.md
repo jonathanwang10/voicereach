@@ -24,7 +24,7 @@ Each file is idempotent.
 | Name | Default | Service | Phase |
 |---|---|---|---|
 | `CHAT_MODEL` | `gpt-4o` | backend | 1 |
-| `TRANSCRIBE_MODEL` | `whisper-1` | backend | 1 |
+| `TRANSCRIBE_MODEL` | `gpt-transcribe` (Phase 3; was `whisper-1` in Phase 1) | backend | 1, 3 |
 | `REALTIME_MODEL` | `gpt-realtime` | backend | 1 |
 | `EMBEDDING_MODEL` | `text-embedding-3-large` | backend | 1 |
 | `RATE_LIMIT_SAVE_PER_MIN` | 30 | backend | 1 |
@@ -53,3 +53,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 4. Choose the App Store bundle id (Phase 8 leaves a placeholder).
 5. (Phase 2, Task 14) Check `select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm';` returns `extensions`. If it says `public` (installed earlier), run `ALTER EXTENSION pg_trgm SET SCHEMA extensions;` then re-run migration 6.
 6. (Phase 2, Task 15) Enable pg_cron (Dashboard → Database → Extensions), then run the commented `cron.schedule` line from `supabase/schema.sql` once. Check: `select jobname, schedule from cron.job;` lists `coarsen-old-locations`.
+7. (Phase 3, Task 5) After deploying, make one recording and confirm the transcript comes back. If OpenAI rejects `prompt` or `response_format=json` for the default `gpt-transcribe`, set `TRANSCRIBE_MODEL` to another transcription model that accepts both (for example `gpt-4o-mini-transcribe` until its 2027-02-26 shutdown) and report it.

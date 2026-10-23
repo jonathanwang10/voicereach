@@ -96,7 +96,7 @@ Three separate AI capabilities, easy to confuse:
 
 | Capability | Model (env var) | Where |
 |---|---|---|
-| Transcribe + extract fields | `whisper-1` (`TRANSCRIBE_MODEL`) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
+| Transcribe + extract fields | `gpt-transcribe` (`TRANSCRIBE_MODEL`, with a fixed SF place/street vocabulary prompt, no person names) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
 | Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
 | Live spoken assistant | `gpt-realtime` (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
 
@@ -566,7 +566,7 @@ is logged.
 
 | What | Goes to | When | Kept |
 |---|---|---|---|
-| A recording: M4A audio of the worker describing the person | The backend, then OpenAI Whisper (`whisper-1`) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded, a new recording replaces it, or the Record screen goes away (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
+| A recording: M4A audio of the worker describing the person | The backend, then OpenAI transcription (`TRANSCRIBE_MODEL`, default `gpt-transcribe`), with a fixed prompt of SF place and street names (no person names) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded, a new recording replaces it, or the Record screen goes away (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
 | The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
 | The new person's fields, with up to 8 existing candidates' names and full `data` (medical conditions included) | OpenAI GPT-4o | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
 | A person's name and labelled fields (`build_embedding_text`) | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |

@@ -201,7 +201,8 @@ def test_whisper_call_gets_a_60s_timeout(tmp_path):
     from tests.helpers import fixture_audio
     audio.write_bytes(fixture_audio("audio_6s.m4a"))
     svc = OpenAIService()
-    create = AsyncMock(return_value=" hi ")
+    from types import SimpleNamespace
+    create = AsyncMock(return_value=SimpleNamespace(text=" hi "))   # response_format="json" (H2-3.4)
     with patch.object(svc.whisper_client.audio.transcriptions, "create", create):
         assert asyncio.run(svc.transcribe_audio_file(str(audio))) == "hi"
     assert create.call_args.kwargs["timeout"] == 60

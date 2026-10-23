@@ -40,7 +40,7 @@ Environment variables (`backend/.env`):
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 | `REALTIME_MAX_SESSIONS_PER_USER`, `REALTIME_MAX_SESSIONS_TOTAL` | Optional caps on open realtime sessions per phone (default 2) and per process (default 20) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |
-| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `whisper-1`, `gpt-realtime`, `text-embedding-3-large`; `services/model_config.py`) |
+| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime`, `text-embedding-3-large`; `services/model_config.py`) |
 
 Then: API at `http://localhost:8001`, health check at `/health`. The interactive
 docs (`/docs`, `/redoc`, `/openapi.json`) are off unless `ENABLE_API_DOCS=1`. `backend/.env` is loaded once at startup (`load_dotenv()` never
@@ -97,7 +97,7 @@ curl.
 prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
 same host as `SUPABASE_URL` (other hosts are a 400; the download stops at 5 MB
 and doesn't follow redirects: a 3xx fails like any other download error, with a
-500 "Transcription failed"). Loads categories, transcribes with `whisper-1`,
+500 "Transcription failed"). Loads categories, transcribes with `TRANSCRIBE_MODEL` (default `gpt-transcribe`, with a fixed SF vocabulary prompt and no person names),
 extracts fields with `gpt-4o`, validates, and looks for duplicates. The M4A's
 length is read with mutagen before Whisper is called: under 5 s or over 125 s is
 a 400 (`RECORDING_LIMITS`; assistant questions use 1-60 s, `QUESTION_LIMITS`).

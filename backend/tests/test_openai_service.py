@@ -177,3 +177,20 @@ async def test_a_reply_that_is_not_an_object_is_an_error():
     svc = _openai_returning("[1, 2]")
     with pytest.raises(Exception, match="Failed to categorize transcription"):
         await svc.categorize_transcription("This is Dana", CATS)
+
+
+# --- transcription model and vocabulary prompt (H2-3.4) ---
+
+from types import SimpleNamespace  # noqa: E402
+from services.transcribe_vocab import build_transcribe_prompt  # noqa: E402
+
+
+async def test_transcription_uses_the_configured_model_and_the_vocab_prompt(tmp_path):
+    svc = OpenAIService.__new__(OpenAIService)
+    svc.whisper_client = MagicMock()
+    svc.whisper_client.audio.transcriptions.create = AsyncMock(return_value=SimpleNamespace(text=" hi "))
+    f = tmp_path / "a.m4a"; f.write_bytes(M4A)
+    assert await svc._whisper(str(f)) == "hi"
+    kw = svc.whisper_client.audio.transcriptions.create.await_args.kwargs
+    assert (kw["model"], kw["prompt"], kw["response_format"]) == (
+        model_config.TRANSCRIBE_MODEL, build_transcribe_prompt(), "json")

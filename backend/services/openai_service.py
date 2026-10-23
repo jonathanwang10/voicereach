@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from services import model_config
 from services.category_schema import Extraction, build_extraction_schema, parse_extraction
 from services.field_registry import parse_height_inches
+from services.transcribe_vocab import build_transcribe_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -138,10 +139,12 @@ class OpenAIService:
             transcript = await self.whisper_client.audio.transcriptions.create(
                 model=model_config.TRANSCRIBE_MODEL,
                 file=audio_file,
-                response_format="text",
+                # SF places, streets and outreach terms; never person names (H2-3.4)
+                prompt=build_transcribe_prompt(),
+                response_format="json",   # every transcription model returns .text for json
                 timeout=WHISPER_TIMEOUT_SECONDS,
             )
-        return transcript.strip()
+        return transcript.text.strip()
 
     async def _download_audio(self, audio_url: str) -> bytes:
         """Stream the file, stopping at MAX_AUDIO_DOWNLOAD_BYTES. No redirects."""

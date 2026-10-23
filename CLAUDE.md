@@ -66,7 +66,9 @@ only after `npx expo prebuild --platform ios`.
   categories, temperature 0; every value carries `evidence` (transcript words), and a
   value whose evidence isn't in the transcript is dropped (numbers: their digits or
   number word suffice). Nothing is inferred; a missing required field is
-  `missing_required`. The transcript is its own fenced `user` message.
+  `missing_required`. The transcript is its own fenced `user` message. Transcription
+  uses `model_config.TRANSCRIBE_MODEL` (default `gpt-transcribe`) with the SF
+  vocabulary prompt in `services/transcribe_vocab.py` (places and terms, never person names).
 - **Duplicates:** candidates are pre-ranked (name tokens, then height/weight
   closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
   are dropped and the backend returns only the best. Voice review may add a
