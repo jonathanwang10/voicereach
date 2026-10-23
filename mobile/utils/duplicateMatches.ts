@@ -20,6 +20,15 @@ export const unionMatches = (...lists: Array<DuplicateMatch[] | null | undefined
   return Array.from(byId.values()).sort((a, b) => b.confidence - a.confidence);
 };
 
+// At most this many matches are shown: the backend returns up to 3, and voice
+// review's re-check may add its own (H2-3.5).
+export const MAX_SHOWN_MATCHES = 3;
+
+// The lists as one: de-duplicated at the highest confidence, only mergeable
+// matches, best first, at most MAX_SHOWN_MATCHES.
+export const topMatches = (...lists: Array<DuplicateMatch[] | null | undefined>): DuplicateMatch[] =>
+  mergeableMatches(unionMatches(...lists)).slice(0, MAX_SHOWN_MATCHES);
+
 // The highest-confidence mergeable match, or null.
 export const bestMergeableMatch = (matches?: DuplicateMatch[] | null): DuplicateMatch | null =>
   mergeableMatches(matches).reduce<DuplicateMatch | null>(

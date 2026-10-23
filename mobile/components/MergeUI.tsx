@@ -26,6 +26,9 @@ interface MergeUIProps {
   onCancel: () => void;
   // The categories, for field labels (display_name); a key without one is title-cased.
   categories?: FieldCategory[];
+  // The other possible matches (best first), and how to switch to one of them (H2-3.5)
+  otherMatches?: PotentialMatch[];
+  onSwitchMatch?: (match: PotentialMatch) => void;
 }
 
 type Source = 'new' | 'existing';
@@ -48,7 +51,10 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   onCreateNew,
   onCancel,
   categories = [],
+  otherMatches = [],
+  onSwitchMatch,
 }) => {
+  const [showOthers, setShowOthers] = useState(false);
   // Validate that potentialMatch has a valid UUID
   const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(potentialMatch.id);
   const hasProvidedData = Object.keys(existingData).length > 0;
@@ -287,6 +293,21 @@ export const MergeUI: React.FC<MergeUIProps> = ({
         <Text style={styles.subtitle}>
           We found a similar individual: <Text style={styles.matchName}>{potentialMatch.name}</Text>
         </Text>
+        {otherMatches.length > 0 && (
+          <View>
+            {/* Switching loads that person and resets the field choices (the id effect) */}
+            <TouchableOpacity accessibilityRole="button" onPress={() => setShowOthers(open => !open)}
+              disabled={isSubmitting}>
+              <Text style={styles.otherMatchesToggle}>Other possible matches ({otherMatches.length})</Text>
+            </TouchableOpacity>
+            {showOthers && otherMatches.map(match => (
+              <TouchableOpacity key={match.id} accessibilityRole="button" disabled={isSubmitting}
+                onPress={() => { setShowOthers(false); onSwitchMatch?.(match); }}>
+                <Text style={styles.otherMatch}>{match.name} · {match.confidence}%</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
         <Text style={styles.instructions}>
           Select which data to keep for each field, then choose an action below.
         </Text>
@@ -329,6 +350,17 @@ export const MergeUI: React.FC<MergeUIProps> = ({
 };
 
 const styles = StyleSheet.create({
+  otherMatchesToggle: {
+    fontSize: 14,
+    color: '#007AFF',
+    marginTop: 8,
+  },
+  otherMatch: {
+    fontSize: 14,
+    color: '#333',
+    paddingVertical: 6,
+    paddingLeft: 8,
+  },
   container: {
     flex: 1,
     backgroundColor: '#fff',

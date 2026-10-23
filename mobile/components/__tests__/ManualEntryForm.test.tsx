@@ -277,3 +277,16 @@ it('reuses the key when a failed save is retried', async () => {
   expect(first).toEqual(expect.any(String));
   expect(second).toBe(first);
 });
+
+// H2-3.5
+it('offers the other possible matches from the check', async () => {
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([
+    { id: MATCH_ID, name: 'Ann Lee', confidence: 90 },
+    { id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', name: 'Anne L', confidence: 70 }]);
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Save'));
+  fillRequired(screen);
+  fireEvent.press(screen.getByText('Save'));
+  await screen.findByText('Potential Duplicate Found');
+  expect(screen.getByText('Other possible matches (1)')).toBeTruthy();
+});

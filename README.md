@@ -520,8 +520,9 @@ close spellings: metaphone and Jaro-Winkler) and height/weight closeness, asks
 0–100 from name, aka, age, height, weight, gender and the last-seen street area
 only (never medical or other sensitive fields), drops anything below 60, and
 returns the top 3, best first (`services/duplicate_detection_service.py`). Voice review adds the match from
-its own re-check to the server's (`unionMatches`), so its match list can show
-two; Save offers the best one. If GPT-4o fails, a name comparison
+its own re-check to the server's (`topMatches`: de-duplicated, best first, at
+most 3 shown). The merge screen opens on the best match; "Other possible matches
+(n)" switches to one of the others. If GPT-4o fails, a name comparison
 stands in; if the search itself fails, the app is told
 (`duplicate_check_failed`, or a 500 from `check-duplicates`) and asks
 "Duplicate check unavailable. Save as new anyway?" rather than saving a possible

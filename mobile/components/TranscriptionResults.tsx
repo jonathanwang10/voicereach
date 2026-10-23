@@ -4,11 +4,9 @@ import Toast from 'react-native-toast-message';
 import { TranscriptionResult, DuplicateMatch, api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
 import {
-  bestMergeableMatch,
   confidenceColor,
   confirmSaveAsNew,
-  mergeableMatches,
-  unionMatches,
+  topMatches,
 } from '../utils/duplicateMatches';
 import {
   coerceFieldData,
@@ -110,7 +108,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   // exactly the list the last Save decided on, so the screen never shows a match
   // that Save ignored
   const [shownMatches, setShownMatches] = useState<DuplicateMatch[]>(
-    () => mergeableMatches(result.potential_matches));
+    () => topMatches(result.potential_matches));
 
   // Real types (numbers, height in inches, matched labels, multi-select arrays) with
   // empty fields dropped, so nothing is saved or shown as "null" (C-09, C-14)
@@ -173,10 +171,10 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       // matches, never replaces them: a match the worker has seen stays on offer.
       // Only real, live people count (no mock ids, no pending deletes).
       const fields = toFields(categorizedData);
-      let matches = mergeableMatches(result.potential_matches);
+      let matches = topMatches(result.potential_matches);
       if (result.duplicate_check_failed || !sameFields(fields, toFields(result.categorized_data))) {
         try {
-          matches = mergeableMatches(unionMatches(await api.checkDuplicates(fields), result.potential_matches));
+          matches = topMatches(await api.checkDuplicates(fields), result.potential_matches);
         } catch {
           // With a server match still on offer, decide on it; otherwise ask
           if (matches.length === 0 && !(await confirmSaveAsNew())) return;
@@ -184,7 +182,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       }
       setShownMatches(matches);
 
-      const bestMatch = bestMergeableMatch(matches);
+      const bestMatch = matches[0] ?? null;   // topMatches is best first
       if (bestMatch) {
         setSelectedMatch(bestMatch);
         setShowMergeUI(true);
@@ -331,6 +329,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       <MergeUI
         newData={mergeNewData}
         potentialMatch={selectedMatch}
+        otherMatches={shownMatches.filter(m => m.id !== selectedMatch.id)}
+        onSwitchMatch={setSelectedMatch}
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}
         onCancel={handleMergeCancel}

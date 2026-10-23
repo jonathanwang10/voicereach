@@ -76,7 +76,8 @@ only after `npx expo prebuild --platform ios`.
   top 8 (`MAX_LLM_CANDIDATES`) from name, aka, age, height, weight, gender and last-seen
   area only (no sensitive or medical fields); matches below 60 are dropped and the
   backend returns the top 3, best first. Voice review may add a
-  re-check's match to the server's (`unionMatches`). There is no 95% auto-merge:
+  re-check's matches to the server's (`topMatches`, at most 3 shown); the merge
+  screen opens on the best match, and "Other possible matches (n)" switches to another. There is no 95% auto-merge:
   every match opens the merge UI. A merge replaces the whole `data` JSONB with
   what the client sends, guarded by `individuals.version` (409 `This person was
   changed by someone else. Reload and try again.`); a save is one `save_individual`

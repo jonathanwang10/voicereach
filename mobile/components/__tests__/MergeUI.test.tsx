@@ -331,4 +331,24 @@ describe('MergeUI', () => {
     { const button = await findByText('Merge'); await act(async () => { fireEvent.press(button); }); }
     expect(onMerge.mock.calls[1][0].weight).toBe(180);                // back to the default (new)
   });
+
+  // --- other possible matches (H2-3.5) ---
+  it('lists other possible matches and switches to the chosen one', () => {
+    const other = { id: '550e8400-e29b-41d4-a716-446655440001', name: 'Jon B', confidence: 70 };
+    const onSwitch = jest.fn();
+    const { getByText, queryByText } = render(<MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
+      existingData={mockExistingData} otherMatches={[other]} onSwitchMatch={onSwitch}
+      onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />);
+    expect(queryByText('Jon B · 70%')).toBeNull();
+    fireEvent.press(getByText('Other possible matches (1)'));
+    fireEvent.press(getByText('Jon B · 70%'));
+    expect(onSwitch).toHaveBeenCalledWith(other);
+    expect(queryByText('Jon B · 70%')).toBeNull();     // the list closes
+  });
+
+  it('shows no "Other possible matches" without other matches', () => {
+    const { queryByText } = render(<MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
+      existingData={mockExistingData} onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />);
+    expect(queryByText(/Other possible matches/)).toBeNull();
+  });
 });

@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert,
 import Toast from 'react-native-toast-message';
 import { api, DuplicateMatch } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
-import { bestMergeableMatch, confirmSaveAsNew } from '../utils/duplicateMatches';
+import { confirmSaveAsNew, topMatches } from '../utils/duplicateMatches';
 import {
   coerceFieldData,
   coerceFieldValue,
@@ -52,6 +52,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const [showMergeUI, setShowMergeUI] = useState(false);
   const [pendingData, setPendingData] = useState<Record<string, any>>({});
   const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
+  // The check's matches as offered: mergeable, best first, at most 3 (H2-3.5)
+  const [shownMatches, setShownMatches] = useState<DuplicateMatch[]>([]);
 
   // Fetch categories from API on component mount
   useEffect(() => {
@@ -91,6 +93,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     setPendingData({});
     setShowMergeUI(false);
     setSelectedMatch(null);
+    setShownMatches([]);
   };
 
   const handleFieldChange = (fieldName: string, value: string | string[]) => {
@@ -162,7 +165,9 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       }
 
       // A real, live person (not one whose delete is pending) opens the merge UI
-      const bestMatch = bestMergeableMatch(potentialMatches);
+      const matches = topMatches(potentialMatches);
+      setShownMatches(matches);
+      const bestMatch = matches[0] ?? null;
       if (bestMatch) {
         setSelectedMatch(bestMatch);
         setPendingData(fields);
@@ -317,6 +322,8 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       <MergeUI
         newData={pendingData}
         potentialMatch={selectedMatch}
+        otherMatches={shownMatches.filter(m => m.id !== selectedMatch.id)}
+        onSwitchMatch={setSelectedMatch}
         onMerge={handleMerge}
         onCreateNew={handleCreateNew}
         onCancel={handleMergeCancel}

@@ -547,3 +547,44 @@ it('leaves a 409 on merge to MergeUI: one toast, and the person is re-fetched', 
   expect(Toast.show).toHaveBeenCalledTimes(1);
   expect(Toast.show).toHaveBeenCalledWith(expect.objectContaining({ text2: CONFLICT_MSG }));
 });
+
+// --- other possible matches (H2-3.5) ---
+const THIRD_ID = '7ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+it('opens the best match and can switch to another possible match', async () => {
+  const matches = [{ id: MATCH_ID, name: 'Anne Lee', confidence: 95 },
+                   { id: OTHER_ID, name: 'Ann Leigh', confidence: 80 },
+                   { id: THIRD_ID, name: 'A. Lee', confidence: 70 }];
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: matches })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  expect(await findByText('We found a similar individual: Anne Lee')).toBeTruthy();
+  fireEvent.press(getByText('Other possible matches (2)'));
+  fireEvent.press(getByText('Ann Leigh · 80%'));
+  expect(await findByText('We found a similar individual: Ann Leigh')).toBeTruthy();
+  await waitFor(() => expect(api.getIndividualProfile).toHaveBeenCalledWith(OTHER_ID));
+});
+
+it('shows at most 3 matches when the re-check adds more', async () => {                // Review Focus 5
+  const FOURTH = '8ba7b810-9dad-11d1-80b4-00c04fd430c8';
+  const FIFTH = '9ba7b810-9dad-11d1-80b4-00c04fd430c8';
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([
+    { id: FOURTH, name: 'Jon D', confidence: 97 }, { id: FIFTH, name: 'Jon E', confidence: 96 }]);
+  const server = [{ id: MATCH_ID, name: 'John', confidence: 90 }, { id: OTHER_ID, name: 'Jon B', confidence: 80 },
+                  { id: THIRD_ID, name: 'Jon C', confidence: 70 }];
+  const { getByText, getByDisplayValue, findByText, getAllByText } = render(
+    <TranscriptionResults
+      result={baseResult({ categorized_data: { name: 'John', height: 70, weight: 150 }, potential_matches: server })}
+      onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.changeText(getByDisplayValue('John'), 'Jon');
+  fireEvent.press(getByText('Save'));
+  await findByText('Potential Duplicate Found');
+  expect(getByText('Other possible matches (2)')).toBeTruthy();
+  fireEvent.press(getByText('Cancel'));
+  await findByText(/97% match/);
+  expect(getAllByText(/% match/).map(t => String(t.props.children[0]))).toEqual(['97', '96', '90']);
+});
