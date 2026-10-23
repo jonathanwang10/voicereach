@@ -52,6 +52,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 - Task 4: `test_schema_contract.py`'s static scan matched `.table("t")...execute()`; a `fetch_all` builder has no `.execute()`, so the regex ran on into the next chain. The scan now also ends a chain at the `.order("id"))` that closes a builder and never crosses another `.table(` call. `fetch_last_seen` also selects `id`, so `fetch_all` can skip a shifted row. The MagicMock chains in `test_rate_limit.py` / `test_request_limits.py` became self-returning chains (they could not just add one `range` link).
 - Task 5: `check_duplicates` now imports `DuplicateDetectionService` at module top (as the task says), so `test_error_contract.py`'s patch target moved to `api.individuals.DuplicateDetectionService`.
 - Task 7: `test_request_limits.py`'s temp-file test stub `failing(path)` now takes `**kwargs`, because the assistant route passes `limits=QUESTION_LIMITS`.
+- Task 9: two more older tests pinned the old behaviour and were updated with it: `test_delete_individual.py` (a merge into a missing person now raises `IndividualNotFound`) and `test_individuals_routes.py` (the 422 detail now lists `weight` with commas).
 
 ## Decisions the roadmap left open
 
@@ -858,7 +859,7 @@ Roadmap item 4.
 - Produces: `services/individual_service.py: class IndividualNotFound(LookupError)`. Phase 2's RPC save raises it when the target row is gone.
 - Rule: in `backend/api/`, every `except ValueError` that answers 400 is preceded by `except ValidationError` (`from pydantic import ValidationError`), which answers `internal_error`.
 
-- [ ] **Step 1: Write the failing tests** in `test_error_contract.py` (reuse `ID`, `T1` and `_db` from `test_individuals_routes.py` by importing them)
+- [x] **Step 1: Write the failing tests** in `test_error_contract.py` (reuse `ID`, `T1` and `_db` from `test_individuals_routes.py` by importing them)
 
 ```python
 from tests.test_individuals_routes import ID, T1, _db
@@ -900,16 +901,16 @@ def test_missing_required_fields_are_listed_with_commas():
     assert "Missing required fields: height, weight" in str(exc.value) and "['" not in str(exc.value)
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_error_contract.py backend/tests/test_models.py -v`
 Expected: FAIL. The merge race gives a 500 (an `IndexError`), the bad row gives a 400 that echoes the value, and the message still prints `['height', 'weight']`.
 
-- [ ] **Step 3: Implement** the changes listed under **Files**, and update the two older tests (`test_models.py:120,146` and `test_individual_service.py:40-48`) to the new behaviour.
+- [x] **Step 3: Implement** the changes listed under **Files**, and update the two older tests (`test_models.py:120,146` and `test_individual_service.py:40-48`) to the new behaviour.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/individual_service.py backend/api backend/db/models.py backend/tests

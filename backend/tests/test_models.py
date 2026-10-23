@@ -1,5 +1,6 @@
 """Request-model validation: location bounds, required fields, override range, category rules."""
 import pytest
+from pydantic import ValidationError
 from uuid import uuid4
 from datetime import datetime, timezone
 from db.models import (
@@ -117,7 +118,7 @@ class TestSaveIndividualRequest:
                     "age": "Light"
                 }
             )
-        assert "Missing required fields: ['name']" in str(exc_info.value)
+        assert "Missing required fields: name" in str(exc_info.value)
     
     def test_missing_multiple_required_fields(self):
         """Test validation fails when multiple required fields missing"""
@@ -143,7 +144,7 @@ class TestSaveIndividualRequest:
                     "age": "Light"
                 }
             )
-        assert "Missing required fields: ['height']" in str(exc_info.value)
+        assert "Missing required fields: height" in str(exc_info.value)
 
 
 class TestUrgencyOverrideRequest:
@@ -200,3 +201,9 @@ def test_single_select_option_value_must_be_numeric():
     with pytest.raises(ValueError):
         CreateCategoryRequest(name="x", type="single_select",
                               options=[{"label": "A", "value": "high"}])
+
+
+def test_missing_required_fields_are_listed_with_commas():
+    with pytest.raises(ValidationError) as exc:
+        SaveIndividualRequest(data={"name": "Ann"})
+    assert "Missing required fields: height, weight" in str(exc.value) and "['" not in str(exc.value)

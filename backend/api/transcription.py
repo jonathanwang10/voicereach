@@ -5,7 +5,7 @@ import asyncio
 import base64
 import logging
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Optional, List, Dict, Any
 
 from api.errors import internal_error
@@ -145,6 +145,10 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
         raise
     except AudioTooLarge as e:
         raise HTTPException(status_code=413, detail=str(e))
+    except ValidationError as e:
+        # A ValueError subclass, but it means bad data from the database or a service:
+        # a 500 that echoes nothing (H2-1.4)
+        raise internal_error("Transcription", e)
     except ValueError as e:
         # Client-facing validation messages from the services ("File is not in M4A format",
         # "Audio must be at least 5 seconds long", bad base64)

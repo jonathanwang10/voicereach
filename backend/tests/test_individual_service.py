@@ -2,7 +2,7 @@
 change detection, address abbreviation, the merge race, and search paging."""
 import pytest
 
-from services.individual_service import IndividualService
+from services.individual_service import IndividualNotFound, IndividualService
 from tests.helpers import FakeListDB, FakeSupabase, person
 
 
@@ -39,11 +39,11 @@ def test_abbreviate_address_truncates_long_text(service):
     assert result == "This is a very long address th..."
 
 
-async def test_merge_target_deleted_after_the_route_check_raises_value_error_and_writes_nothing():
+async def test_merge_target_deleted_after_the_route_check_raises_not_found_and_writes_nothing():
     """The route checks the target exists, then the service reads it again. If it was
-    deleted in between, maybe_single() gives None: a ValueError (400), not a PostgREST 500."""
+    deleted in between, maybe_single() gives None: IndividualNotFound (404), not a PostgREST 500."""
     sb = FakeSupabase().on("categories", "select", data=[]).on("individuals", "select", data=[])
-    with pytest.raises(ValueError, match="Individual not found"):
+    with pytest.raises(IndividualNotFound, match="Individual not found"):
         await IndividualService(sb).save_individual(
             user_id="u", user_name="Demo User", data={"name": "Ann", "height": 70, "weight": 150},
             merge_with_id="550e8400-e29b-41d4-a716-446655440001")

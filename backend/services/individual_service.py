@@ -26,6 +26,10 @@ from services import context_service
 from db.client import fetch_all, run_db
 
 
+class IndividualNotFound(LookupError):
+    """The person isn't there (never was, or deleted mid-request): routes answer 404 (H2-1.4)."""
+
+
 LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
 
 
@@ -232,7 +236,7 @@ class IndividualService:
                                              .execute())
             
             if existing_response is None or not existing_response.data:
-                raise ValueError(f"Individual not found: {merge_with_id}")
+                raise IndividualNotFound(f"Individual not found: {merge_with_id}")
             
             existing_individual = existing_response.data
             
@@ -260,6 +264,9 @@ class IndividualService:
                                            .eq("id", str(merge_with_id))
                                            .execute())
             
+            # Deleted between the read above and this update: the update matched no row
+            if not update_response.data:
+                raise IndividualNotFound(f"Individual not found: {merge_with_id}")
             individual = update_response.data[0]
             
             # Create interaction with changes only
@@ -515,7 +522,7 @@ class IndividualService:
         update_response = await run_db(update_query.execute)
         
         if not update_response.data:
-            raise ValueError(f"Individual not found: {individual_id}")
+            raise IndividualNotFound(f"Individual not found: {individual_id}")
         
         # Handle both single item and array responses
         if isinstance(update_response.data, list):
@@ -524,7 +531,7 @@ class IndividualService:
             individual = update_response.data
         
         if not individual:
-            raise ValueError(f"Individual not found: {individual_id}")
+            raise IndividualNotFound(f"Individual not found: {individual_id}")
         
         return UrgencyOverrideResponse(
             urgency_score=individual["urgency_score"],

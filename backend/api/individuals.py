@@ -4,6 +4,7 @@ Individual management API endpoints
 import logging
 from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from uuid import UUID
 from typing import Any, Dict, Optional
 from api.auth import get_current_user
@@ -20,7 +21,7 @@ from db.models import (
     DeleteIndividualResponse
 )
 from services.duplicate_detection_service import DuplicateDetectionService
-from services.individual_service import IndividualService
+from services.individual_service import IndividualNotFound, IndividualService
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
@@ -148,6 +149,16 @@ async def save_individual(
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except IndividualNotFound:
+        # The merge target was deleted after the existence check above
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Individual not found: {request.merge_with_id}"
+        )
+    except ValidationError as e:
+        # A pydantic ValidationError is a ValueError, but here it means a bad stored
+        # row: a 500 that echoes nothing, not a 400 with the row's values (H2-1.4)
+        raise internal_error("Save individual", e)
     except ValueError as e:
         # Handle validation errors from service
         raise HTTPException(
@@ -261,7 +272,7 @@ async def update_urgency_override(
             result = await service.update_urgency_override(
                 individual_id, request.urgency_override
             )
-        except ValueError:
+        except IndividualNotFound:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Individual not found: {individual_id}"

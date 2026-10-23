@@ -124,7 +124,7 @@ def test_missing_required_field_is_422_and_writes_nothing():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70}})
     assert r.status_code == 422
-    assert "Missing required fields: ['weight']" in str(r.json()["detail"])
+    assert "Missing required fields: weight" in str(r.json()["detail"])
     assert sb.calls == []
 
 

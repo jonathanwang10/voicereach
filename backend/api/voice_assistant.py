@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from api.auth import get_current_user
 from api.errors import internal_error
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing import Dict, Any, List
 from db.client import get_supabase
 from services.openai_service import QUESTION_LIMITS, get_openai_service, temp_audio_file
@@ -57,6 +57,9 @@ async def transcribe_voice_audio(
 
     except HTTPException:
         raise
+    except ValidationError as e:
+        # A ValueError subclass that is never a client error here (H2-1.4)
+        raise internal_error("Transcription", e)
     except ValueError as e:
         # Client-facing audio validation messages ("File is not in M4A format", ...)
         raise HTTPException(status_code=400, detail=str(e))

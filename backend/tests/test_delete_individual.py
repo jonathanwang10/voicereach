@@ -169,7 +169,8 @@ def test_merge_is_update_then_interaction_and_never_deletes_on_failure():
     assert ops == [("individuals", "select"), ("individuals", "update")]
 
 
-def test_merge_into_a_missing_person_raises_value_error_not_an_attribute_error():
+def test_merge_into_a_missing_person_raises_not_found_not_an_attribute_error():
+    from services.individual_service import IndividualNotFound
     sb = _FakeSupabase(existing=None)
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(IndividualNotFound, match="not found"):
         asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA), merge_with_id=IND_ID))

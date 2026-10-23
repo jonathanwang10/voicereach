@@ -261,3 +261,48 @@ def test_ws_upstream_failure_sends_generic_error(monkeypatch):
     assert message["type"] == "error"
     assert "SECRETKEY" not in str(message)
     assert "Incorrect API key" not in str(message)
+
+
+# --- error mapping (H2-1.4) -----------------------------------------------------------
+
+from tests.test_individuals_routes import ID, T1, _db  # noqa: E402
+
+
+def test_merge_whose_target_is_deleted_before_the_update_is_404():
+    sb = _db()                                 # the route's existence check sees EXISTING
+    sb.rules = [r for r in sb.rules if not (r.table == "individuals" and r.verb == "update")]
+    sb.on("individuals", "update", data=[])    # ...then the update matches no row
+    with patch("api.individuals.get_supabase", return_value=sb):
+        r = _client().post("/api/individuals", json={"data": {"name": "Ann Lee", "height": 70, "weight": 150},
+                                                     "merge_with_id": ID})
+    assert (r.status_code, r.json()) == (404, {"detail": f"Individual not found: {ID}"})
+    assert sb.calls_to("interactions", "insert") == []
+
+
+def test_bad_stored_row_on_save_is_a_generic_500_that_echoes_nothing():
+    sb = _db(existing=None)
+    sb.rules = [r for r in sb.rules if not (r.table == "individuals" and r.verb == "insert")]
+    sb.on("individuals", "insert", data=lambda call: [
+        {"id": ID, "urgency_override": None, "last_location": None, "created_at": T1, "updated_at": T1,
+         **call.payload, "urgency_score": "SECRET-not-a-number"}])
+    with patch("api.individuals.get_supabase", return_value=sb):
+        r = _client().post("/api/individuals", json={"data": {"name": "Ann", "height": 70, "weight": 150}})
+    assert (r.status_code, r.json()) == (500, {"detail": "Save individual failed"})
+    assert "SECRET" not in r.text
+
+
+def test_bad_match_shape_on_transcribe_is_a_generic_500_that_echoes_nothing():
+    from tests.helpers import FakeSupabase
+    sb = FakeSupabase().on("categories", "select",
+                           data=[{"name": "name", "type": "text", "is_required": True, "options": None}])
+    openai = MagicMock()
+    openai.transcribe_audio_file = AsyncMock(return_value="t")
+    openai.categorize_transcription = AsyncMock(return_value={})
+    dup = MagicMock()
+    dup.return_value.find_duplicates = AsyncMock(return_value=["SECRET-MATCH"])
+    with patch("api.transcription.get_supabase", return_value=sb), \
+         patch("api.transcription.get_openai_service", return_value=openai), \
+         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+        r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
+    assert (r.status_code, r.json()) == (500, {"detail": "Transcription failed"})
+    assert "SECRET" not in r.text
