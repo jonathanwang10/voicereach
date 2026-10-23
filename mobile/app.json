@@ -34,6 +34,21 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "This app needs access to microphone to record voice notes about interactions with homeless individuals for documentation purposes."
+        }
+      ],
+      [
+        "react-native-audio-api",
+        {
+          "iosBackgroundMode": false,
+          "iosMicrophonePermission": "This app needs access to microphone to record voice notes about interactions with homeless individuals for documentation purposes."
+        }
+      ]
+    ]
   }
 }
