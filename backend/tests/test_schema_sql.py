@@ -289,7 +289,7 @@ def test_every_function_pins_its_search_path():
     for m in re.finditer(r"CREATE OR REPLACE FUNCTION (\w+)\(", FLAT):
         assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
 
-@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations", "find_duplicate_candidates"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
@@ -406,3 +406,20 @@ def test_is_sensitive_column_and_one_time_backfill():
     for sql in (FLAT, _norm((MIGRATIONS / "20261103000001_categories_is_sensitive.sql").read_text())):
         assert "column_name = 'is_sensitive'" in sql          # guarded: runs only when the column is added
         assert f"name ~* '{SENSITIVE_KEY_PATTERN}'" in sql
+
+
+# --- find_duplicate_candidates (H2-3.5) ----------------------------------------
+
+# Not named _function: Phase 2 already defines _function(name) in this module.
+# (Phase 2's test_migrations.py already checks that schema.sql and the migration carry identical function text.)
+def _function_in(sql, name):
+    start = sql.index(f"CREATE OR REPLACE FUNCTION {name}(")
+    return _norm(sql[start:sql.index("$$;", start)])
+
+def test_find_duplicate_candidates_shape():
+    f = _function_in(SQL, "find_duplicate_candidates")
+    assert "(p_name text, p_limit int DEFAULT 50) RETURNS SETOF individuals" in f
+    assert "SET search_path = public, extensions" in f
+    assert "i.name % p_name" in f and "ILIKE ANY" in f                 # trigram + token legs
+    assert "jsonb_each(i.data)" in f and "LIMIT 200" in f              # values only, recent people only
+    assert "LIKE '% ' || (SELECT n FROM needle) || '%'" in f           # a word start, so "Al" misses "Hal"

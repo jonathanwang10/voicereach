@@ -53,14 +53,17 @@ OFF_LOOP_ROUTES = [
      [("individuals", "update", [])], 404),
     ("delete", f"/api/individuals/{ID}", None, "api.individuals.get_supabase", [("individuals", "delete", [])], 404),
     ("post", "/api/individuals/check-duplicates", {"name": "Ann Lee"}, "api.individuals.get_supabase",
-     [("individuals", "select", [])], 200),
+     [("find_duplicate_candidates", "rpc", [])], 200),
 ]
 
 @pytest.mark.parametrize("method,path,body,target,script,status", OFF_LOOP_ROUTES)
 def test_route_queries_run_off_the_event_loop(method, path, body, target, script, status):
     sb = FakeSupabase()
     for table, verb, data in script:
-        sb.on(table, verb, data=data)
+        if verb == "rpc":
+            sb.on_rpc(table, data=data)
+        else:
+            sb.on(table, verb, data=data)
     with patch(target, return_value=sb):
         r = TestClient(app, raise_server_exceptions=False).request(
             method, path, **({"json": body} if body is not None else {}))

@@ -1,7 +1,8 @@
 """
 Duplicate detection: candidate retrieval, LLM comparison and its fallback.
 
-C-22: candidates come from an OR of ILIKEs per name token (3+ characters), are
+C-22: candidates come from the find_duplicate_candidates SQL function (H2-3.5;
+      trigram or token name match, plus an "aka"-style value match), are
       pre-ranked by tokens matched plus height/weight closeness, and the top 8
       go to the LLM.
 C-08: an empty, None, nested or failed LLM reply falls back to name matching;
@@ -104,18 +105,16 @@ async def test_full_name_finds_a_first_visit_recorded_under_one_name():
     assert [m["id"] for m in matches] == [john["id"]]
 
 
-async def test_name_query_is_one_ilike_per_token_of_three_or_more_characters():
+async def test_candidates_come_from_one_rpc_call_with_the_name_and_limit():      # H2-3.5
     svc, _, sb = _service([])
-    await svc._find_candidates("Jo  O'Neil-Smith Doe")
-    or_filters = [f[1] for _, filters in sb.queries for f in filters if f[0] == "or"]
-    assert or_filters == ["name.ilike.*neil*,name.ilike.*smith*,name.ilike.*doe*"]
+    await svc._find_candidates("  Jo  O'Neil-Smith Doe ")
+    assert sb.queries == [("rpc", "find_duplicate_candidates", {"p_name": "Jo  O'Neil-Smith Doe", "p_limit": 50})]
 
 
-async def test_name_tokens_cannot_inject_postgrest_filters():
+async def test_the_name_is_a_bound_parameter_never_filter_text():
     svc, _, sb = _service([])
     await svc._find_candidates("ann%,id.eq.1)*_x")
-    or_filters = [f[1] for _, filters in sb.queries for f in filters if f[0] == "or"]
-    assert or_filters == ["name.ilike.*ann*"]
+    assert sb.queries == [("rpc", "find_duplicate_candidates", {"p_name": "ann%,id.eq.1)*_x", "p_limit": 50})]
 
 
 async def test_short_names_fall_back_to_two_character_tokens():

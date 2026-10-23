@@ -292,6 +292,37 @@ class FakePeopleDB:
         assert name in ("individuals", "categories"), f"FakePeopleDB has no table {name!r}"
         return _PeopleQuery(self, name)
 
+    def rpc(self, name, params):
+        """find_duplicate_candidates, approximated in memory (the real trigram matching is
+        tested against Postgres in Phase 8): a name containing any _name_tokens token,
+        then a data value matching the whole name at a word start (match_individual) among
+        the first 200 rows; name matches first, no repeats, at most p_limit."""
+        assert name == "find_duplicate_candidates", f"FakePeopleDB has no function {name!r}"
+        return _PeopleRpc(self, name, params)
+
+
+class _PeopleRpc:
+    def __init__(self, sb, name, params):
+        self.sb, self.name, self.params = sb, name, dict(params)
+
+    def execute(self):
+        from services.duplicate_detection_service import DuplicateDetectionService
+        from services.search_matching import match_individual
+        assert_off_event_loop(f"FakePeopleDB: rpc({self.name!r}).execute()")
+        self.sb.queries.append(("rpc", self.name, dict(self.params)))
+        if self.sb.fail:
+            raise RuntimeError("database unavailable")
+        p_name, limit = self.params["p_name"], self.params.get("p_limit", 50)
+        tokens = DuplicateDetectionService._name_tokens(p_name)
+        by_name = [r for r in self.sb.individuals if any(t in (r.get("name") or "").lower() for t in tokens)]
+        by_value = [r for r in self.sb.individuals[:200] if match_individual(p_name, r) == "value"]
+        rows, seen = [], set()
+        for r in by_name + by_value:
+            if r.get("id") not in seen:
+                seen.add(r.get("id"))
+                rows.append(r)
+        return MagicMock(data=rows[:limit])
+
 
 class _PeopleQuery:
     def __init__(self, sb, table):

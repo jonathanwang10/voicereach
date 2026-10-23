@@ -186,24 +186,8 @@ def test_embeddings_search_tiers_name_then_value_then_semantic():
     ]
 
 
-# --- duplicate detection step 3 ----------------------------------------------------------------
-
-def test_dedup_step3_does_not_take_candidates_through_keys():
-    from services.duplicate_detection_service import DuplicateDetectionService
-    people = [person(1, name="Bob", data={"alcohol_use": "No", "medical": "None"}),
-              person(2, name="Zed", data={"aka": "Al Smith"})]
-    sb = FakeListDB(people, [])
-    found = asyncio.run(DuplicateDetectionService(sb, MagicMock())._find_candidates("Al"))
-    assert [c["name"] for c in found] == ["Zed"]
-
-
-def test_dedup_step3_still_finds_a_name_variation_in_a_value():
-    from services.duplicate_detection_service import DuplicateDetectionService
-    people = [person(1, name="Zed", data={"aka": "Al Smith"}),
-              person(2, name="Yan", data={"aka": "Hal Jones"})]  # "Al" inside "Hal" is not a word start
-    sb = FakeListDB(people, [])
-    found = asyncio.run(DuplicateDetectionService(sb, MagicMock())._find_candidates("Al"))
-    assert [c["name"] for c in found] == ["Zed"]
+# Duplicate detection step 3 (values matched at a word start, never keys) now lives in the
+# find_duplicate_candidates SQL function: see test_schema_sql.py (H2-3.5).
 
 
 def test_person_found_by_text_and_semantic_appears_once_as_text():

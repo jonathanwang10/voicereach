@@ -18,9 +18,6 @@ logger = logging.getLogger(__name__)
 MIN_TOKEN_LEN = 3
 # How many pre-ranked candidates the LLM compares (C-22: was 3, in retrieval order)
 MAX_LLM_CANDIDATES = 8
-# How many recent people the data-value (aka) scan looks at
-VALUE_SCAN_LIMIT = 200
-CANDIDATE_COLUMNS = "id, name, data"
 # Highest confidence the name-only fallback can give (an identical name)
 FALLBACK_MAX_CONFIDENCE = 80
 
@@ -107,11 +104,12 @@ class DuplicateDetectionService:
 
     async def _find_candidates(self, name: str, limit: int = 50) -> List[Dict]:
         """
-        Candidate people for the LLM to compare (C-22), most recently updated first:
-        1. Name: an OR of ILIKEs, one per name token, so "John Doe" also finds a
-           first visit recorded as "John", and "Jon Smith" finds "John Smith".
-        2. Data values (e.g. an "aka" field) through the shared value-only matcher
-           (never dict keys, C-01), over the latest VALUE_SCAN_LIMIT people.
+        Candidate people for the LLM to compare (C-22), from one call to the
+        `find_duplicate_candidates` SQL function (H2-3.5): a trigram or token name
+        match (so "John Doe" also finds a first visit recorded as "John", and
+        "Jon Smith" finds "John Smith"), plus a data value (e.g. an "aka") that
+        starts a word with the name, among the 200 most recently updated people.
+        Name matches come first. The name is a bound parameter, never filter text.
 
         A database error is raised, not swallowed: "no candidates" must mean no
         candidates, never "the search failed" (C-08).
@@ -120,36 +118,9 @@ class DuplicateDetectionService:
         tokens = self._name_tokens(name)
         if len(name) < 2 or not tokens:
             return []
-
-        candidates: List[Dict] = []
-        seen_ids = set()
-
-        def add(rows):
-            for ind in rows or []:
-                if len(candidates) >= limit:
-                    return
-                if ind.get("id") not in seen_ids:
-                    candidates.append(ind)
-                    seen_ids.add(ind.get("id"))
-
-        name_filter = ",".join(f"name.ilike.*{token}*" for token in tokens)
-        by_name = await run_db(lambda: self.supabase.table("individuals")
-                               .select(CANDIDATE_COLUMNS)
-                               .or_(name_filter)
-                               .order("updated_at", desc=True)
-                               .limit(limit)
-                               .execute())
-        add(by_name.data)
-
-        if len(candidates) < limit:
-            recent = await run_db(lambda: self.supabase.table("individuals")
-                                  .select(CANDIDATE_COLUMNS)
-                                  .order("updated_at", desc=True)
-                                  .limit(VALUE_SCAN_LIMIT)
-                                  .execute())
-            add([ind for ind in (recent.data or []) if match_individual(name, ind)])
-
-        return candidates
+        rows = await run_db(lambda: self.supabase.rpc(
+            "find_duplicate_candidates", {"p_name": name, "p_limit": limit}).execute())
+        return rows.data or []
 
     @staticmethod
     def _number(data: dict, key: str) -> Optional[float]:

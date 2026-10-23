@@ -509,9 +509,11 @@ height already in inches, canonical labels and multi-select arrays, with empty
 fields left out, and its screens skip empty values rather than showing "null".
 
 **Duplicate detection — the code and the spec disagree here.** The backend
-gathers candidates by name token (one ILIKE per word of 3+ characters, so "John
-Doe" finds "John") and by a match on the data values
-(`services/search_matching.py`; never field names), ranks them by tokens matched
+gathers candidates with one call to the SQL function `find_duplicate_candidates`:
+a trigram or name-token match (words of 3+ characters, so "John Doe" finds
+"John" and "Jon Smith" finds "John Smith"), plus a data value that starts a word
+with the name (an "aka") among the 200 most recently updated people (values
+only, never field names), ranks them by tokens matched
 and height/weight closeness, asks GPT-4o to score the top 8 0–100, drops
 anything below 60, and returns only the best match
 (`services/duplicate_detection_service.py`). Voice review adds the match from
