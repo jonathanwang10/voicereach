@@ -41,8 +41,8 @@ SCHEMA = _schema()
 def test_schema_parser_sees_every_table_and_column():
     assert set(SCHEMA) == {"categories", "individuals", "interactions", "individual_embeddings"}
     assert SCHEMA["individuals"] == {"id", "name", "data", "urgency_score", "urgency_override", "last_location",
-                                     "created_at", "updated_at"}
-    assert {"changes", "audio_url", "user_name", "user_id", "location"} <= SCHEMA["interactions"]
+                                     "created_at", "updated_at", "version"}
+    assert {"changes", "audio_url", "user_name", "user_id", "location", "client_request_id"} <= SCHEMA["interactions"]
 
 
 # --- static: query chains in the source ----------------------------------------------------

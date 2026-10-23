@@ -232,7 +232,7 @@ git commit -m "refactor(db): move demo people into supabase/seed.sql (H2-2.1)" -
   - SQLSTATE `P0409` means a version conflict; `P0002` means the merge target is missing.
   - `test_migrations.py` rules that every later migration (all phases) must pass.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 `backend/tests/test_migrations.py`:
 - `test_migration_names_follow_the_convention`: every file matches `^2026110[1-8]0000\d\d_[a-z0-9_]+\.sql$`, and the numeric prefixes are unique. Assert `len(files) >= 1` so the test is never vacuous.
@@ -294,12 +294,12 @@ def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
 
 Also change `test_functions_and_triggers_are_replaceable` so every `CREATE ... FUNCTION` must be `CREATE OR REPLACE FUNCTION` (no longer exactly one). Its trigger regex becomes `CREATE TRIGGER (\w+) BEFORE [A-Z ]+? ON (\w+)`. In `test_schema_contract.py`, `test_schema_parser_sees_every_table_and_column` gains `version` on individuals and `client_request_id` on interactions.
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_migrations.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL (there are no migrations, no function and no columns yet).
 
-- [ ] **Step 3: Write the migration and fold it into `schema.sql`.** The migration and `schema.sql` carry the same statements:
+- [x] **Step 3: Write the migration and fold it into `schema.sql`.** The migration and `schema.sql` carry the same statements:
   - `ALTER TABLE individuals ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;`
   - `ALTER TABLE interactions ADD COLUMN IF NOT EXISTS client_request_id UUID UNIQUE;`
   - In `schema.sql` the same two columns also go into the `CREATE TABLE` bodies, each with a one-line comment (`-- bumped only by save_individual (H2-2.3)`, `-- the save's Idempotency-Key (H2-2.4)`).
@@ -356,14 +356,14 @@ $$;
 
 Why the `UPDATE ... WHERE version = p_expected_version` is safe without `FOR UPDATE`: two concurrent merges with the same expected version queue on the row lock. Under READ COMMITTED the second re-checks its `WHERE` against the committed row, sees `version + 1`, matches nothing, and raises `P0409`. `updated_at` comes from the existing `set_updated_at` trigger.
 
-- [ ] **Step 4: Append to the manual-steps file**, under **Apply migrations**: `1. supabase/migrations/20261102000001_save_individual.sql (Phase 2, Task 3): run in the SQL Editor. Check: select version, count(*) from individuals group by 1; returns version 1 for every row.`
+- [x] **Step 4: Append to the manual-steps file**, under **Apply migrations**: `1. supabase/migrations/20261102000001_save_individual.sql (Phase 2, Task 3): run in the SQL Editor. Check: select version, count(*) from individuals group by 1; returns version 1 for every row.`
 
-- [ ] **Step 5: Run the checks**
+- [x] **Step 5: Run the checks**
 
 Run: `python -m pytest -q && ruff check backend --select F,E9`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/tests/test_migrations.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py docs/superpowers/plans/2026-10-23-manual-steps.md

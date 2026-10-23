@@ -10,6 +10,8 @@ Each file is idempotent.
 
 - Phase 1: no migrations.
 
+1. `supabase/migrations/20261102000001_save_individual.sql` (Phase 2, Task 3): run in the SQL Editor. Check: `select version, count(*) from individuals group by 1;` returns version 1 for every row.
+
 ## Environment variables
 
 | Name | Default | Service | Phase |

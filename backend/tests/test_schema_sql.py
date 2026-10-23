@@ -133,10 +133,11 @@ def test_tables_and_indexes_are_guarded():
 
 
 def test_functions_and_triggers_are_replaceable():
-    assert re.findall(r"CREATE (?:OR REPLACE )?FUNCTION", SQL) == ["CREATE OR REPLACE FUNCTION"]
-    for trigger, table in re.findall(r"CREATE TRIGGER (\w+) BEFORE UPDATE ON (\w+)", FLAT):
-        drop = f"DROP TRIGGER IF EXISTS {trigger} ON {table};"
-        assert drop in FLAT and FLAT.index(drop) < FLAT.index(f"CREATE TRIGGER {trigger} BEFORE UPDATE ON {table}")
+    functions = re.findall(r"CREATE (?:OR REPLACE )?FUNCTION", SQL)
+    assert functions and set(functions) == {"CREATE OR REPLACE FUNCTION"}
+    for m in re.finditer(r"CREATE TRIGGER (\w+) BEFORE [A-Z ]+? ON (\w+)", FLAT):
+        drop = f"DROP TRIGGER IF EXISTS {m.group(1)} ON {m.group(2)};"
+        assert drop in FLAT and FLAT.index(drop) < m.start()
 
 
 def test_seed_individuals_are_guarded_by_name():
@@ -247,3 +248,47 @@ def test_seed_backfills_last_location_only_where_missing():
 
 def test_seed_header_says_run_schema_first():
     assert "schema.sql" in SEED_RAW[:SEED_RAW.index("WITH seed")]
+
+
+# --- save_individual, version, client_request_id (H2-2.2, H2-2.3, H2-2.4) ----
+
+def _function(name):  # normalised block from "CREATE OR REPLACE FUNCTION name(" to its "$$;"
+    start = FLAT.index(f"CREATE OR REPLACE FUNCTION {name}(")
+    return FLAT[start:FLAT.index("$$;", FLAT.index("$$", start) + 2) + 3]
+
+def test_individuals_version_and_interactions_request_id_columns():
+    assert "INTEGER NOT NULL DEFAULT 1" in _column_def("individuals", "version")
+    assert "UUID UNIQUE" in _column_def("interactions", "client_request_id")
+    assert "ALTER TABLE individuals ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;" in FLAT
+    assert "ALTER TABLE interactions ADD COLUMN IF NOT EXISTS client_request_id UUID UNIQUE;" in FLAT
+
+def test_save_individual_signature():
+    assert re.search(r"CREATE OR REPLACE FUNCTION save_individual\( ?p_individual_id uuid, p_name text, "
+                     r"p_data jsonb, p_urgency_score int, p_interaction jsonb, p_expected_version int, "
+                     r"p_client_request_id uuid ?\) RETURNS jsonb", FLAT)
+
+def test_save_individual_replays_a_known_key_before_any_write():
+    fn = _function("save_individual")
+    lock, check = fn.index("pg_advisory_xact_lock"), fn.index("WHERE client_request_id = p_client_request_id")
+    assert lock < check < fn.index("INSERT INTO public.individuals") and check < fn.index("UPDATE public.individuals")
+    assert "'replayed', true" in fn and "'replayed', false" in fn
+
+def test_save_individual_guards_and_bumps_the_version():
+    fn = _function("save_individual")
+    assert "version = version + 1" in fn
+    assert "(p_expected_version IS NULL OR version = p_expected_version)" in fn
+    assert "ERRCODE = 'P0409'" in fn and "ERRCODE = 'P0002'" in fn
+
+def test_only_save_individual_changes_the_version():   # Review Focus 3
+    others = FLAT.replace(_function("save_individual"), "")
+    assert "version = version + 1" not in others
+
+def test_every_function_pins_its_search_path():
+    # '' (every name schema-qualified) or a fixed list; Phases 3 and 4 use public, extensions for pg_trgm/pgvector
+    for m in re.finditer(r"CREATE OR REPLACE FUNCTION (\w+)\(", FLAT):
+        assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
+
+@pytest.mark.parametrize("fn", ["save_individual"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
+    assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
+    assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
