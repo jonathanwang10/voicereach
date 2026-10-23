@@ -64,7 +64,9 @@ only after `npx expo prebuild --platform ios`.
   are dropped and the backend returns only the best. Voice review may add a
   re-check's match to the server's (`unionMatches`). There is no 95% auto-merge:
   every match opens the merge UI. A merge replaces the whole `data` JSONB with
-  what the client sends.
+  what the client sends, guarded by `individuals.version` (409 `This person was
+  changed by someone else. Reload and try again.`); a save is one `save_individual`
+  transaction and `Idempotency-Key` makes it idempotent.
 - **Auth:** every `/api/*` route except `/health`, and the realtime WebSocket,
   needs `Authorization: Bearer <Supabase access token>` (`backend/api/auth.py`).
   The app auto-signs in as demo@sfgov.org. An optional `ALLOWED_USER_EMAILS`

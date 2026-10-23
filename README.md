@@ -511,6 +511,14 @@ choose to create a new person instead. Note also that the backend does not merge
 server-side — `IndividualService.save_individual` replaces the whole `data`
 JSONB with what the client posts, so any field the client omits is dropped.
 
+A save is one transaction: the `save_individual` SQL function writes the person
+and the interaction row together, so there is no half-saved state. A merge sends
+the `version` of the person it loaded (`expected_version`); if someone else
+saved that person in between, the save is refused with 409 "This person was
+changed by someone else. Reload and try again." and the app reloads the person.
+Each review session sends an `Idempotency-Key` header, so a retried save (after a
+lost response) returns the first save's result instead of saving twice.
+
 ### Search
 
 Every text search (the list's `search`, the text half of
@@ -657,11 +665,6 @@ These are still true:
   so it embeds only the first 1000 people (1000 by default). After creating a category, existing people's embeddings
   only pick up its label when they are next saved (or re-run
   `POST /api/embeddings/generate-all` or the backfill script).
-- **Saving is not transactional.** A save is two writes: the individual, then
-  the interaction. If a new person's first interaction fails, the new
-  individual is deleted again so a retry can't duplicate them; a merge updates
-  the individual first, and if the interaction then fails, the update stays
-  without its history entry.
 - **Re-running `seed.sql` re-adds a deleted demo person.** Seed people are
   matched by name (see [Database](#1-database)).
 - **iOS only.** There is no Android build setup, and `mobile/ios/` is committed

@@ -130,9 +130,17 @@ a failed check: a name comparison stands in.
   "merge_with_id": "uuid or omitted",
   "location": {"latitude": 37.78, "longitude": -122.41, "address": "Market St & 5th St"},
   "transcription": "optional",
-  "audio_url": "optional"
+  "audio_url": "optional",
+  "expected_version": "int, optional: the merge target's version when it was loaded"
 }
 ```
+
+Header `Idempotency-Key: <uuid>` (optional; anything else is a 400): a retry
+with the same key returns the first save's result with `"replayed": true` and
+writes nothing. The save is one `save_individual` SQL transaction (person plus
+interaction). A merge with a stale `expected_version` is a 409 `This person was
+changed by someone else. Reload and try again.` (without it, the service guards
+with the version it reads); `expected_version` without `merge_with_id` is a 422.
 
 The body is capped at 256 KB (413), `transcription` at 20,000 characters and
 `data` at 100 fields (422). `data` must contain `name`, `height` and `weight` (422 otherwise), and is then
@@ -140,10 +148,10 @@ normalised and validated against the categories (`normalize_individual_data`
 in `services/field_registry.py`; 400 with `field: message` details on failure).
 Only the normalised data is stored: empty values are dropped, numbers are real
 numbers and select labels are canonical. A missing merge target is a 404. The
-urgency score is computed on every save. The save is **not transactional** (two writes: individual, then interaction): if a new person's first interaction fails to insert, the new individual is deleted again so a retry does not duplicate them; a merge updates first, then inserts the interaction, and a failure there leaves the update in place. A merge **replaces** `data` with what
+urgency score is computed on every save. A merge **replaces** `data` with what
 was posted and logs only the changed fields; a new person's first interaction
-logs everything. Returns `{individual, interaction}`. An embedding is generated
-in the background.
+logs everything. Returns `{individual, interaction, replayed}`; `individual`
+carries `version`. An embedding is generated in the background (not for a replay).
 
 **`GET /api/individuals`** — Query: `search`, `limit` (1-100, default 20),
 `offset`, `sort_by` (`last_seen`, `urgency_score`, `name`), `sort_order`

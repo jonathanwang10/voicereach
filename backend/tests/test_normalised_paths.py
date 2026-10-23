@@ -111,17 +111,12 @@ def test_model_rejects_whitespace_name():
 
 # --- IndividualService.save_individual normalises before urgency and diff ---
 def _service(existing_data=None):
-    sb = MagicMock()
-    sb.table.return_value.select.return_value.execute.return_value.data = CATEGORIES
+    from tests.helpers import FakeSupabase, save_rpc
     row = {"id": str(uuid4()), "name": "Ann", "urgency_score": 0, "urgency_override": None, "data": {},
            "created_at": NOW, "updated_at": NOW, "last_location": None}
-    # One row serves as both the inserted individual and the inserted interaction.
-    sb.table.return_value.insert.return_value.execute.return_value.data = [{**row, "user_name": "Demo User"}]
-    sb.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [row]
     existing = {**row, "data": existing_data or {}}
-    sb.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = existing
-    sb.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value.data = existing
-    return sb
+    sb = FakeSupabase().on("categories", "select", data=CATEGORIES).on("individuals", "select", data=[existing])
+    return sb.on_rpc("save_individual", data=save_rpc(existing))
 
 
 async def test_service_new_person_saves_normalised_data_and_score():
@@ -130,13 +125,12 @@ async def test_service_new_person_saves_normalised_data_and_score():
         user_id="u", user_name="Demo User",
         data={"name": " Ann ", "height": "70", "weight": "150", "housing_priority": "critical",
               "age": None, "gender": ""})
-    individual_insert = sb.table.return_value.insert.call_args_list[0].args[0]
-    interaction_insert = sb.table.return_value.insert.call_args_list[1].args[0]
+    [params] = sb.rpc_params("save_individual")
     clean = {"name": "Ann", "height": 70, "weight": 150, "housing_priority": "Critical"}
-    assert individual_insert["data"] == clean
-    assert individual_insert["name"] == "Ann"
-    assert individual_insert["urgency_score"] == 100
-    assert interaction_insert["changes"] == clean
+    assert params["p_data"] == clean
+    assert params["p_name"] == "Ann"
+    assert params["p_urgency_score"] == 100
+    assert params["p_interaction"]["changes"] == clean
 
 
 async def test_service_merge_records_no_phantom_changes():
@@ -144,10 +138,9 @@ async def test_service_merge_records_no_phantom_changes():
     await IndividualService(sb).save_individual(
         user_id="u", user_name="Demo User", merge_with_id=uuid4(),
         data={"name": "Ann", "height": 70, "weight": 150, "age": "", "gender": "female"})
-    update = sb.table.return_value.update.call_args.args[0]
-    interaction_insert = sb.table.return_value.insert.call_args.args[0]
-    assert update["data"] == {"name": "Ann", "height": 70, "weight": 150, "gender": "Female"}
-    assert interaction_insert["changes"] == {"gender": "Female"}
+    [params] = sb.rpc_params("save_individual")
+    assert params["p_data"] == {"name": "Ann", "height": 70, "weight": 150, "gender": "Female"}
+    assert params["p_interaction"]["changes"] == {"gender": "Female"}
 
 
 async def test_service_rejects_invalid_values():

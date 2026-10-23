@@ -8,12 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
-from tests.helpers import FakeListDB, FakeSupabase, person
+from tests.helpers import FakeListDB, FakeSupabase, person, pg_error, save_rpc
 
 ID = "550e8400-e29b-41d4-a716-446655440001"
 INTERACTION_ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 T0 = "2026-01-01T00:00:00+00:00"
 T1 = "2026-02-01T00:00:00+00:00"
+KEY = "3f2b8c1e-0d4a-4c1e-9a7b-2b1f0c9d8e7a"
 LOCATION = {"latitude": 37.7749, "longitude": -122.4194, "address": "123 Market Street, San Francisco, CA"}
 
 CATEGORIES = [
@@ -39,17 +40,13 @@ EXISTING = {
 
 
 def _db(existing=EXISTING, interactions=()):
-    """A database with CATEGORIES, `existing` (or nobody), and writes that echo their payload."""
+    """A database with CATEGORIES, `existing` (or nobody), and a save_individual function
+    that plays the SQL from its params (save_rpc)."""
     sb = FakeSupabase()
     sb.on("categories", "select", data=CATEGORIES)
     sb.on("individuals", "select", data=[existing] if existing else [])
     sb.on("interactions", "select", data=list(interactions))
-    sb.on("individuals", "insert", data=lambda call: [
-        {"id": ID, "urgency_override": None, "last_location": None, "created_at": T1, "updated_at": T1,
-         **call.payload}])
-    sb.on("individuals", "update", data=lambda call: [{**(existing or {}), **call.payload}])
-    sb.on("interactions", "insert", data=lambda call: [
-        {"id": INTERACTION_ID, "created_at": T1, **call.payload}])
+    sb.on_rpc("save_individual", data=save_rpc(existing, new_id=ID, interaction_id=INTERACTION_ID, at=T1))
     return sb
 
 
@@ -59,12 +56,18 @@ def _call(sb, method, path, **kwargs):
 
 
 def _writes(sb):
+    """Every write, a save_individual call included (as ("save_individual", "rpc"))."""
     return [(c.table, c.verb) for c in sb.calls if c.verb != "select"]
+
+
+def _save_params(sb):
+    [params] = sb.rpc_params("save_individual")
+    return params
 
 
 # --- POST /api/individuals: new person --------------------------------------------------
 
-def test_new_person_insert_carries_normalised_data_computed_urgency_and_location():
+def test_new_person_is_one_rpc_with_normalised_data_urgency_and_location():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals", json={
         "data": {"name": " Ann Lee ", "height": "5'10", "weight": "150", "veteran_status": "yes",
@@ -74,25 +77,26 @@ def test_new_person_insert_carries_normalised_data_computed_urgency_and_location
     assert r.status_code == 200, r.text
     data = {"name": "Ann Lee", "height": 70, "weight": 150, "veteran_status": "Yes", "housing_priority": "High"}
     # (1 * 20 + 0.7 * 30) / (20 + 30 + 40) * 100 = 45.5 -> 45 (OD-1: all weighted categories)
-    assert sb.payloads("individuals", "insert") == [
-        {"name": "Ann Lee", "urgency_score": 45, "data": data, "last_location": LOCATION}]
-    assert sb.payloads("interactions", "insert") == [{
-        "individual_id": ID, "user_id": "test-user-123", "user_name": "Demo User",
-        "transcription": "Met Ann by the library", "audio_url": "audio/u/1.m4a",
-        "location": LOCATION, "changes": data,  # a first visit records every field
-    }]
-    assert _writes(sb) == [("individuals", "insert"), ("interactions", "insert")]
+    assert sb.rpc_params("save_individual") == [{
+        "p_individual_id": None, "p_name": "Ann Lee", "p_data": data, "p_urgency_score": 45,
+        "p_interaction": {"user_id": "test-user-123", "user_name": "Demo User",
+                          "transcription": "Met Ann by the library", "audio_url": "audio/u/1.m4a",
+                          "location": LOCATION, "changes": data},  # a first visit records every field
+        "p_expected_version": None, "p_client_request_id": None}]
+    assert _writes(sb) == [("save_individual", "rpc")]          # no table writes, no compensating delete
     body = r.json()
     assert body["individual"]["urgency_score"] == 45 and body["individual"]["display_score"] == 45
+    assert body["individual"]["version"] == 1
     assert body["interaction"]["has_transcription"] is True
+    assert body["replayed"] is False
 
 
-def test_auto_trigger_option_inserts_urgency_100():
+def test_auto_trigger_option_saves_urgency_100():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals",
               json={"data": {"name": "Bo", "height": 70, "weight": 150, "behavior": "Physical"}})
     assert r.status_code == 200, r.text
-    assert sb.payloads("individuals", "insert")[0]["urgency_score"] == 100
+    assert _save_params(sb)["p_urgency_score"] == 100
 
 
 def test_zero_value_auto_trigger_option_does_not_trigger():
@@ -100,15 +104,15 @@ def test_zero_value_auto_trigger_option_does_not_trigger():
     r = _call(sb, "POST", "/api/individuals",
               json={"data": {"name": "Bo", "height": 70, "weight": 150, "behavior": "None"}})
     assert r.status_code == 200, r.text
-    assert sb.payloads("individuals", "insert")[0]["urgency_score"] == 0
+    assert _save_params(sb)["p_urgency_score"] == 0
 
 
-def test_without_location_no_last_location_is_written():
+def test_without_location_the_visit_has_none():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}})
     assert r.status_code == 200, r.text
-    assert "last_location" not in sb.payloads("individuals", "insert")[0]
-    assert sb.payloads("interactions", "insert")[0]["location"] is None
+    params = _save_params(sb)
+    assert params["p_individual_id"] is None and params["p_interaction"]["location"] is None
     assert r.json()["interaction"]["has_transcription"] is False
 
 
@@ -167,23 +171,36 @@ def test_merge_updates_the_target_and_records_only_what_changed():
     sb = _db()
     r = _merge(sb, {"name": "Ann Lee", "height": 71, "weight": 150, "veteran_status": "Yes"})
     assert r.status_code == 200, r.text
-
-    [update] = sb.calls_to("individuals", "update")
-    assert update.mod("eq") == (("id", ID), {})
-    assert set(update.payload) == {"name", "urgency_score", "data", "updated_at"}
-    assert update.payload["data"] == {"name": "Ann Lee", "height": 71, "weight": 150, "veteran_status": "Yes"}
-    assert update.payload["urgency_score"] == 22  # 1 * 20 / 90 * 100
+    params = _save_params(sb)
+    assert params["p_individual_id"] == ID
+    assert params["p_data"] == {"name": "Ann Lee", "height": 71, "weight": 150, "veteran_status": "Yes"}
+    assert params["p_urgency_score"] == 22  # 1 * 20 / 90 * 100
     # weight "150" (an old un-normalised row) vs 150 is not a change
-    assert [p["changes"] for p in sb.payloads("interactions", "insert")] == [{"height": 71, "veteran_status": "Yes"}]
-    assert sb.payloads("interactions", "insert")[0]["individual_id"] == ID
-    assert _writes(sb) == [("individuals", "update"), ("interactions", "insert")]
+    assert params["p_interaction"]["changes"] == {"height": 71, "veteran_status": "Yes"}
+    assert _writes(sb) == [("save_individual", "rpc")]
+
+
+def test_merge_sends_the_clients_expected_version_and_only_the_changes():
+    sb = _db(existing={**EXISTING, "version": 3})
+    r = _merge(sb, {"name": "Ann Lee", "height": 71, "weight": 150, "veteran_status": "Yes",
+                    "medical_conditions": ["Diabetes"]}, expected_version=3)
+    [params] = sb.rpc_params("save_individual")
+    assert (params["p_individual_id"], params["p_expected_version"]) == (ID, 3)
+    assert params["p_interaction"]["changes"] == {"height": 71, "veteran_status": "Yes"}
+    assert r.json()["individual"]["version"] == 4
+
+
+def test_merge_without_expected_version_guards_with_the_version_it_read():
+    sb = _db(existing={**EXISTING, "version": 4})
+    _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150, "medical_conditions": ["Diabetes"]})
+    assert sb.rpc_params("save_individual")[0]["p_expected_version"] == 4
 
 
 def test_merge_never_writes_urgency_override_so_a_manual_override_survives():
     sb = _db()
     r = _merge(sb, {"name": "Ann Lee", "height": 71, "weight": 150})
     assert r.status_code == 200, r.text
-    assert "urgency_override" not in sb.payloads("individuals", "update")[0]
+    assert "urgency_override" not in str(_save_params(sb))
     assert r.json()["individual"]["urgency_override"] == 80
     assert r.json()["individual"]["display_score"] == 80
 
@@ -193,15 +210,15 @@ def test_merge_replaces_data_wholesale_so_omitted_fields_are_dropped():
     sb = _db()
     r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150})
     assert r.status_code == 200, r.text
-    assert "medical_conditions" not in sb.payloads("individuals", "update")[0]["data"]
+    assert "medical_conditions" not in _save_params(sb)["p_data"]
 
 
 def test_merge_with_location_sets_last_location_and_logs_it():
     sb = _db()
     r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150}, location=LOCATION)
     assert r.status_code == 200, r.text
-    assert sb.payloads("individuals", "update")[0]["last_location"] == LOCATION
-    assert sb.payloads("interactions", "insert")[0]["location"] == LOCATION
+    assert _save_params(sb)["p_interaction"]["location"] == LOCATION
+    assert r.json()["individual"]["last_location"] == LOCATION
 
 
 def test_merge_into_someone_who_does_not_exist_is_404_and_writes_nothing():
@@ -210,6 +227,98 @@ def test_merge_into_someone_who_does_not_exist_is_404_and_writes_nothing():
     assert r.status_code == 404
     assert r.json() == {"detail": f"Individual not found: {ID}"}
     assert _writes(sb) == []
+
+
+def _db_rpc_error(error, existing=EXISTING):
+    sb = _db(existing=existing)
+    sb.rules = [x for x in sb.rules if x.verb != "rpc"]
+    sb.on_rpc("save_individual", error=error)
+    return sb
+
+
+def test_version_conflict_is_409_with_the_exact_message():
+    sb = _db_rpc_error(pg_error("P0409"))
+    with patch("api.individuals.invalidate_context_cache") as invalidate:
+        r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150}, expected_version=1)
+    assert r.status_code == 409
+    assert r.json() == {"detail": "This person was changed by someone else. Reload and try again."}
+    invalidate.assert_not_called()
+
+
+def test_target_deleted_before_the_rpc_is_404():       # P0002 from the function
+    sb = _db_rpc_error(pg_error("P0002"))
+    r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150})
+    assert (r.status_code, r.json()) == (404, {"detail": f"Individual not found: {ID}"})
+
+
+def test_other_database_error_from_the_rpc_is_a_500_without_its_text():
+    sb = _db_rpc_error(pg_error("XX000", "Ann Lee leaked"))
+    r = TestClient(app, raise_server_exceptions=False)
+    with patch("api.individuals.get_supabase", return_value=sb):
+        r = r.post("/api/individuals", json={"data": {"name": "Ann Lee", "height": 70, "weight": 150},
+                                             "merge_with_id": ID})
+    assert (r.status_code, r.json()) == (500, {"detail": "Save individual failed"})
+    assert "Ann Lee" not in r.text
+
+
+def test_idempotency_key_becomes_client_request_id():
+    sb = _db(existing=None)
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}},
+              headers={"Idempotency-Key": KEY})
+    assert r.status_code == 200, r.text
+    assert _save_params(sb)["p_client_request_id"] == KEY
+
+
+@pytest.mark.parametrize("key", ["abc", "", "550e8400-e29b-41d4-a716"])
+def test_a_key_that_is_not_a_uuid_is_400_before_any_query(key):
+    sb = _db(existing=None)
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}},
+              headers={"Idempotency-Key": key})
+    assert (r.status_code, r.json()) == (400, {"detail": "Idempotency-Key must be a UUID"})
+    assert sb.calls == []
+
+
+def _replay(first_id=ID):
+    def play(call):
+        out = save_rpc(None, new_id=first_id, interaction_id=INTERACTION_ID, at=T0)(call)
+        return {**out, "replayed": True}
+    return play
+
+
+def test_a_replayed_save_returns_the_first_result_and_schedules_no_embedding():
+    first = "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
+    sb = _db(existing=None)
+    sb.rules = [x for x in sb.rules if x.verb != "rpc"]
+    sb.on_rpc("save_individual", data=_replay(first))
+    with patch("api.individuals.generate_embedding_background") as embed:
+        r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}},
+                  headers={"Idempotency-Key": KEY})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["individual"]["id"] == first and body["replayed"] is True
+    embed.assert_not_called()
+
+
+def test_retry_with_a_stale_expected_version_replays_instead_of_409():   # Review Focus 2
+    sb = _db(existing={**EXISTING, "version": 2})
+    sb.rules = [x for x in sb.rules if x.verb != "rpc"]
+    sb.on_rpc("save_individual", data=lambda call: {
+        **save_rpc({**EXISTING, "version": 1}, at=T1)(call), "replayed": True})
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Ann Lee", "height": 70, "weight": 150},
+                                                    "merge_with_id": ID, "expected_version": 1},
+              headers={"Idempotency-Key": KEY})
+    assert r.status_code == 200, r.text
+    assert r.json()["replayed"] is True
+    assert sb.rpc_params("save_individual")[-1]["p_expected_version"] == 1
+
+
+def test_expected_version_without_merge_with_id_is_422():
+    sb = _db(existing=None)
+    r = _call(sb, "POST", "/api/individuals",
+              json={"data": {"name": "Bo", "height": 70, "weight": 150}, "expected_version": 2})
+    assert r.status_code == 422
+    assert "expected_version needs merge_with_id" in r.text
+    assert sb.calls == []
 
 
 # --- GET /api/individuals ---------------------------------------------------------------
@@ -253,6 +362,12 @@ def test_profile_reads_the_person_and_their_ten_latest_interactions():
     assert history_q.mod("eq") == (("individual_id", ID), {})
     assert history_q.mod("order") == (("created_at",), {"desc": True})
     assert history_q.mod("limit") == ((10,), {})
+
+
+def test_profile_includes_version():
+    r = _call(_db(existing={**EXISTING, "version": 7}), "GET", f"/api/individuals/{ID}")
+    assert r.status_code == 200, r.text
+    assert r.json()["individual"]["version"] == 7
 
 
 def test_profile_of_someone_who_does_not_exist_is_404():

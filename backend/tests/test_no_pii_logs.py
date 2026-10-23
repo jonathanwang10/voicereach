@@ -66,6 +66,26 @@ class FakeDB:
     def table(self, name):
         return _FakeQuery(self, name)
 
+    def rpc(self, name, params):
+        """save_individual: echo the saved person and visit as rows."""
+        return _FakeRpc(self, params)
+
+
+class _FakeRpc:
+    def __init__(self, db, params):
+        self.db, self.params = db, params
+
+    def execute(self):
+        if self.db.fail:
+            raise RuntimeError(f"database error for {SENTINEL_NAME} at {SENTINEL_LAT}")
+        p, visit = self.params, self.params["p_interaction"]
+        person = {"id": p["p_individual_id"] or str(uuid4()), "name": p["p_name"], "data": p["p_data"],
+                  "urgency_score": p["p_urgency_score"], "urgency_override": None, "version": 1,
+                  "last_location": visit.get("location"), "created_at": NOW, "updated_at": NOW}
+        visit_row = {"id": str(uuid4()), "created_at": NOW, "user_name": visit.get("user_name"),
+                     "location": visit.get("location"), "transcription": visit.get("transcription")}
+        return MagicMock(data={"individual": person, "interaction": visit_row, "replayed": False})
+
 
 class _FakeQuery:
     def __init__(self, db, table):

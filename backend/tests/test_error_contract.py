@@ -269,9 +269,10 @@ from tests.test_individuals_routes import ID, T1, _db  # noqa: E402
 
 
 def test_merge_whose_target_is_deleted_before_the_update_is_404():
-    sb = _db()                                 # the route's existence check sees EXISTING
-    sb.rules = [r for r in sb.rules if not (r.table == "individuals" and r.verb == "update")]
-    sb.on("individuals", "update", data=[])    # ...then the update matches no row
+    from tests.helpers import pg_error
+    sb = _db()                                 # the service's read sees EXISTING
+    sb.rules = [r for r in sb.rules if r.verb != "rpc"]
+    sb.on_rpc("save_individual", error=pg_error("P0002"))   # ...then save_individual finds no row
     with patch("api.individuals.get_supabase", return_value=sb):
         r = _client().post("/api/individuals", json={"data": {"name": "Ann Lee", "height": 70, "weight": 150},
                                                      "merge_with_id": ID})
@@ -280,11 +281,15 @@ def test_merge_whose_target_is_deleted_before_the_update_is_404():
 
 
 def test_bad_stored_row_on_save_is_a_generic_500_that_echoes_nothing():
+    from tests.helpers import save_rpc
     sb = _db(existing=None)
-    sb.rules = [r for r in sb.rules if not (r.table == "individuals" and r.verb == "insert")]
-    sb.on("individuals", "insert", data=lambda call: [
-        {"id": ID, "urgency_override": None, "last_location": None, "created_at": T1, "updated_at": T1,
-         **call.payload, "urgency_score": "SECRET-not-a-number"}])
+    sb.rules = [r for r in sb.rules if r.verb != "rpc"]
+
+    def bad_row(call):
+        out = save_rpc(None, new_id=ID, at=T1)(call)
+        out["individual"]["urgency_score"] = "SECRET-not-a-number"
+        return out
+    sb.on_rpc("save_individual", data=bad_row)
     with patch("api.individuals.get_supabase", return_value=sb):
         r = _client().post("/api/individuals", json={"data": {"name": "Ann", "height": 70, "weight": 150}})
     assert (r.status_code, r.json()) == (500, {"detail": "Save individual failed"})

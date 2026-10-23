@@ -30,7 +30,16 @@ class SaveIndividualRequest(BaseModel):
     location: Optional[LocationData] = None
     transcription: Optional[str] = Field(None, max_length=MAX_TRANSCRIPTION_LENGTH)  # Original audio transcription if voice entry
     audio_url: Optional[str] = None  # Reference to audio file
-    
+    # The merge target's version when the app loaded it (H2-2.3); a stale one is a 409.
+    # Optional for older clients: the service then guards with the version it reads.
+    expected_version: Optional[int] = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def expected_version_needs_a_merge(self):
+        if self.expected_version is not None and self.merge_with_id is None:
+            raise ValueError("expected_version needs merge_with_id")
+        return self
+
     @field_validator('data')
     def validate_required_fields(cls, v):
         """Ensure required fields exist per PRD. A blank or whitespace-only value counts as missing."""
@@ -78,6 +87,7 @@ class IndividualResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     last_location: Optional[Dict[str, Any]]  # Last known location with address
+    version: int = 1  # bumped by every save; a merge sends it back as expected_version (H2-2.3)
 
 
 class InteractionSummary(BaseModel):
@@ -103,6 +113,9 @@ class SaveIndividualResponse(BaseModel):
     """Response after saving individual"""
     individual: IndividualResponse
     interaction: InteractionSummary
+    # True when the Idempotency-Key was already used: this is the first save's result,
+    # and nothing was written (H2-2.4)
+    replayed: bool = False
 
 
 class SearchIndividualsResponse(BaseModel):

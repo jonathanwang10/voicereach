@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
-from tests.helpers import FakeSupabase
+from tests.helpers import FakeSupabase, save_rpc
 
 ROOT = Path(__file__).resolve().parents[2]
 SQL = re.sub(r"--[^\n]*", "", (ROOT / "supabase" / "schema.sql").read_text())
@@ -103,6 +103,7 @@ def _recording_db():
         for verb in ("insert", "update", "upsert"):
             sb.on(table, verb, data=lambda call: [{**ROW, "id": ID, "user_name": "Demo User", **call.payload}])
     sb.on("individuals", "delete", data=[ROW])
+    sb.on_rpc("save_individual", data=save_rpc(ROW))
     return sb
 
 
@@ -126,9 +127,38 @@ def test_individual_writes_use_existing_columns():
         assert client.post("/api/individuals", json=body).status_code == 200
         assert client.post("/api/individuals", json={**body, "merge_with_id": ID}).status_code == 200
         assert client.put(f"/api/individuals/{ID}/urgency-override", json={"urgency_override": 5}).status_code == 200
+    # A save is one save_individual call; the only direct table write is the override
     assert {(c.table, c.verb) for c in sb.calls if c.verb != "select"} == {
-        ("individuals", "insert"), ("individuals", "update"), ("interactions", "insert")}
+        ("individuals", "update"), ("save_individual", "rpc")}
     _assert_known(sb)
+    for call in sb.calls_to("save_individual", "rpc"):
+        assert set(call.payload["p_interaction"]) <= SCHEMA["interactions"]
+
+
+def _function_params(name: str) -> set:
+    m = re.search(rf"CREATE OR REPLACE FUNCTION {name}\((.*?)\)\s*RETURNS", SQL, re.S)
+    assert m, f"no function {name} in schema.sql"
+    return {part.split()[0] for part in m.group(1).split(",") if part.strip()}
+
+
+def test_rpc_params_match_the_function_signature():
+    sb = _recording_db()
+    client = TestClient(app)
+    with patch("api.individuals.get_supabase", return_value=sb):
+        body = {"data": {"name": "Ann", "height": 70, "weight": 150}, "location": LOCATION}
+        assert client.post("/api/individuals", json=body).status_code == 200
+        assert client.post("/api/individuals", json={**body, "merge_with_id": ID}).status_code == 200
+    calls = [c for c in sb.calls if c.verb == "rpc"]
+    assert calls
+    for call in calls:
+        assert set(call.payload) == _function_params(call.table), call.table
+
+
+def test_every_rpc_names_a_function_in_schema_sql():
+    names = {n for path in BACKEND_SOURCES for n in re.findall(r'\.rpc\("(\w+)"', path.read_text())}
+    assert names, "no .rpc() call found; the check would be vacuous"
+    for name in names:
+        assert f"CREATE OR REPLACE FUNCTION {name}(" in SQL, name
 
 
 def test_category_insert_uses_existing_columns():

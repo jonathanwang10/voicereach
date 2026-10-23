@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime, timezone
 import re
+from postgrest.exceptions import APIError
 from supabase import Client
 
 from db.models import (
@@ -28,6 +29,39 @@ from db.client import fetch_all, run_db
 
 class IndividualNotFound(LookupError):
     """The person isn't there (never was, or deleted mid-request): routes answer 404 (H2-1.4)."""
+
+
+VERSION_CONFLICT_DETAIL = "This person was changed by someone else. Reload and try again."
+
+
+class VersionConflictError(Exception):
+    """A merge based on a version someone else has since changed: routes answer 409 (H2-2.3)."""
+
+
+def _individual_response(row: Dict[str, Any]) -> IndividualResponse:
+    """An individuals row (from a select or save_individual) as the API's IndividualResponse."""
+    return IndividualResponse(
+        id=row["id"],
+        name=row["name"],
+        urgency_score=row["urgency_score"],
+        urgency_override=row.get("urgency_override"),
+        display_score=get_display_urgency_score(row),
+        data=row["data"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        last_location=row.get("last_location"),
+        version=row.get("version", 1),
+    )
+
+
+def _interaction_summary(row: Dict[str, Any]) -> InteractionSummary:
+    return InteractionSummary(
+        id=row["id"],
+        created_at=row["created_at"],
+        user_name=row.get("user_name"),
+        location=row.get("location"),
+        has_transcription=bool(row.get("transcription")),
+    )
 
 
 LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
@@ -185,26 +219,25 @@ class IndividualService:
         merge_with_id: Optional[UUID] = None,
         location: Optional[LocationData] = None,
         transcription: Optional[str] = None,
-        audio_url: Optional[str] = None
+        audio_url: Optional[str] = None,
+        expected_version: Optional[int] = None,
+        client_request_id: Optional[UUID] = None,
     ) -> SaveIndividualResponse:
         """
-        Save a new individual or update existing (merge).
+        Save a new individual or merge into an existing one, through the
+        `save_individual` SQL function: the person and the interaction row are one
+        transaction (H2-2.2), so there is no half-saved state to clean up.
 
-        Not transactional (two PostgREST writes). Order: individual, then interaction.
-        - New person: if the interaction insert fails, the new individual is deleted
-          (compensating action) and the error is raised, so a retry cannot duplicate them.
-        - Merge: update, then interaction. A failed interaction leaves the update in place.
-        The merge read-modify-write has no concurrency guard.
-
-        Logic:
         1. Normalise `data` against the categories (raises ValueError on invalid values)
-        2. Calculate urgency score from the normalised data
-        3. If merge_with_id: update existing individual
-        4. Else: create new individual
-        5. Create interaction record with changes only
-        6. Return both records
+           and compute the urgency score from it.
+        2. A merge reads the target's data and version (IndividualNotFound if it's gone)
+           and records only the changed fields.
+        3. The function guards a merge with `expected_version` (else the version just
+           read): a stale one raises VersionConflictError (H2-2.3). It checks
+           `client_request_id` (the Idempotency-Key) first, so a retry of a save that
+           already committed replays its result (`replayed`) instead of 409-ing (H2-2.4).
+           Versions are never compared here in Python.
         """
-        # Fetch categories for normalisation and urgency weights
         categories_response = await run_db(lambda: self.supabase.table("categories").select("*").execute())
         categories = categories_response.data or []
 
@@ -214,8 +247,7 @@ class IndividualService:
         if errors:
             raise ValueError(". ".join(f"{e['field']}: {e['message']}" for e in errors))
         urgency_score = calculate_urgency_score(data, categories)
-        
-        # Prepare location dict if provided
+
         location_dict = None
         if location:
             location_dict = {
@@ -223,139 +255,56 @@ class IndividualService:
                 "longitude": location.longitude,
                 "address": location.address
             }
-        
-        # Extract name for individual record
-        name = data.get("name", "Unknown")
-        
+
+        changes = data  # a first visit records every field
         if merge_with_id:
-            # Verify individual exists
             existing_response = await run_db(lambda: self.supabase.table("individuals")
-                                             .select("*")
+                                             .select("id, data, version")
                                              .eq("id", str(merge_with_id))
                                              .maybe_single()
                                              .execute())
-            
             if existing_response is None or not existing_response.data:
                 raise IndividualNotFound(f"Individual not found: {merge_with_id}")
-            
-            existing_individual = existing_response.data
-            
-            # Get changes only. Older rows may hold un-normalised values ("180"),
-            # so normalise them too before comparing.
-            old_data = existing_individual.get("data") or {}
+            existing = existing_response.data
+            # Older rows may hold un-normalised values ("180"), so normalise them too
+            old_data = existing.get("data") or {}
             if isinstance(old_data, dict):
                 old_data, _ = normalize_individual_data(old_data, categories)
             changes = self.get_changed_fields(old_data, data)
-            
-            # Update existing individual with location if provided
-            update_data = {
-                "name": name,
-                "urgency_score": urgency_score,
-                "data": data,
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            }
-            
-            # Add last_location if location data is provided
-            if location_dict:
-                update_data["last_location"] = location_dict
-            
-            update_response = await run_db(lambda: self.supabase.table("individuals")
-                                           .update(update_data)
-                                           .eq("id", str(merge_with_id))
-                                           .execute())
-            
-            # Deleted between the read above and this update: the update matched no row
-            if not update_response.data:
-                raise IndividualNotFound(f"Individual not found: {merge_with_id}")
-            individual = update_response.data[0]
-            
-            # Create interaction with changes only
-            interaction_response = await run_db(lambda: self.supabase.table("interactions")
-                                                .insert({
-                                                    "individual_id": str(merge_with_id),
-                                                    "user_id": user_id,
-                                                    "user_name": user_name,
-                                                    "transcription": transcription,
-                                                    "audio_url": audio_url,
-                                                    "location": location_dict,
-                                                    "changes": changes
-                                                })
-                                                .execute())
-            
-            interaction = interaction_response.data[0]
-            
-        else:
-            # Create new individual with location if provided
-            individual_data = {
-                "name": name,
-                "urgency_score": urgency_score,
-                "data": data
-            }
-            
-            # Add last_location if location data is provided
-            if location_dict:
-                individual_data["last_location"] = location_dict
-            
-            individual_response = await run_db(lambda: self.supabase.table("individuals")
-                                               .insert(individual_data)
-                                               .execute())
-            
-            individual = individual_response.data[0]
-            
-            # Create interaction with all data (first interaction). If it fails,
-            # remove the person we just created so a retry does not duplicate them.
-            try:
-                interaction_response = await run_db(lambda: self.supabase.table("interactions")
-                                                    .insert({
-                                                        "individual_id": individual["id"],
-                                                        "user_id": user_id,
-                                                        "user_name": user_name,
-                                                        "transcription": transcription,
-                                                        "audio_url": audio_url,
-                                                        "location": location_dict,
-                                                        "changes": data  # All data for first interaction
-                                                    })
-                                                    .execute())
-            except Exception:
-                try:
-                    await run_db(lambda: self.supabase.table("individuals")
-                                 .delete().eq("id", individual["id"]).execute())
-                except Exception:
-                    pass  # best effort; the original error is the one to surface
-                raise
-            
-            interaction = interaction_response.data[0]
-        
-        # Format response
-        individual_resp = IndividualResponse(
-            id=individual["id"],
-            name=individual["name"],
-            urgency_score=individual["urgency_score"],
-            urgency_override=individual.get("urgency_override"),
-            display_score=get_display_urgency_score(individual),
-            data=individual["data"],
-            created_at=individual["created_at"],
-            updated_at=individual["updated_at"],
-            last_location=individual.get("last_location")
-        )
-        
-        interaction_resp = InteractionSummary(
-            id=interaction["id"],
-            created_at=interaction["created_at"],
-            user_name=interaction["user_name"],
-            location=interaction.get("location"),
-            has_transcription=bool(interaction.get("transcription"))
-        )
-        
+            if expected_version is None:
+                expected_version = existing.get("version")
 
-        
+        params = {
+            "p_individual_id": str(merge_with_id) if merge_with_id else None,
+            "p_name": data.get("name", "Unknown"),
+            "p_data": data,
+            "p_urgency_score": urgency_score,
+            "p_interaction": {
+                "user_id": user_id,
+                "user_name": user_name,
+                "transcription": transcription,
+                "audio_url": audio_url,
+                "location": location_dict,
+                "changes": changes,
+            },
+            "p_expected_version": expected_version if merge_with_id else None,
+            "p_client_request_id": str(client_request_id) if client_request_id else None,
+        }
+        try:
+            result = (await run_db(lambda: self.supabase.rpc("save_individual", params).execute())).data
+        except APIError as e:
+            if e.code == "P0409":
+                raise VersionConflictError(VERSION_CONFLICT_DETAIL) from e
+            if e.code == "P0002":
+                raise IndividualNotFound(f"Individual not found: {merge_with_id}") from e
+            raise
+
         return SaveIndividualResponse(
-            individual=individual_resp,
-            interaction=interaction_resp
+            individual=_individual_response(result["individual"]),
+            interaction=_interaction_summary(result["interaction"]),
+            replayed=bool(result.get("replayed")),
         )
-    
 
-    
     async def search_individuals(
         self,
         search: Optional[str] = None,
@@ -478,33 +427,9 @@ class IndividualService:
         # Execute the query
         interactions_response = await run_db(interactions_query.execute)
         
-        # Format response
-        individual_resp = IndividualResponse(
-            id=individual["id"],
-            name=individual["name"],
-            urgency_score=individual["urgency_score"],
-            urgency_override=individual.get("urgency_override"),
-            display_score=get_display_urgency_score(individual),
-            data=individual["data"],
-            created_at=individual["created_at"],
-            updated_at=individual["updated_at"],
-            last_location=individual.get("last_location")
-        )
-        
-        interaction_summaries = [
-            InteractionSummary(
-                id=i["id"],
-                created_at=i["created_at"],
-                user_name=i["user_name"],
-                location=i.get("location"),
-                has_transcription=bool(i.get("transcription"))
-            )
-            for i in interactions_response.data
-        ]
-        
         return IndividualDetailResponse(
-            individual=individual_resp,
-            recent_interactions=interaction_summaries
+            individual=_individual_response(individual),
+            recent_interactions=[_interaction_summary(i) for i in interactions_response.data]
         )
     
     async def update_urgency_override(

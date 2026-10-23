@@ -1,4 +1,4 @@
-"""DELETE /api/individuals/{id} (R-1 backend, C-10) and the atomic save (R-11, C-57)."""
+"""DELETE /api/individuals/{id} (R-1 backend, C-10) and the atomic save (R-11, C-57, H2-2.2)."""
 import asyncio
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -7,7 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
+from postgrest.exceptions import APIError
+
 from services.individual_service import IndividualService
+from tests.helpers import FakeSupabase, pg_error, save_rpc
 
 IND_ID = str(uuid4())
 
@@ -68,109 +71,49 @@ async def _async(value):
 
 # --- R-11: the save is not transactional, so a failed first interaction deletes the new person ---
 
-class _Table:
-    def __init__(self, sb, name):
-        self.sb, self.name, self.op, self.payload = sb, name, None, None
-
-    def select(self, *a, **k):
-        self.op = "select"
-        return self
-
-    def insert(self, payload):
-        self.op, self.payload = "insert", payload
-        return self
-
-    def update(self, payload):
-        self.op, self.payload = "update", payload
-        return self
-
-    def delete(self):
-        self.op = "delete"
-        return self
-
-    def eq(self, *a):
-        self.eq_args = a
-        return self
-
-    def maybe_single(self):
-        return self
-
-    def execute(self):
-        self.sb.calls.append((self.name, self.op, self.payload))
-        if self.name == "categories":
-            return MagicMock(data=self.sb.categories)
-        if self.name == "interactions" and self.op == "insert" and self.sb.fail_interaction:
-            raise RuntimeError("interaction insert failed")
-        if self.name == "individuals" and self.op == "insert":
-            return MagicMock(data=[{**self.payload, "id": IND_ID, "created_at": "2026-01-01T00:00:00Z",
-                                    "updated_at": "2026-01-01T00:00:00Z"}])
-        if self.name == "individuals" and self.op == "select":
-            return MagicMock(data=self.sb.existing)
-        if self.name == "individuals" and self.op == "update":
-            return MagicMock(data=[{**(self.sb.existing or {}), **self.payload}])
-        if self.name == "individuals" and self.op == "delete":
-            return MagicMock(data=[{"id": IND_ID}])
-        if self.name == "interactions" and self.op == "insert":
-            return MagicMock(data=[{"id": str(uuid4()), "created_at": "2026-01-01T00:00:00Z",
-                                    "user_name": "Demo User", "location": None}])
-        return MagicMock(data=[])
-
-
-class _FakeSupabase:
-    def __init__(self, fail_interaction=False, existing=None):
-        self.calls, self.fail_interaction, self.existing = [], fail_interaction, existing
-        self.categories = [
-            {"name": "height", "type": "number", "is_required": True, "urgency_weight": 0, "auto_trigger": False},
-            {"name": "weight", "type": "number", "is_required": True, "urgency_weight": 0, "auto_trigger": False},
-        ]
-
-    def table(self, name):
-        return _Table(self, name)
-
-
+CATEGORIES = [
+    {"name": "height", "type": "number", "is_required": True, "urgency_weight": 0, "auto_trigger": False},
+    {"name": "weight", "type": "number", "is_required": True, "urgency_weight": 0, "auto_trigger": False},
+]
 DATA = {"name": "Sam", "height": 70, "weight": 180}
+EXISTING = {"id": IND_ID, "name": "Sam", "data": {"height": 70, "weight": 170}, "urgency_score": 0, "version": 1,
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
 
 
-def test_new_person_is_deleted_when_the_interaction_insert_fails():
-    sb = _FakeSupabase(fail_interaction=True)
-    with pytest.raises(RuntimeError):
+def _sb(existing=None, rpc_error=None):
+    sb = FakeSupabase().on("categories", "select", data=CATEGORIES)
+    sb.on("individuals", "select", data=[existing] if existing else [])
+    if rpc_error is not None:
+        sb.on_rpc("save_individual", error=rpc_error)
+    else:
+        sb.on_rpc("save_individual", data=save_rpc(existing, new_id=IND_ID))
+    return sb
+
+
+def test_a_failed_save_surfaces_its_error_and_writes_no_table_directly():
+    """H2-2.2: the person and the visit are one save_individual transaction, so a
+    failure leaves nothing behind and there is no compensating delete to run."""
+    sb = _sb(rpc_error=pg_error("XX000", "interaction insert failed"))
+    with pytest.raises(APIError, match="interaction insert failed"):
         asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA)))
-    ops = [(t, o) for t, o, _ in sb.calls]
-    assert ("individuals", "insert") in ops
-    assert ops[-1] == ("individuals", "delete")
+    assert [(c.table, c.verb) for c in sb.calls if c.verb != "select"] == [("save_individual", "rpc")]
 
 
-def test_compensating_delete_failure_does_not_mask_the_original_error():
-    sb = _FakeSupabase(fail_interaction=True)
-    real_execute = _Table.execute
-
-    def boom(self):
-        if self.name == "individuals" and self.op == "delete":
-            raise ConnectionError("delete also failed")
-        return real_execute(self)
-
-    with patch.object(_Table, "execute", boom), pytest.raises(RuntimeError, match="interaction insert failed"):
-        asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA)))
-
-
-def test_successful_new_save_never_deletes():
-    sb = _FakeSupabase()
+def test_successful_new_save_is_one_rpc_and_never_deletes():
+    sb = _sb()
     asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA)))
-    assert ("individuals", "delete") not in [(t, o) for t, o, _ in sb.calls]
+    assert [(c.table, c.verb) for c in sb.calls if c.verb != "select"] == [("save_individual", "rpc")]
 
 
-def test_merge_is_update_then_interaction_and_never_deletes_on_failure():
-    existing = {"id": IND_ID, "name": "Sam", "data": {"height": 70, "weight": 170}, "urgency_score": 0,
-                "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"}
-    sb = _FakeSupabase(fail_interaction=True, existing=existing)
-    with pytest.raises(RuntimeError):
+def test_a_failed_merge_writes_no_table_directly():
+    sb = _sb(existing=EXISTING, rpc_error=pg_error("XX000", "interaction insert failed"))
+    with pytest.raises(APIError):
         asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA), merge_with_id=IND_ID))
-    ops = [(t, o) for t, o, _ in sb.calls if t == "individuals"]
-    assert ops == [("individuals", "select"), ("individuals", "update")]
+    assert [(c.table, c.verb) for c in sb.calls if c.table == "individuals"] == [("individuals", "select")]
 
 
 def test_merge_into_a_missing_person_raises_not_found_not_an_attribute_error():
     from services.individual_service import IndividualNotFound
-    sb = _FakeSupabase(existing=None)
+    sb = _sb(existing=None)
     with pytest.raises(IndividualNotFound, match="not found"):
         asyncio.run(IndividualService(sb).save_individual("u", "Demo User", dict(DATA), merge_with_id=IND_ID))

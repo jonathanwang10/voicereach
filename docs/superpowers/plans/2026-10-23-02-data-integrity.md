@@ -407,7 +407,7 @@ Service flow (the order matters for Review Focus 2):
 
 Delete the compensating delete and the `"updated_at"` write (the trigger sets it). The route drops its own `get_individual_by_id` pre-check, because the service's read covers it. On `result.replayed` the route skips the background embedding (and, from Task 10, the audit).
 
-- [ ] **Step 1: Write the failing tests.** In `test_individuals_routes.py`, `_db()` scripts `sb.on_rpc("save_individual", data=save_rpc(existing))` instead of the `individuals`/`interactions` insert and update rules. `_writes(sb)` also returns rpc calls as `(name, "rpc")`. Rewrite the POST tests to assert on `sb.rpc_params("save_individual")`:
+- [x] **Step 1: Write the failing tests.** In `test_individuals_routes.py`, `_db()` scripts `sb.on_rpc("save_individual", data=save_rpc(existing))` instead of the `individuals`/`interactions` insert and update rules. `_writes(sb)` also returns rpc calls as `(name, "rpc")`. Rewrite the POST tests to assert on `sb.rpc_params("save_individual")`:
 
 ```python
 def test_new_person_is_one_rpc_with_normalised_data_urgency_and_location():
@@ -481,24 +481,24 @@ In `test_schema_contract.py`:
 - Add `test_rpc_params_match_the_function_signature`: for every rpc call, `set(call.payload)` equals the parameter names parsed from `CREATE OR REPLACE FUNCTION <name>(...)` in `schema.sql`. Also `set(payload["p_interaction"]) <= SCHEMA["interactions"]`.
 - Add a static test, `test_every_rpc_names_a_function_in_schema_sql`: every `\.rpc\("(\w+)"` in `BACKEND_SOURCES` has a `CREATE OR REPLACE FUNCTION \1(` in `schema.sql`.
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_individuals_routes.py backend/tests/test_individual_service.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL (the code still writes tables directly).
 
-- [ ] **Step 3: Implement** the service, route and model changes listed under Interfaces. Then update every other test that POSTs `/api/individuals` (`grep` above) to script `on_rpc("save_individual", data=save_rpc(...))`. Give `test_no_pii_logs.FakeDB` an `rpc(name, params)` that echoes a row the same way.
+- [x] **Step 3: Implement** the service, route and model changes listed under Interfaces. Then update every other test that POSTs `/api/individuals` (`grep` above) to script `on_rpc("save_individual", data=save_rpc(...))`. Give `test_no_pii_logs.FakeDB` an `rpc(name, params)` that echoes a row the same way.
 
-- [ ] **Step 4: Update docs.**
+- [x] **Step 4: Update docs.**
   - README: delete the "Saving is not transactional" known issue. In "Duplicate detection", say a save is one transaction (`save_individual`), a merge sends the version it loaded and a stale one gets 409 with the message, and `Idempotency-Key` makes a retry return the first save's result.
   - CLAUDE.md Duplicates rule, after "A merge replaces the whole `data` JSONB...": add "guarded by `individuals.version` (409 `This person was changed by someone else. Reload and try again.`); a save is one `save_individual` transaction and `Idempotency-Key` makes it idempotent."
   - `backend/README.md`: the request fields, header and status codes.
 
-- [ ] **Step 5: Run the full checks**
+- [x] **Step 5: Run the full checks**
 
 Run: `python -m pytest -q && ruff check backend --select F,E9`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/ README.md CLAUDE.md

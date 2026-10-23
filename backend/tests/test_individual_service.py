@@ -39,15 +39,15 @@ def test_abbreviate_address_truncates_long_text(service):
     assert result == "This is a very long address th..."
 
 
-async def test_merge_target_deleted_after_the_route_check_raises_not_found_and_writes_nothing():
-    """The route checks the target exists, then the service reads it again. If it was
-    deleted in between, maybe_single() gives None: IndividualNotFound (404), not a PostgREST 500."""
+async def test_merge_target_missing_raises_individual_not_found_and_calls_no_rpc():
+    """The service reads the merge target before the save; when it's gone, maybe_single()
+    gives None: IndividualNotFound (404), not a PostgREST 500, and save_individual never runs."""
     sb = FakeSupabase().on("categories", "select", data=[]).on("individuals", "select", data=[])
     with pytest.raises(IndividualNotFound, match="Individual not found"):
         await IndividualService(sb).save_individual(
             user_id="u", user_name="Demo User", data={"name": "Ann", "height": 70, "weight": 150},
             merge_with_id="550e8400-e29b-41d4-a716-446655440001")
-    assert [c.verb for c in sb.calls] == ["select", "select"]
+    assert [(c.table, c.verb) for c in sb.calls] == [("categories", "select"), ("individuals", "select")]
 
 
 async def test_new_person_whose_values_fail_normalisation_raises_before_any_write():

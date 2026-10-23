@@ -2,7 +2,7 @@
 Individual management API endpoints
 """
 import logging
-from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body
+from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body, Header
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from uuid import UUID
@@ -21,7 +21,8 @@ from db.models import (
     DeleteIndividualResponse
 )
 from services.duplicate_detection_service import DuplicateDetectionService
-from services.individual_service import IndividualNotFound, IndividualService
+from services.individual_service import (IndividualNotFound, IndividualService, VERSION_CONFLICT_DETAIL,
+                                         VersionConflictError)
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
@@ -70,41 +71,39 @@ async def save_individual(
     background_tasks: BackgroundTasks,
     # Each save starts a paid embedding call (H2-1.7)
     user_id: str = Depends(rate_limit("save", "RATE_LIMIT_SAVE_PER_MIN", 30)),
-    user_name: str = Depends(get_current_user_name)
+    user_name: str = Depends(get_current_user_name),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
 ):
     """
-    Save new individual or update existing (merge).
-    
-    Flow:
-    1. Validate merge_with_id exists (if provided)
-    2. Fetch categories for validation
-    3. Validate data using validation_helper
-    4. Use individual_service to save
-    5. Return individual and interaction records
+    Save a new individual or merge into an existing one (one save_individual
+    transaction, H2-2.2).
+
+    - `Idempotency-Key` (a UUID, optional): a retry with the same key returns the
+      first save's result (`replayed: true`) and writes nothing (H2-2.4). Anything
+      that isn't a UUID is a 400 before any database call.
+    - A merge sends the `expected_version` it loaded; a stale one is a 409 with
+      VERSION_CONFLICT_DETAIL (H2-2.3). A missing target is a 404.
+    - Data is validated against the categories (400 with field details); only the
+      normalised data is stored.
+    - A replayed save schedules no embedding.
     """
+    request_id = None
+    if idempotency_key is not None:
+        try:
+            request_id = UUID(idempotency_key)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Idempotency-Key must be a UUID")
     try:
-        # Get Supabase client
         supabase = get_supabase()
-        
-        # Initialize service
         service = IndividualService(supabase)
-        
-        # If merge_with_id provided, verify it exists first
-        if request.merge_with_id:
-            existing = await service.get_individual_by_id(request.merge_with_id)
-            if not existing:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Individual not found: {request.merge_with_id}"
-                )
-        
-        # Fetch categories for validation
+
         categories_response = await run_db(lambda: supabase.table("categories").select("*").order("created_at").execute())
         categories = categories_response.data
-        
+
         # Validate the categorized data
         validation_result = validate_categorized_data(request.data, categories)
-        
+
         # If validation fails, return error with details
         if not validation_result.is_valid:
             # Combine missing required and validation errors
@@ -114,12 +113,12 @@ async def save_individual(
             if validation_result.validation_errors:
                 for error in validation_result.validation_errors:
                     error_detail.append(f"{error['field']}: {error['message']}")
-            
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=". ".join(error_detail)
             )
-        
+
         # Save the normalised data (types coerced, empty values dropped)
         result = await service.save_individual(
             user_id=user_id,
@@ -128,30 +127,34 @@ async def save_individual(
             merge_with_id=request.merge_with_id,
             location=request.location,
             transcription=request.transcription,
-            audio_url=request.audio_url
+            audio_url=request.audio_url,
+            expected_version=request.expected_version,
+            client_request_id=request_id,
         )
-        
+
         invalidate_context_cache()
 
-        # Add background task to generate embedding
-        background_tasks.add_task(
-            generate_embedding_background,
-            result.individual.id,
-            {
-                "id": result.individual.id,
-                "name": result.individual.name,
-                "data": result.individual.data
-            },
-            categories,
-        )
-        
+        if not result.replayed:
+            background_tasks.add_task(
+                generate_embedding_background,
+                result.individual.id,
+                {
+                    "id": result.individual.id,
+                    "name": result.individual.name,
+                    "data": result.individual.data
+                },
+                categories,
+            )
+
         return result
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
+    except VersionConflictError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=VERSION_CONFLICT_DETAIL)
     except IndividualNotFound:
-        # The merge target was deleted after the existence check above
+        # The merge target doesn't exist, or was deleted mid-save
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Individual not found: {request.merge_with_id}"

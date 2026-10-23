@@ -235,6 +235,40 @@ def paged(rows: list) -> Callable[["Call"], list]:
     return page
 
 
+def save_rpc(existing: Optional[dict] = None, *, new_id: str = None, interaction_id: str = None,
+             at: str = "2026-02-01T00:00:00+00:00") -> Callable[["Call"], dict]:
+    """`data=` for on_rpc("save_individual"): plays the SQL function from its params.
+
+    A new person (p_individual_id null) is inserted at version 1; a merge updates
+    `existing` and bumps its version. last_location is the visit's location, else the
+    existing one. The interaction row carries the p_interaction fields plus
+    client_request_id. Always `replayed: False` (script a replay explicitly).
+    """
+    new_id = new_id or ID1
+    interaction_id = interaction_id or ID2
+
+    def play(call: "Call") -> dict:
+        p = call.payload
+        visit = p["p_interaction"]
+        location = visit.get("location")
+        if p["p_individual_id"] is None:
+            individual = {"id": new_id, "urgency_override": None, "created_at": at, "version": 1,
+                          "last_location": location}
+        else:
+            base = existing or {}
+            individual = {"created_at": at, "urgency_override": None, **base, "id": p["p_individual_id"],
+                          "version": base.get("version", 1) + 1,
+                          "last_location": location or base.get("last_location")}
+        individual.update(name=p["p_name"], data=p["p_data"], urgency_score=p["p_urgency_score"], updated_at=at)
+        interaction = {"id": interaction_id, "individual_id": individual["id"], "created_at": at,
+                       "user_id": visit.get("user_id"), "user_name": visit.get("user_name") or "Unknown",
+                       "transcription": visit.get("transcription"), "audio_url": visit.get("audio_url"),
+                       "location": location, "changes": visit.get("changes") or {},
+                       "client_request_id": p["p_client_request_id"]}
+        return {"individual": individual, "interaction": interaction, "replayed": False}
+    return play
+
+
 # --- FakePeopleDB: in-memory name search (duplicate detection, assistant context) ----------
 
 class FakePeopleDB:
