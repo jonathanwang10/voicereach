@@ -52,11 +52,10 @@ class TestUUIDMappingFix:
         # Act
         matches = await service.find_duplicates(new_data)
 
-        # Assert - should correctly map placeholder to actual UUID
-        assert len(matches) == 1  # Only top match returned per PRD
-        assert matches[0]["id"] == candidate1_id  # Should map to first candidate
-        assert matches[0]["confidence"] == 95
-        assert matches[0]["name"] == "John Doe"
+        # Assert - should correctly map placeholders to actual UUIDs; up to 3 matches
+        # of 60 or more come back, best first (H2-3.5)
+        assert [(m["id"], m["confidence"], m["name"]) for m in matches] == [
+            (candidate1_id, 95, "John Doe"), (candidate2_id, 70, "John Smith")]
 
     async def test_handles_candidate_id_placeholder_format(self):
         """Test handling of 'candidate_id_X' format from GPT-4o"""
@@ -177,10 +176,8 @@ class TestUUIDMappingFix:
         # Act
         matches = await service.find_duplicates(new_data)
 
-        # Assert - should work normally with actual UUIDs
-        assert len(matches) == 1
-        assert matches[0]["id"] == candidate1_id
-        assert matches[0]["confidence"] == 98
+        # Assert - should work normally with actual UUIDs; both are 60+, best first (H2-3.5)
+        assert [(m["id"], m["confidence"]) for m in matches] == [(candidate1_id, 98), (candidate2_id, 75)]
 
     async def test_fallback_validates_uuids(self):
         """Test that fallback simple matching also validates UUIDs"""

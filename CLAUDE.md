@@ -71,8 +71,11 @@ only after `npx expo prebuild --platform ios`.
   vocabulary prompt in `services/transcribe_vocab.py` (places and terms, never person names).
 - **Duplicates:** candidates come from the SQL function `find_duplicate_candidates`
   (trigram or token name match, plus a data-value match over the 200 most recent
-  people), are pre-ranked (name tokens, then height/weight closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
-  are dropped and the backend returns only the best. Voice review may add a
+  people), are pre-ranked (name tokens, sound-alikes and close spellings, then
+  height/weight closeness) and GPT (`DUPLICATE_MODEL`, default gpt-4o-mini) scores the
+  top 8 (`MAX_LLM_CANDIDATES`) from name, aka, age, height, weight, gender and last-seen
+  area only (no sensitive or medical fields); matches below 60 are dropped and the
+  backend returns the top 3, best first. Voice review may add a
   re-check's match to the server's (`unionMatches`). There is no 95% auto-merge:
   every match opens the merge UI. A merge replaces the whole `data` JSONB with
   what the client sends, guarded by `individuals.version` (409 `This person was

@@ -40,7 +40,7 @@ Environment variables (`backend/.env`):
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 | `REALTIME_MAX_SESSIONS_PER_USER`, `REALTIME_MAX_SESSIONS_TOTAL` | Optional caps on open realtime sessions per phone (default 2) and per process (default 20) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |
-| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime`, `text-embedding-3-large`; `services/model_config.py`) |
+| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL`, `DUPLICATE_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime`, `text-embedding-3-large`, `gpt-4o-mini`; `services/model_config.py`) |
 
 Then: API at `http://localhost:8001`, health check at `/health`. The interactive
 docs (`/docs`, `/redoc`, `/openapi.json`) are off unless `ENABLE_API_DOCS=1`. `backend/.env` is loaded once at startup (`load_dotenv()` never

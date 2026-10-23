@@ -63,7 +63,9 @@ def test_transcribe_returns_normalised_categorized_data():
     assert body["categorized_data"] == expected
     assert body["validation_errors"] == []
     assert body["missing_required"] == []
-    find_duplicates.assert_awaited_once_with(expected)
+    find_duplicates.assert_awaited_once()
+    assert find_duplicates.await_args.args[0] == expected
+    assert [c["name"] for c in find_duplicates.await_args.kwargs["categories"]] == [c["name"] for c in CATEGORIES]
 
 
 def test_transcribe_reports_validation_errors():

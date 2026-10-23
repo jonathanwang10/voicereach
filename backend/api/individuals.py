@@ -387,9 +387,11 @@ async def check_duplicates(
         supabase = get_supabase()
         
         duplicate_service = DuplicateDetectionService(supabase, get_openai_service())
-        
+        # The categories say which fields are sensitive (kept out of the prompt, H2-3.8)
+        categories = (await run_db(lambda: supabase.table("categories").select("*").execute())).data or []
+
         # Find potential duplicates using the same logic as transcription
-        potential_matches = await duplicate_service.find_duplicates(data)
+        potential_matches = await duplicate_service.find_duplicates(data, categories=categories)
         
         return JSONResponse(content={
             "potential_matches": potential_matches

@@ -53,7 +53,7 @@ OFF_LOOP_ROUTES = [
      [("individuals", "update", [])], 404),
     ("delete", f"/api/individuals/{ID}", None, "api.individuals.get_supabase", [("individuals", "delete", [])], 404),
     ("post", "/api/individuals/check-duplicates", {"name": "Ann Lee"}, "api.individuals.get_supabase",
-     [("find_duplicate_candidates", "rpc", [])], 200),
+     [("categories", "select", []), ("find_duplicate_candidates", "rpc", [])], 200),
 ]
 
 @pytest.mark.parametrize("method,path,body,target,script,status", OFF_LOOP_ROUTES)

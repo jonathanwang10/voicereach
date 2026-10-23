@@ -97,6 +97,7 @@ Three separate AI capabilities, easy to confuse:
 | Capability | Model (env var) | Where |
 |---|---|---|
 | Transcribe + extract fields | `gpt-transcribe` (`TRANSCRIBE_MODEL`, with a fixed SF place/street vocabulary prompt, no person names) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
+| Score duplicate candidates | `gpt-4o-mini` (`DUPLICATE_MODEL`) | `services/duplicate_detection_service.py` |
 | Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
 | Live spoken assistant | `gpt-realtime` (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
 
@@ -513,10 +514,12 @@ gathers candidates with one call to the SQL function `find_duplicate_candidates`
 a trigram or name-token match (words of 3+ characters, so "John Doe" finds
 "John" and "Jon Smith" finds "John Smith"), plus a data value that starts a word
 with the name (an "aka") among the 200 most recently updated people (values
-only, never field names), ranks them by tokens matched
-and height/weight closeness, asks GPT-4o to score the top 8 0–100, drops
-anything below 60, and returns only the best match
-(`services/duplicate_detection_service.py`). Voice review adds the match from
+only, never field names), ranks them by tokens matched (with sound-alikes and
+close spellings: metaphone and Jaro-Winkler) and height/weight closeness, asks
+`DUPLICATE_MODEL` (default `gpt-4o-mini`, temperature 0) to score the top 8
+0–100 from name, aka, age, height, weight, gender and the last-seen street area
+only (never medical or other sensitive fields), drops anything below 60, and
+returns the top 3, best first (`services/duplicate_detection_service.py`). Voice review adds the match from
 its own re-check to the server's (`unionMatches`), so its match list can show
 two; Save offers the best one. If GPT-4o fails, a name comparison
 stands in; if the search itself fails, the app is told
@@ -570,7 +573,7 @@ is logged.
 |---|---|---|---|
 | A recording: M4A audio of the worker describing the person | The backend, then OpenAI transcription (`TRANSCRIBE_MODEL`, default `gpt-transcribe`), with a fixed prompt of SF place and street names (no person names) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded, a new recording replaces it, or the Record screen goes away (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
 | The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
-| The new person's fields, with up to 8 existing candidates' names and full `data` (medical conditions included) | OpenAI GPT-4o | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
+| The new person's name, aka, age, height, weight, gender and the street part of the last location, with the same for up to 8 existing candidates; never medical or sensitive fields | OpenAI `DUPLICATE_MODEL` (default `gpt-4o-mini`) | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
 | A person's name and labelled fields (`build_embedding_text`) | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
 | A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
 | An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`gpt-realtime`) | Each question | Phone: the recording is deleted from the cache once transcribed, when transcription or stopping fails, or when the screen closes while recording starts (the microphone is stopped too). OpenAI: as above. |

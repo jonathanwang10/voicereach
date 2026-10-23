@@ -57,7 +57,9 @@ def test_audio_url_is_transcribed_categorised_validated_and_checked_for_duplicat
     }
     openai.transcribe_audio.assert_awaited_once_with(AUDIO_URL)
     openai.transcribe_audio_file.assert_not_called()
-    find_duplicates.assert_awaited_once_with({"name": "Ann Lee", "height": 70})  # the normalised data
+    find_duplicates.assert_awaited_once()
+    assert find_duplicates.await_args.args[0] == {"name": "Ann Lee", "height": 70}  # the normalised data
+    assert [c["name"] for c in find_duplicates.await_args.kwargs["categories"]] == [c["name"] for c in CATEGORIES]
     [q] = sb.calls
     assert (q.table, q.verb, q.mod("order")) == ("categories", "select", (("created_at",), {}))
 
@@ -67,7 +69,8 @@ def test_gpt_gets_every_category_with_its_type_required_flag_and_options():
     text, categories = openai.categorize_transcription.await_args.args
     assert text == "Met Ann, about 5 foot 10"
     assert categories == [{"name": c["name"], "display_name": c.get("display_name"), "type": c["type"],
-                           "is_required": c["is_required"], "options": c["options"]} for c in CATEGORIES]
+                           "is_required": c["is_required"], "is_sensitive": c.get("is_sensitive", False),
+                           "options": c["options"]} for c in CATEGORIES]
 
 
 def test_invalid_values_come_back_as_validation_errors():

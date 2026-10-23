@@ -88,6 +88,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
                 "display_name": cat.get("display_name"),   # the schema's field descriptions
                 "type": cat["type"],
                 "is_required": cat["is_required"],
+                "is_sensitive": cat.get("is_sensitive", False),   # kept out of the compare prompt (H2-3.8)
                 "options": cat.get("options", None)
             }
             categories.append(category_data)
@@ -126,7 +127,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
         # worker keeps the transcript), but it is reported, never shown as "no match".
         duplicate_check_failed = False
         try:
-            potential_matches = await duplicate_service.find_duplicates(categorized_data)
+            potential_matches = await duplicate_service.find_duplicates(categorized_data, categories=categories)
         except Exception as e:
             logger.warning("Duplicate detection failed: %s", type(e).__name__)
             potential_matches = []

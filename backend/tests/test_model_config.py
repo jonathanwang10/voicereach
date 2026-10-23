@@ -26,13 +26,14 @@ def test_env_overrides_and_blank_means_default(monkeypatch):
 def _chat_reply(content="{}"):
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
-async def test_categorize_and_compare_use_chat_model(monkeypatch):
+async def test_categorize_uses_chat_model_and_compare_the_duplicate_model(monkeypatch):
     from services.openai_service import OpenAIService
     monkeypatch.setattr(model_config, "CHAT_MODEL", "chat-x")
+    monkeypatch.setattr(model_config, "DUPLICATE_MODEL", "dup-x")      # H2-3.5
     svc = OpenAIService(); create = AsyncMock(return_value=_chat_reply())
     monkeypatch.setattr(svc.client.chat.completions, "create", create)
     await svc.categorize_transcription("hi", []); await svc.compare_individuals("p")
-    assert [c.kwargs["model"] for c in create.call_args_list] == ["chat-x", "chat-x"]
+    assert [c.kwargs["model"] for c in create.call_args_list] == ["chat-x", "dup-x"]
 
 async def test_whisper_uses_transcribe_model(monkeypatch, tmp_path):
     from services.openai_service import OpenAIService
