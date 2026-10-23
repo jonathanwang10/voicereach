@@ -7,6 +7,9 @@ from types import SimpleNamespace
 from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock
 
+import httpx2
+import openai
+
 from db.models import SaveIndividualResponse
 
 
@@ -16,6 +19,14 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 def fixture_audio(name: str) -> bytes:
     """Bytes of a committed test recording in backend/tests/fixtures/ (real M4A/AAC)."""
     return (FIXTURES / name).read_bytes()
+
+
+def openai_bad_request(code: str, param: str = "file") -> openai.BadRequestError:
+    """The 400 the OpenAI SDK raises, with the error `code`/`param` it parses from the body."""
+    return openai.BadRequestError(
+        "bad request",
+        response=httpx2.Response(400, request=httpx2.Request("POST", "https://api.openai.com/v1/audio/transcriptions")),
+        body={"code": code, "param": param})
 
 
 def save_response(payload: dict) -> SaveIndividualResponse:

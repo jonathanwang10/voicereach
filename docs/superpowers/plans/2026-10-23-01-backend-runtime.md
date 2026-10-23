@@ -779,7 +779,7 @@ Roadmap item 9.
 - Produces: `services/openai_service.py: def whisper_client_message(exc: Exception, limits: AudioLimits) -> str | None`. It returns `limits.too_short` for an `openai.BadRequestError` whose `code == "audio_too_short"`, `limits.too_long` for `code == "audio_too_long"`, and `None` for anything else (which is re-raised, so the route answers 500).
 - Produces: `tests/helpers.py: def openai_bad_request(code: str, param: str = "file") -> openai.BadRequestError`, built as `openai.BadRequestError("bad request", response=httpx2.Response(400, request=httpx2.Request("POST", "https://api.openai.com/v1/audio/transcriptions")), body={"code": code, "param": param})`. openai 3.26 ships `httpx2`.
 
-- [ ] **Step 1: Write the failing tests** in `test_openai_service.py`
+- [x] **Step 1: Write the failing tests** in `test_openai_service.py`
 
 ```python
 import openai
@@ -814,12 +814,12 @@ async def test_short_question_message_never_says_5_seconds(tmp_path):
     assert str(exc.value) == "Question must be at least 1 second long" and "5 seconds" not in str(exc.value)
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_openai_service.py -v`
 Expected: FAIL. The typed errors aren't mapped (the string match misses them), and the untyped `RuntimeError` is still turned into a `ValueError`.
 
-- [ ] **Step 3: Implement `whisper_client_message`**
+- [x] **Step 3: Implement `whisper_client_message`**
 
 Both transcribe methods wrap only the `_whisper` call:
 
@@ -831,9 +831,9 @@ except openai.BadRequestError as e:
     raise
 ```
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/openai_service.py backend/tests

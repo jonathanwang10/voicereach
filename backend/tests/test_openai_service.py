@@ -66,14 +66,36 @@ def test_m4a_from_this_project_is_transcribed(svc):
     svc._download_audio.assert_awaited_once_with(url)
 
 
-@pytest.mark.parametrize("whisper_error,message", [
-    ("Audio file is too short", "at least 5 seconds"),
-    ("Audio file is too long", "less than 2 minutes"),
-])
-def test_whisper_duration_errors_become_client_messages(svc, whisper_error, message):
-    svc._whisper.side_effect = Exception(whisper_error)
-    with pytest.raises(ValueError, match=message):
-        _transcribe(svc, f"{PROJECT_URL}/storage/v1/object/audio/a.m4a")
+import openai
+from services.openai_service import QUESTION_LIMITS
+from tests.helpers import openai_bad_request
+
+URL = f"{PROJECT_URL}/storage/v1/object/audio/a.m4a"
+
+@pytest.mark.parametrize("code,message", [("audio_too_short", "Audio must be at least 5 seconds long"),
+                                          ("audio_too_long", "Audio must be less than 2 minutes")])
+def test_typed_whisper_errors_become_client_messages(svc, code, message):
+    svc._whisper.side_effect = openai_bad_request(code)
+    with pytest.raises(ValueError) as exc:
+        _transcribe(svc, URL)
+    assert str(exc.value) == message
+
+def test_error_text_alone_is_no_longer_matched(svc):
+    svc._whisper.side_effect = RuntimeError("Audio file is too short")
+    with pytest.raises(RuntimeError):
+        _transcribe(svc, URL)
+
+def test_other_bad_requests_propagate(svc):
+    svc._whisper.side_effect = openai_bad_request("invalid_value", param="model")
+    with pytest.raises(openai.BadRequestError):
+        _transcribe(svc, URL)
+
+async def test_short_question_message_never_says_5_seconds(tmp_path):
+    path = tmp_path / "q.m4a"; path.write_bytes(fixture_audio("audio_2s.m4a"))
+    s = OpenAIService(); s._whisper = AsyncMock(side_effect=openai_bad_request("audio_too_short"))
+    with pytest.raises(ValueError) as exc:
+        await s.transcribe_audio_file(str(path), limits=QUESTION_LIMITS)
+    assert str(exc.value) == "Question must be at least 1 second long" and "5 seconds" not in str(exc.value)
 
 
 from pathlib import Path

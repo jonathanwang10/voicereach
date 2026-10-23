@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Iterator, Optional, Dict
 import mutagen
 import mutagen.mp4
+import openai
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
@@ -87,6 +88,17 @@ def temp_audio_file(data: bytes, suffix: str = ".m4a") -> Iterator[str]:
             pass
 
 
+def whisper_client_message(exc: Exception, limits: AudioLimits) -> Optional[str]:
+    """The client message for a Whisper duration rejection, by the API's error code
+    (not its message text, which can change), or None for any other error (H2-1.9)."""
+    if isinstance(exc, openai.BadRequestError):
+        if exc.code == "audio_too_short":
+            return limits.too_short
+        if exc.code == "audio_too_long":
+            return limits.too_long
+    return None
+
+
 def _supabase_host() -> str:
     return (urlparse(os.getenv("SUPABASE_URL") or "").hostname or "").lower()
 
@@ -159,11 +171,10 @@ class OpenAIService:
             check_audio_duration(tmp_path, limits)
             try:
                 return await self._whisper(tmp_path)
-            except Exception as e:
-                if "Audio file is too short" in str(e):
-                    raise ValueError("Audio must be at least 5 seconds long")
-                elif "Audio file is too long" in str(e):
-                    raise ValueError("Audio must be less than 2 minutes")
+            except openai.BadRequestError as e:
+                message = whisper_client_message(e, limits)
+                if message:
+                    raise ValueError(message) from e
                 raise
 
     async def transcribe_audio_file(self, file_path: str, limits: AudioLimits = RECORDING_LIMITS) -> str:
@@ -181,28 +192,26 @@ class OpenAIService:
             ValueError: For invalid file format or duration issues
             Exception: For API or network errors
         """
+        # Validate file exists
+        if not os.path.exists(file_path):
+            raise ValueError("Audio file not found")
+
+        # Validate file format (basic check for M4A header)
+        with open(file_path, 'rb') as f:
+            header = f.read(12)
+            # M4A files typically have 'ftyp' at offset 4
+            if b'ftyp' not in header:
+                raise ValueError("File is not in M4A format")
+
+        check_audio_duration(file_path, limits)
+
+        # Send to Whisper API
         try:
-            # Validate file exists
-            if not os.path.exists(file_path):
-                raise ValueError("Audio file not found")
-            
-            # Validate file format (basic check for M4A header)
-            with open(file_path, 'rb') as f:
-                header = f.read(12)
-                # M4A files typically have 'ftyp' at offset 4
-                if b'ftyp' not in header:
-                    raise ValueError("File is not in M4A format")
-
-            check_audio_duration(file_path, limits)
-
-            # Send to Whisper API
             return await self._whisper(file_path)
-            
-        except Exception as e:
-            if "Audio file is too short" in str(e):
-                raise ValueError("Audio must be at least 5 seconds long")
-            elif "Audio file is too long" in str(e):
-                raise ValueError("Audio must be less than 2 minutes")
+        except openai.BadRequestError as e:
+            message = whisper_client_message(e, limits)
+            if message:
+                raise ValueError(message) from e
             raise
                 
     async def categorize_transcription(self, transcription: str, categories: list) -> dict:
