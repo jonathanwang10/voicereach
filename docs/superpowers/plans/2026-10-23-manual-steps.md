@@ -17,6 +17,7 @@ Each file is idempotent.
 5. `supabase/migrations/20261102000005_rescore_batch.sql` (Phase 2, Task 13). Then: `cd backend && python scripts/rescore_urgency.py`.
 6. `supabase/migrations/20261102000006_name_trigram_index.sql` (Phase 2, Task 14). Before it, see Owner actions item 5 (pg_trgm's schema).
 7. `supabase/migrations/20261102000007_coarsen_old_locations.sql` (Phase 2, Task 15). Check: `select coarsen_old_locations(30);` returns a count; a second run returns 0.
+8. `supabase/migrations/20261103000001_categories_is_sensitive.sql` (Phase 3, Task 1), then `cd backend && python scripts/rescore_urgency.py`. Then check `SELECT name, urgency_weight, auto_trigger FROM categories WHERE is_sensitive AND (urgency_weight > 0 OR auto_trigger);`: those rows no longer score; the owner decides whether to clear their weights.
 
 ## Environment variables
 

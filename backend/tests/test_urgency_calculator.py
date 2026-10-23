@@ -115,3 +115,12 @@ def test_number_term_uses_its_scale_max(scale, value, expected):
 
 def test_a_category_without_the_column_scores_as_before():
     assert calculate_urgency_score({"days": 150}, [DAYS]) == 50
+
+
+def test_a_sensitive_category_never_scores_or_triggers():          # H2-3.8
+    cats = [{"name": "hiv_status", "type": "single_select", "urgency_weight": 50, "auto_trigger": True,
+             "is_sensitive": True, "options": [{"label": "Positive", "value": 1}]},
+            {"name": "veteran_status", "type": "single_select", "urgency_weight": 50,
+             "options": [{"label": "Yes", "value": 1}]}]
+    assert calculate_urgency_score({"veteran_status": "Yes"}, cats) == 100   # hiv's weight is not in the denominator (else 50)
+    assert calculate_urgency_score({"hiv_status": "Positive"}, cats) == 0    # and it never auto-triggers (else 100)

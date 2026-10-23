@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS categories (
     is_required    BOOLEAN NOT NULL DEFAULT FALSE,
     is_preset      BOOLEAN NOT NULL DEFAULT FALSE,
     is_active      BOOLEAN NOT NULL DEFAULT TRUE,   -- reserved; not currently filtered on
+    is_sensitive   BOOLEAN NOT NULL DEFAULT FALSE,  -- never scored; kept out of prompts (H2-3.8)
     number_scale_max NUMERIC                        -- a number's full-weight value; NULL = 300 (H2-2.8)
                    CONSTRAINT categories_number_scale_max_positive
                    CHECK (number_scale_max IS NULL OR number_scale_max > 0),
@@ -195,6 +196,16 @@ ALTER TABLE categories ADD COLUMN IF NOT EXISTS number_scale_max NUMERIC;
 ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_number_scale_max_positive;
 ALTER TABLE categories ADD CONSTRAINT categories_number_scale_max_positive
     CHECK (number_scale_max IS NULL OR number_scale_max > 0);
+-- H2-3.8: sensitive categories (HUD CPD-17-01: they can't affect urgency). The backfill runs
+-- only when the column is added, so re-running never re-flags a category the owner cleared.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'categories' AND column_name = 'is_sensitive') THEN
+    ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_sensitive BOOLEAN NOT NULL DEFAULT FALSE;  -- IF NOT EXISTS: Phase 2's test_migrations rule
+    UPDATE categories SET is_sensitive = TRUE WHERE name ~* 'hiv|medical|substance|mental|diagnos|pregnan';
+  END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- updated_at is set by the database on every UPDATE, so it no longer depends
@@ -436,37 +447,37 @@ CREATE INDEX IF NOT EXISTS idx_individuals_name_trgm ON individuals USING gin (n
 -- Do not reintroduce it.
 -- ---------------------------------------------------------------------------
 INSERT INTO categories
-  (name, display_name, type, is_required, is_preset, priority, urgency_weight, auto_trigger, options)
+  (name, display_name, type, is_required, is_preset, priority, urgency_weight, auto_trigger, is_sensitive, options)
 VALUES
-  ('name',   'Name',   'text',   TRUE,  TRUE, 'high',   0,  FALSE, NULL),
-  ('height', 'Height', 'number', TRUE,  TRUE, 'medium', 0,  FALSE, NULL),
-  ('weight', 'Weight', 'number', TRUE,  TRUE, 'medium', 0,  FALSE, NULL),
-  ('age',    'Age',    'number', FALSE, TRUE, 'medium', 0,  FALSE, NULL),
+  ('name',   'Name',   'text',   TRUE,  TRUE, 'high',   0,  FALSE, FALSE, NULL),
+  ('height', 'Height', 'number', TRUE,  TRUE, 'medium', 0,  FALSE, FALSE, NULL),
+  ('weight', 'Weight', 'number', TRUE,  TRUE, 'medium', 0,  FALSE, FALSE, NULL),
+  ('age',    'Age',    'number', FALSE, TRUE, 'medium', 0,  FALSE, FALSE, NULL),
 
-  ('gender', 'Gender', 'single_select', FALSE, TRUE, 'medium', 0, FALSE,
+  ('gender', 'Gender', 'single_select', FALSE, TRUE, 'medium', 0, FALSE, FALSE,
    '[{"label":"Male","value":0},{"label":"Female","value":0},
      {"label":"Other","value":0},{"label":"Unknown","value":0}]'::jsonb),
 
-  ('substance_abuse_history', 'Substance Abuse History', 'multi_select', FALSE, TRUE, 'high', 0, FALSE,
+  ('substance_abuse_history', 'Substance Abuse History', 'multi_select', FALSE, TRUE, 'high', 0, FALSE, TRUE,
    '["None","Mild","Moderate","Severe","In Recovery"]'::jsonb),
 
-  ('medical_conditions', 'Medical Conditions', 'multi_select', FALSE, FALSE, 'high', 0, FALSE,
+  ('medical_conditions', 'Medical Conditions', 'multi_select', FALSE, FALSE, 'high', 0, FALSE, TRUE,
    '["Diabetes","Heart Disease","Mental Health","Mobility Issues","Chronic Pain","None"]'::jsonb),
 
-  ('veteran_status', 'Veteran Status', 'single_select', FALSE, FALSE, 'high', 20, FALSE,
+  ('veteran_status', 'Veteran Status', 'single_select', FALSE, FALSE, 'high', 20, FALSE, FALSE,
    '[{"label":"Yes","value":1},{"label":"No","value":0},{"label":"Unknown","value":0}]'::jsonb),
 
-  ('housing_priority', 'Housing Priority', 'single_select', FALSE, FALSE, 'high', 30, FALSE,
+  ('housing_priority', 'Housing Priority', 'single_select', FALSE, FALSE, 'high', 30, FALSE, FALSE,
    '[{"label":"Critical","value":1},{"label":"High","value":0.7},
      {"label":"Medium","value":0.4},{"label":"Low","value":0.1}]'::jsonb),
 
   -- auto_trigger: pins the urgency score to 100 only when the chosen option's
   -- value is > 0, so "None" does not trigger
-  ('behavior', 'Behavior', 'single_select', FALSE, FALSE, 'high', 40, TRUE,
+  ('behavior', 'Behavior', 'single_select', FALSE, FALSE, 'high', 40, TRUE, FALSE,
    '[{"label":"None","value":0},{"label":"Verbal Only","value":0.3},
      {"label":"Physical","value":1}]'::jsonb),
 
-  ('additional_information', 'Additional Information', 'text', FALSE, TRUE, 'low', 0, FALSE, NULL)
+  ('additional_information', 'Additional Information', 'text', FALSE, TRUE, 'low', 0, FALSE, FALSE, NULL)
 ON CONFLICT (name) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

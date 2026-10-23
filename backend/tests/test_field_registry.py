@@ -181,3 +181,21 @@ def test_numeric_height_is_already_inches():
 @pytest.mark.parametrize("raw", ["5′10″", "5’10”", "5′ 10″"])
 def test_unicode_primes_and_curly_quotes(raw):
     assert parse_height_inches(raw) == 70
+
+
+# --- sensitive categories (H2-3.8) ---
+
+from services.field_registry import looks_sensitive, sensitive_keys  # noqa: E402
+
+
+@pytest.mark.parametrize("key,expected", [
+    ("hiv_status", True), ("medical_conditions", True), ("substance_abuse_history", True),
+    ("Mental health", True), ("diagnosis", True), ("pregnancy", True),
+    ("veteran_status", False), ("housing_priority", False), ("name", False)])
+def test_looks_sensitive(key, expected):
+    assert looks_sensitive(key) is expected
+
+
+def test_sensitive_keys():
+    cats = [{"name": "hiv_status", "is_sensitive": True}, {"name": "age", "is_sensitive": False}, {"name": "x"}]
+    assert sensitive_keys(cats) == {"hiv_status"}

@@ -14,7 +14,7 @@ from services.rate_limit import rate_limit
 from api.errors import internal_error
 from db.client import fetch_all, get_supabase
 from db.models import CreateCategoryRequest, CategoryResponse
-from services.field_registry import category_key, export_columns, format_field_value
+from services.field_registry import category_key, export_columns, format_field_value, looks_sensitive
 from services.individual_service import fetch_last_seen, rescore_all_individuals
 from services.urgency_calculator import get_display_urgency_score
 from datetime import datetime, timezone
@@ -134,6 +134,7 @@ def get_categories(user_id: str = Depends(get_current_user)):
                 "auto_trigger": category.get("auto_trigger", False),
                 "options": category.get("options", None),
                 "number_scale_max": category.get("number_scale_max"),
+                "is_sensitive": category.get("is_sensitive", False),
             }
             categories.append(cat_data)
         
@@ -192,6 +193,12 @@ def create_category(
         supabase = get_supabase()
 
         key = category_key(request.name)
+        # Sensitive fields can't affect urgency (H2-3.8, HUD CPD-17-01); checked
+        # before any database call
+        sensitive = request.is_sensitive or looks_sensitive(key)
+        if sensitive and (request.urgency_weight > 0 or request.auto_trigger):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Sensitive fields can't affect urgency.")
         conflict = HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"A category named '{request.name}' already exists"
@@ -214,6 +221,7 @@ def create_category(
             "auto_trigger": request.auto_trigger,
             "options": request.options,
             "number_scale_max": request.number_scale_max,
+            "is_sensitive": sensitive,
             "created_at": now,
             "updated_at": now
         }
@@ -253,6 +261,7 @@ def create_category(
             auto_trigger=created["auto_trigger"],
             options=created["options"],
             number_scale_max=created.get("number_scale_max"),
+            is_sensitive=bool(created.get("is_sensitive", False)),
             created_at=created["created_at"],
             updated_at=created["updated_at"]
         )

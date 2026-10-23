@@ -190,7 +190,7 @@ def test_get_categories_maps_rows_and_fills_defaults():
     assert r.json()["categories"][1] == {
         "id": "c2", "name": "mood", "display_name": None, "type": "single_select", "is_required": False,
         "is_preset": False, "priority": "medium", "urgency_weight": 0, "auto_trigger": False,
-        "options": [{"label": "Calm", "value": 0}], "number_scale_max": None,
+        "options": [{"label": "Calm", "value": 0}], "number_scale_max": None, "is_sensitive": False,
     }
 
 
@@ -242,3 +242,26 @@ def test_get_categories_returns_the_scale_max():
     with patch("api.categories.get_supabase", return_value=db):
         r = TestClient(app).get("/api/categories")
     assert r.status_code == 200 and r.json()["categories"][0]["number_scale_max"] == 10
+
+
+# --- sensitive categories (H2-3.8) ---
+
+SENSITIVE_400 = {"detail": "Sensitive fields can't affect urgency."}
+
+def test_a_weight_on_a_sensitive_name_is_400_and_inserts_nothing():
+    r, db = _post({"name": "HIV status", "type": "single_select",
+                   "options": [{"label": "Positive", "value": 1}], "urgency_weight": 10})
+    assert (r.status_code, r.json()) == (400, SENSITIVE_400) and not db.inserted
+
+def test_auto_trigger_on_an_explicitly_sensitive_category_is_400():
+    r, db = _post({"name": "Mood", "type": "single_select", "is_sensitive": True, "auto_trigger": True,
+                   "options": [{"label": "Low", "value": 1}]})
+    assert (r.status_code, r.json()) == (400, SENSITIVE_400) and not db.inserted
+
+@pytest.mark.parametrize("body,flag", [
+    ({"name": "Mood", "type": "text", "is_sensitive": True}, True),
+    ({"name": "HIV status", "type": "text"}, True),         # detected from the key
+    ({"name": "Shoe size", "type": "number"}, False)])
+def test_sensitive_flag_is_stored(body, flag):
+    r, db = _post(body)
+    assert r.status_code == 201 and db.inserted[0]["is_sensitive"] is flag and r.json()["is_sensitive"] is flag

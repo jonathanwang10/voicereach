@@ -58,7 +58,7 @@ SEED_FLAT = _norm(SEED_SQL)
 
 _CATEGORY_ROW = re.compile(
     r"\(\s*'(\w+)',\s*'([^']*)',\s*'(\w+)',\s*(TRUE|FALSE),\s*(TRUE|FALSE),\s*'(\w+)',"
-    r"\s*(\d+),\s*(TRUE|FALSE),\s*(NULL|'([^']*)'::jsonb)\s*\)",
+    r"\s*(\d+),\s*(TRUE|FALSE),\s*(TRUE|FALSE),\s*(NULL|'([^']*)'::jsonb)\s*\)",
     re.S,
 )
 _INDIVIDUAL_ROW = re.compile(r"\(\s*'([^']+)',\s*'(\{[^']*\})'::jsonb,\s*(\d+)", re.S)
@@ -67,7 +67,7 @@ _INDIVIDUAL_ROW = re.compile(r"\(\s*'([^']+)',\s*'(\{[^']*\})'::jsonb,\s*(\d+)",
 def _seed_categories() -> list[dict]:
     block = SQL[SQL.index("INSERT INTO categories"):]
     block = block[:block.index(";")]
-    assert "(name, display_name, type, is_required, is_preset, priority, urgency_weight, auto_trigger, options)" \
+    assert "(name, display_name, type, is_required, is_preset, priority, urgency_weight, auto_trigger, is_sensitive, options)" \
         in _norm(block), "category column order changed; update the parser"
     rows = []
     for m in _CATEGORY_ROW.finditer(block):
@@ -80,7 +80,8 @@ def _seed_categories() -> list[dict]:
             "priority": m.group(6),
             "urgency_weight": int(m.group(7)),
             "auto_trigger": m.group(8) == "TRUE",
-            "options": json.loads(m.group(10)) if m.group(10) else None,
+            "is_sensitive": m.group(9) == "TRUE",
+            "options": json.loads(m.group(11)) if m.group(11) else None,
         })
     return rows
 
@@ -388,3 +389,20 @@ def test_coarsen_never_touches_last_location_and_uses_the_trigger_exemption():
 def test_pg_cron_schedule_is_only_a_comment():
     assert "-- SELECT cron.schedule('coarsen-old-locations'" in RAW_SQL
     assert "cron.schedule" not in SQL
+
+
+# --- sensitive categories (H2-3.8) ----------------------------------------------
+
+MIGRATIONS = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
+
+def test_sensitive_presets_are_flagged_and_unweighted():
+    rows = {r["name"]: r for r in _seed_categories()}
+    assert {n for n, r in rows.items() if r["is_sensitive"]} == {"medical_conditions", "substance_abuse_history"}
+    assert all(r["urgency_weight"] == 0 and not r["auto_trigger"] for r in rows.values() if r["is_sensitive"])
+
+def test_is_sensitive_column_and_one_time_backfill():
+    assert "BOOLEAN NOT NULL DEFAULT FALSE" in _column_def("categories", "is_sensitive")
+    from services.field_registry import SENSITIVE_KEY_PATTERN
+    for sql in (FLAT, _norm((MIGRATIONS / "20261103000001_categories_is_sensitive.sql").read_text())):
+        assert "column_name = 'is_sensitive'" in sql          # guarded: runs only when the column is added
+        assert f"name ~* '{SENSITIVE_KEY_PATTERN}'" in sql

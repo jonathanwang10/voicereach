@@ -24,6 +24,22 @@ def category_key(name: str) -> str:
     return re.sub(r"[\s\-]+", "_", str(name).strip().lower())
 
 
+# Category keys that name health or other sensitive information (H2-3.8). Such a
+# category can't affect urgency (HUD CPD-17-01), and is left out of duplicate
+# prompts and embedding text. supabase/schema.sql backfills with the same pattern.
+SENSITIVE_KEY_PATTERN = r"hiv|medical|substance|mental|diagnos|pregnan"
+
+
+def looks_sensitive(key: str) -> bool:
+    """True when the category key matches SENSITIVE_KEY_PATTERN (case-insensitive)."""
+    return re.search(SENSITIVE_KEY_PATTERN, category_key(key), re.I) is not None
+
+
+def sensitive_keys(categories: List[Dict[str, Any]]) -> set:
+    """The `name` of every category flagged is_sensitive."""
+    return {c["name"] for c in categories or [] if c.get("is_sensitive") and c.get("name")}
+
+
 def _number(value: Any) -> Optional[float]:
     """A finite float from an int/float/numeric string, else None. Booleans are not numbers."""
     if isinstance(value, bool):

@@ -130,7 +130,12 @@ multi-select fields need options, typed comma-separated; for single-select,
 of the category's weight it adds to urgency. The weight box (0–100) appears for
 number and single-select fields only. A number field also has an optional
 "Scale max": the value that counts as its full weight (blank means 300; for
-"days without food", 10 makes 5 days half the weight). A weighted or auto-trigger category
+"days without food", 10 makes 5 days half the weight). A "Sensitive" toggle marks
+health or similar information; a name whose key matches
+`hiv|medical|substance|mental|diagnos|pregnan` is flagged automatically. A
+sensitive category can't have a weight or auto-trigger (400 "Sensitive fields
+can't affect urgency."). Categories are create-only, so changing the flag later
+is a SQL edit. A weighted or auto-trigger category
 changes everyone's urgency (every weighted category is in the denominator), so
 creating one re-scores every stored person, every row, in the background after
 the create is answered (`rescore_all_individuals`; only changed scores are
@@ -468,7 +473,9 @@ clamped to 0–100. The total weight is the sum of `urgency_weight` over **every
 person has a value for it: a missing value counts as 0 rather than leaving the
 denominator. So stating a benign fact ("behavior: None") never moves the score.
 Skipping the normalization step is the easy mistake — the per-category term
-alone is not the score. A category flagged `auto_trigger` pins the score to 100,
+alone is not the score. A category flagged `is_sensitive` (health and similar
+information, H2-3.8) never scores or auto-triggers, whatever its stored weight.
+A category flagged `auto_trigger` pins the score to 100,
 but only when it actually fires: for a single-select, the chosen option's value
 must be greater than 0 (so the preset `behavior` field set to "None" does not
 trigger); for a number, the value must be non-zero. A NULL weight counts as 0,

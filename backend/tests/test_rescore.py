@@ -106,7 +106,7 @@ def test_creating_a_weighted_category_rescores_existing_people():
 
 def test_creating_an_auto_trigger_category_rescores_existing_people():
     sb = _db()
-    body = {"name": "Medical emergency", "type": "single_select", "auto_trigger": True,
+    body = {"name": "Safety risk", "type": "single_select", "auto_trigger": True,
             "options": [{"label": "Yes", "value": 1}, {"label": "No", "value": 0}]}
     r = _post(body, sb)
     assert r.status_code == 201, r.text

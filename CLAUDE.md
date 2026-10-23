@@ -59,7 +59,9 @@ only after `npx expo prebuild --platform ios`.
   number is non-zero). An `urgency_override` is displayed instead of the score,
   and an override of 0 still counts. Creating a weighted or auto-trigger category
   re-scores everyone in the background (`rescore_all_individuals`, batches of 500 via
-  `rescore_batch`; run `backend/scripts/rescore_urgency.py` after upgrading).
+  `rescore_batch`; run `backend/scripts/rescore_urgency.py` after upgrading). A category
+  with `is_sensitive` never scores or auto-triggers, and `POST /api/categories` refuses a
+  weight or auto-trigger on one with 400 `Sensitive fields can't affect urgency.`
 - **Duplicates:** candidates are pre-ranked (name tokens, then height/weight
   closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
   are dropped and the backend returns only the best. Voice review may add a
@@ -90,6 +92,8 @@ only after `npx expo prebuild --platform ios`.
   `single_select`. A category's `name` is its key (`category_key`, e.g. `hiv_status`)
   and `display_name` is the label as typed; export columns, embedding text and the
   assistant's fields all come from the categories (`services/field_registry.py`).
+  `is_sensitive` is set on create (toggle, or a key matching `SENSITIVE_KEY_PATTERN`);
+  there is no edit route.
 
 ## App structure
 

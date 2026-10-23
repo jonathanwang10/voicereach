@@ -165,7 +165,8 @@ def test_category_insert_uses_existing_columns():
     sb = FakeSupabase().on("categories", "select", data=[])
     sb.on("categories", "insert", data=lambda call: [call.payload])
     with patch("api.categories.get_supabase", return_value=sb):
-        r = TestClient(app).post("/api/categories", json={"name": "Shoe size", "type": "number", "urgency_weight": 5})
+        r = TestClient(app).post("/api/categories", json={"name": "Shoe size", "type": "number", "urgency_weight": 5,
+                                                          "is_sensitive": False})
     assert r.status_code == 201, r.text
     _assert_known(sb)
 
@@ -189,3 +190,7 @@ def test_no_backend_code_updates_interactions():        # H2-2.6: the table is a
 
 def test_categories_have_number_scale_max():               # H2-2.8
     assert "number_scale_max" in SCHEMA["categories"]
+
+
+def test_categories_have_is_sensitive():                  # H2-3.8
+    assert "is_sensitive" in SCHEMA["categories"]

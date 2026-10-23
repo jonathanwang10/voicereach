@@ -184,6 +184,9 @@ class CreateCategoryRequest(BaseModel):
     options: Optional[List[Any]] = None  # List[Dict] for single_select, List[str] for multi_select
     # The value that counts as the full weight (number only; None = 300) (H2-2.8)
     number_scale_max: Optional[float] = Field(None, gt=0, le=1_000_000)
+    # Health or other sensitive information: never scored (H2-3.8). Also set by the
+    # server when the key matches field_registry.SENSITIVE_KEY_PATTERN.
+    is_sensitive: bool = False
 
     @field_validator('name')
     @classmethod
@@ -263,5 +266,6 @@ class CategoryResponse(BaseModel):
     auto_trigger: bool
     options: Optional[List[Any]]
     number_scale_max: Optional[float] = None
+    is_sensitive: bool = False
     created_at: datetime
     updated_at: datetime

@@ -77,8 +77,12 @@ def calculate_urgency_score(individual_data: dict, categories: list) -> int:
         - Single-select: option_value * weight
         - A missing (None / "") or unparseable value contributes 0
         - Final: int(sum / total_weight * 100), clamped to 0-100
+        - A category with is_sensitive never scores or auto-triggers, whatever its
+          stored weight (H2-3.8)
     """
     for category in categories:
+        if category.get("is_sensitive"):
+            continue
         if category.get("auto_trigger") and category.get("type") in SCORED_TYPES:
             if _auto_trigger_fires(category, individual_data.get(category["name"])):
                 return 100
@@ -88,7 +92,7 @@ def calculate_urgency_score(individual_data: dict, categories: list) -> int:
 
     for category in categories:
         weight = _weight(category)
-        if weight <= 0 or category.get("type") not in SCORED_TYPES:
+        if weight <= 0 or category.get("type") not in SCORED_TYPES or category.get("is_sensitive"):
             continue
         total_weight += weight
 
