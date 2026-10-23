@@ -192,3 +192,9 @@ def test_get_categories_maps_rows_and_fills_defaults():
         "is_preset": False, "priority": "medium", "urgency_weight": 0, "auto_trigger": False,
         "options": [{"label": "Calm", "value": 0}],
     }
+
+
+def test_a_category_named_removed_is_reserved():          # H2-2.5
+    r, db = _post({"name": "_removed", "type": "text"})
+    assert r.status_code == 422 and "That name is reserved" in r.text
+    assert not db.inserted

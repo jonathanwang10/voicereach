@@ -49,3 +49,16 @@ it('labels changed fields with the category display_name', () => {
   expect(screen.getByText('Shoe Size:')).toBeTruthy(); // no category: the key title-cased
 });
 
+
+// H2-2.5: a merge that drops a field records it in `_removed`
+it('shows each removed field as "removed" and never the _removed list itself', () => {
+  const interaction: any = { id: 'i1', individual_id: 'p1', user_id: '', created_at: '2026-01-01T00:00:00Z',
+    data: { age: 41, notes: null, hiv_status: null, _removed: ['hiv_status', 'notes'] } };
+  const screen = render(<InteractionDetailModal visible interaction={interaction} onClose={jest.fn()}
+    categories={[{ name: 'hiv_status', display_name: 'HIV status', type: 'text' }]} />);
+  expect(screen.getByText('HIV status:')).toBeTruthy();
+  expect(screen.getByText('Notes:')).toBeTruthy();
+  expect(screen.getAllByText('removed')).toHaveLength(2);
+  expect(screen.queryByText('Removed:')).toBeNull();
+  expect(screen.queryByText('hiv_status, notes')).toBeNull();
+});

@@ -8,6 +8,8 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
 
+from services.field_registry import category_key
+
 
 MAX_NAME_LENGTH = 200
 # Bounds on one save, so a request can't store an unbounded record (H2-1.5)
@@ -45,6 +47,9 @@ class SaveIndividualRequest(BaseModel):
         """Ensure required fields exist per PRD. A blank or whitespace-only value counts as missing."""
         if len(v) > MAX_DATA_FIELDS:
             raise ValueError(f"data can have at most {MAX_DATA_FIELDS} fields")
+        # The merge diff uses `_removed` for dropped fields (H2-2.5)
+        if any(category_key(k) == "_removed" for k in v):
+            raise ValueError("_removed is a reserved field name")
         required = ['name', 'height', 'weight']
         missing = [
             f for f in required
@@ -187,6 +192,8 @@ class CreateCategoryRequest(BaseModel):
             raise ValueError("Category name must contain a letter or digit")
         if len(v) > MAX_CATEGORY_NAME_LENGTH:
             raise ValueError(f"Category name must be at most {MAX_CATEGORY_NAME_LENGTH} characters")
+        if category_key(v) == "_removed":
+            raise ValueError("That name is reserved")  # the merge diff's list of dropped fields (H2-2.5)
         return v
 
     @model_validator(mode='after')

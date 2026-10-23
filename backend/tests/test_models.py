@@ -207,3 +207,8 @@ def test_missing_required_fields_are_listed_with_commas():
     with pytest.raises(ValidationError) as exc:
         SaveIndividualRequest(data={"name": "Ann"})
     assert "Missing required fields: height, weight" in str(exc.value) and "['" not in str(exc.value)
+
+
+def test_a_data_key_named_removed_is_reserved():
+    with pytest.raises(ValidationError, match="_removed is a reserved field name"):
+        SaveIndividualRequest(data={"name": "A", "height": 1, "weight": 1, "_Removed": 1})

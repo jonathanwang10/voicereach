@@ -18,9 +18,12 @@ def test_get_changed_fields_keeps_changed_and_new_fields_only(service):
 
 
 def test_get_changed_fields_never_records_empty_new_values(service):
+    """An empty new value is never stored as "" or []: a field that had a value is a
+    removal (None, listed in _removed; H2-2.5), and one that never had one is nothing."""
     old = {"name": "Ann", "notes": "x", "conditions": ["Diabetes"]}
     new = {"name": "Ann", "notes": "  ", "conditions": [], "age": None, "gender": ""}
-    assert service.get_changed_fields(old, new) == {}
+    assert service.get_changed_fields(old, new) == {
+        "notes": None, "conditions": None, "_removed": ["conditions", "notes"]}
 
 
 @pytest.mark.parametrize("address,expected", [
@@ -79,3 +82,17 @@ async def test_search_offset_past_the_end_is_an_empty_page_with_the_real_total()
     sb = FakeListDB([person(1), person(2)], [])
     results = await IndividualService(sb).search_individuals(offset=20)
     assert results.individuals == [] and results.total == 2
+
+
+# --- removed fields in the merge diff (H2-2.5) ---
+
+def test_get_changed_fields_records_a_removed_field_as_null_with_a_removed_list(service):
+    old = {"name": "Ann", "notes": "x", "age": 40, "conditions": ["Diabetes"]}
+    assert service.get_changed_fields(old, {"name": "Ann", "age": 41}) == {
+        "age": 41, "notes": None, "conditions": None, "_removed": ["conditions", "notes"]}
+
+def test_an_empty_old_value_is_not_a_removal(service):
+    assert service.get_changed_fields({"name": "Ann", "notes": "", "tags": []}, {"name": "Ann"}) == {}
+
+def test_a_removed_key_in_the_inputs_is_ignored(service):
+    assert service.get_changed_fields({"_removed": ["x"]}, {"_removed": ["y"]}) == {}

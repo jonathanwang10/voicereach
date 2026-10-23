@@ -31,6 +31,9 @@ class IndividualNotFound(LookupError):
     """The person isn't there (never was, or deleted mid-request): routes answer 404 (H2-1.4)."""
 
 
+# The merge diff's list of fields the merge dropped (H2-2.5); never a data key
+REMOVED_KEY = "_removed"
+
 VERSION_CONFLICT_DETAIL = "This person was changed by someone else. Reload and try again."
 
 
@@ -157,13 +160,20 @@ class IndividualService:
         - Include new fields not in old data
         - Don't include fields with same value
         - Never include empty new values (None, "", whitespace, [])
+        - A field that had a value and is now absent or empty is recorded as
+          None, and its name goes in the sorted `_removed` list (only when
+          something was removed), so history shows the removal (H2-2.5)
+        - A `_removed` key in either input is ignored
         Both sides should already be normalised (see save_individual).
         """
+        def empty(value):
+            return value is None or value == [] or (isinstance(value, str) and not value.strip())
+
         changes = {}
 
         # Check all fields in new data
         for key, new_value in new_data.items():
-            if new_value is None or new_value == [] or (isinstance(new_value, str) and not new_value.strip()):
+            if key == REMOVED_KEY or empty(new_value):
                 continue
             if key not in old_data:
                 # New field
@@ -171,7 +181,12 @@ class IndividualService:
             elif old_data[key] != new_value:
                 # Changed field
                 changes[key] = new_value
-        
+
+        removed = sorted(key for key, old_value in old_data.items()
+                         if key != REMOVED_KEY and not empty(old_value) and empty(new_data.get(key)))
+        if removed:
+            changes.update({key: None for key in removed})
+            changes[REMOVED_KEY] = removed
         return changes
     
     def abbreviate_address(self, full_address: str) -> str:

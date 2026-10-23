@@ -26,8 +26,13 @@ export default function InteractionDetailModal({
 }: InteractionDetailModalProps) {
   if (!interaction) return null;
 
-  // Empty values are skipped, lists joined, a location shows its address (C-09)
-  const changedFields = Object.entries(interaction.data ?? {})
+  // Empty values are skipped, lists joined, a location shows its address (C-09).
+  // A merge that dropped a field lists it in `_removed` (H2-2.5): it shows as
+  // "removed", and the list itself is never a field.
+  const data = interaction.data ?? {};
+  const removed: string[] = Array.isArray(data._removed) ? data._removed : [];
+  const changedFields = Object.entries(data)
+    .filter(([key]) => key !== '_removed' && !removed.includes(key))
     .map(([key, value]) => [key, formatFieldValue(value)] as const)
     .filter((entry): entry is readonly [string, string] => entry[1] !== null);
 
@@ -93,13 +98,19 @@ export default function InteractionDetailModal({
             )}
 
             {/* Additional Data */}
-            {changedFields.length > 0 && (
+            {(changedFields.length > 0 || removed.length > 0) && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Additional Data</Text>
                 {changedFields.map(([key, text]) => (
                   <View key={key} style={styles.infoRow}>
                     <Text style={styles.label}>{fieldLabel(key, categories)}:</Text>
                     <Text style={styles.value}>{text}</Text>
+                  </View>
+                ))}
+                {removed.map(key => (
+                  <View key={key} style={styles.infoRow}>
+                    <Text style={styles.label}>{fieldLabel(key, categories)}:</Text>
+                    <Text style={[styles.value, styles.removedValue]}>removed</Text>
                   </View>
                 ))}
               </View>
@@ -112,6 +123,10 @@ export default function InteractionDetailModal({
 }
 
 const styles = StyleSheet.create({
+  removedValue: {
+    color: '#888',
+    fontStyle: 'italic',
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

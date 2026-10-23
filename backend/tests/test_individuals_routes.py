@@ -175,8 +175,10 @@ def test_merge_updates_the_target_and_records_only_what_changed():
     assert params["p_individual_id"] == ID
     assert params["p_data"] == {"name": "Ann Lee", "height": 71, "weight": 150, "veteran_status": "Yes"}
     assert params["p_urgency_score"] == 22  # 1 * 20 / 90 * 100
-    # weight "150" (an old un-normalised row) vs 150 is not a change
-    assert params["p_interaction"]["changes"] == {"height": 71, "veteran_status": "Yes"}
+    # weight "150" (an old un-normalised row) vs 150 is not a change; the dropped
+    # medical_conditions is recorded as removed (H2-2.5)
+    assert params["p_interaction"]["changes"] == {
+        "height": 71, "veteran_status": "Yes", "medical_conditions": None, "_removed": ["medical_conditions"]}
     assert _writes(sb) == [("save_individual", "rpc")]
 
 
@@ -211,6 +213,10 @@ def test_merge_replaces_data_wholesale_so_omitted_fields_are_dropped():
     r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150})
     assert r.status_code == 200, r.text
     assert "medical_conditions" not in _save_params(sb)["p_data"]
+    # ...and the visit records the removal (H2-2.5)
+    # EXISTING also had veteran_status "No", which this merge omits too
+    assert _save_params(sb)["p_interaction"]["changes"] == {
+        "medical_conditions": None, "veteran_status": None, "_removed": ["medical_conditions", "veteran_status"]}
 
 
 def test_merge_with_location_sets_last_location_and_logs_it():

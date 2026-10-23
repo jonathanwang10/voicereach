@@ -51,6 +51,7 @@
 **Executor deviations (recorded while implementing):**
 
 - Task 6: `ManualEntryForm.test.tsx`'s exact request-shape test now also expects `idempotency_key`. MergeUI only passes a third `onMerge` argument when it knows the version, so the existing two-argument `toHaveBeenCalledWith` tests stay unchanged. The conflict test proves the reload by a changed existing-only value (`medical_conditions: "Asthma"`) instead of `age: 50`; same intent.
+- Task 7: the plan's route assertion expected only `medical_conditions` in `_removed`, but that test's fixture (EXISTING) also has `veteran_status: "No"`, which the merge omits too; by the task's own rule both are removals, so the test expects both. Three older tests that pinned "a dropped field leaves no trace" (`test_get_changed_fields_never_records_empty_new_values`, `test_merge_updates_the_target_and_records_only_what_changed`, and the wholesale-replace test) now expect the removal.
 
 ## File Structure
 
@@ -672,7 +673,7 @@ git commit -m "feat(mobile): merge sends the loaded version, reloads on 409, one
   - A category name whose `category_key()` is `"_removed"` is a 422: `That name is reserved`.
   - Mobile: `InteractionDetailModal` lists each field in `data._removed` as `<label>: removed`. It never renders `_removed` itself as a field.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 def test_get_changed_fields_records_a_removed_field_as_null_with_a_removed_list(service):
@@ -706,17 +707,17 @@ it('shows each removed field as "removed" and never the _removed list itself', (
 });
 ```
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_individual_service.py backend/tests/test_individuals_routes.py backend/tests/test_models.py backend/tests/test_create_category.py -q; cd mobile && npx jest components/__tests__/InteractionDetailModal.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** the Interfaces block. In the modal, removed rows use the existing `value` style plus a muted italic style.
+- [x] **Step 3: Implement** the Interfaces block. In the modal, removed rows use the existing `value` style plus a muted italic style.
 
-- [ ] **Step 4: Run all checks** (backend, ruff, tsc, jest).
+- [x] **Step 4: Run all checks** (backend, ruff, tsc, jest).
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/ mobile/components
