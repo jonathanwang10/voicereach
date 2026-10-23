@@ -1,6 +1,7 @@
 import {
   buildCategoryPayload,
   categoryLabel,
+  looksSensitive,
   parseOptionsInput,
   validateCategoryForm,
 } from '../categoryPayload';
@@ -140,5 +141,18 @@ describe('scale max', () => {
       expect(validateCategoryForm({ ...numberForm, scaleMax })).toBe('Scale max must be a number greater than 0');
     }
     expect(validateCategoryForm({ ...numberForm, scaleMax: '' })).toBeNull();
+  });
+});
+
+// H2-3.8: sensitive categories
+describe('sensitive categories', () => {
+  it('detects sensitive names like the backend', () => {
+    expect(['HIV status', 'Medical history', 'Pregnant', 'Mental-health'].every(looksSensitive)).toBe(true);
+    expect(['Veteran status', 'Shoe size'].some(looksSensitive)).toBe(false);
+  });
+  it('a sensitive category sends is_sensitive and never a weight or auto-trigger', () => {
+    const p = buildCategoryPayload({ name: 'Mood', type: 'number', priority: 'low', optionsText: '',
+      weight: '40', autoTrigger: true, sensitive: true });
+    expect(p).toMatchObject({ is_sensitive: true, urgency_weight: 0, auto_trigger: false });
   });
 });

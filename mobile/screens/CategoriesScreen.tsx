@@ -3,6 +3,7 @@ import {
   buildCategoryPayload,
   categoryLabel,
   validateCategoryForm,
+  looksSensitive,
   CategoryType,
 } from '../utils/categoryPayload';
 import {
@@ -42,9 +43,13 @@ export default function CategoriesScreen() {
   const [newCategoryAutoTrigger, setNewCategoryAutoTrigger] = useState(false);
   const [newCategoryOptionsText, setNewCategoryOptionsText] = useState('');
   const [newCategoryScaleMax, setNewCategoryScaleMax] = useState('');
+  const [newCategorySensitive, setNewCategorySensitive] = useState(false);
 
   const isSelectType = newCategoryType === 'single_select' || newCategoryType === 'multi_select';
   const isWeightedType = newCategoryType === 'number' || newCategoryType === 'single_select';
+  // Sensitive fields can't affect urgency (H2-3.8); a sensitive-looking name is detected
+  const sensitiveFromName = looksSensitive(newCategoryName);
+  const isSensitive = newCategorySensitive || sensitiveFromName;
 
   // Writes the CSV to a cache file and opens the share sheet (R-9); the sheet is
   // the feedback, so success needs no alert.
@@ -69,6 +74,7 @@ export default function CategoriesScreen() {
       weight: newCategoryWeight,
       autoTrigger: newCategoryAutoTrigger,
       scaleMax: newCategoryScaleMax,
+      sensitive: isSensitive,
     };
     // Same rules as the backend's CreateCategoryRequest
     const problem = validateCategoryForm(form);
@@ -90,6 +96,7 @@ export default function CategoriesScreen() {
       setNewCategoryAutoTrigger(false);
       setNewCategoryOptionsText('');
       setNewCategoryScaleMax('');
+      setNewCategorySensitive(false);
 
       Alert.alert('Success', 'Category created successfully!');
     } catch (error: any) {
@@ -180,6 +187,9 @@ export default function CategoriesScreen() {
               {category.is_required && (
                 <Text style={styles.requiredBadge}>Required</Text>
               )}
+              {category.is_sensitive && (
+                <Text style={styles.requiredBadge}>Sensitive</Text>
+              )}
               {(category.type === 'number' || category.type === 'single_select') && (category.urgency_weight ?? 0) > 0 && (
                 <Text style={styles.dangerWeightBadge}>Weight: {category.urgency_weight}</Text>
               )}
@@ -242,7 +252,20 @@ export default function CategoriesScreen() {
           </View>
         )}
         
-        {isWeightedType && (
+        <TouchableOpacity
+          style={[styles.autoTriggerButton, isSensitive && styles.autoTriggerButtonActive]}
+          onPress={() => setNewCategorySensitive(!newCategorySensitive)}
+          disabled={sensitiveFromName}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: isSensitive, disabled: sensitiveFromName }}
+        >
+          <Text style={styles.autoTriggerText}>Sensitive field: {isSensitive ? 'ON' : 'OFF'}</Text>
+        </TouchableOpacity>
+        {sensitiveFromName && (
+          <Text style={styles.categoryPriority}>Detected from the name. Sensitive fields can't affect urgency.</Text>
+        )}
+
+        {isWeightedType && !isSensitive && (
           <View style={styles.dangerWeightContainer}>
             <Text style={styles.dangerWeightLabel}>Urgency Weight (0-100)</Text>
             <TextInput

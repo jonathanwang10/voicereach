@@ -19,7 +19,7 @@ const mockCategories = [
   { id: '2', name: 'age', display_name: 'Age', type: 'number', priority: 'medium', is_required: false,
     is_preset: true, urgency_weight: 0, auto_trigger: false },
   { id: '3', name: 'hiv_status', display_name: 'HIV status', type: 'text', priority: 'low', is_required: false,
-    is_preset: false, urgency_weight: 0, auto_trigger: false },
+    is_preset: false, urgency_weight: 0, auto_trigger: false, is_sensitive: true },
   { id: '4', name: 'housing_priority', display_name: null, type: 'single_select', priority: 'high',
     is_required: false, is_preset: false, urgency_weight: 30, auto_trigger: false,
     options: [{ label: 'High', value: 1 }] },
@@ -102,6 +102,7 @@ describe('add category form (C-07, OD-2)', () => {
       urgency_weight: 35, auto_trigger: false,
       options: [{ label: 'Calm', value: 0 }, { label: 'Agitated', value: 0.5 }, { label: 'Violent', value: 1 }],
       number_scale_max: null,
+      is_sensitive: false,
     });
     await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
   });
@@ -162,6 +163,32 @@ describe('add category form (C-07, OD-2)', () => {
     fireEvent.press(screen.getByText('Add Category'));
     expect(api.createCategory).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalledWith('Error', 'Scale max must be a number greater than 0');
+  });
+
+  // H2-3.8
+  it('a sensitive-looking name turns Sensitive on and hides the urgency weight', () => {
+    const screen = render(<CategoriesScreen />);
+    chooseType(screen, 'number');
+    fireEvent.changeText(screen.getByPlaceholderText('Category name'), 'HIV viral load');
+    expect(screen.getByText('Sensitive field: ON')).toBeTruthy();
+    expect(screen.getByText("Detected from the name. Sensitive fields can't affect urgency.")).toBeTruthy();
+    expect(screen.queryByPlaceholderText('0-100')).toBeNull();
+  });
+
+  it('the Sensitive toggle sends is_sensitive with no weight', async () => {
+    const screen = render(<CategoriesScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('Category name'), 'Mood');
+    chooseType(screen, 'number');
+    fireEvent.changeText(screen.getByPlaceholderText('0-100'), '35');
+    fireEvent.press(screen.getByText('Sensitive field: OFF'));
+    fireEvent.press(screen.getByText('Add Category'));
+    await waitFor(() => expect(api.createCategory).toHaveBeenCalled());
+    expect(api.createCategory).toHaveBeenCalledWith(expect.objectContaining({ is_sensitive: true, urgency_weight: 0 }));
+  });
+
+  it('lists a Sensitive badge for sensitive categories', () => {
+    const screen = render(<CategoriesScreen />);
+    expect(screen.getByText('Sensitive')).toBeTruthy();
   });
 
   it('blocks a name with no letters or digits', () => {

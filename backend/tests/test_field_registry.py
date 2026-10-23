@@ -199,3 +199,10 @@ def test_looks_sensitive(key, expected):
 def test_sensitive_keys():
     cats = [{"name": "hiv_status", "is_sensitive": True}, {"name": "age", "is_sensitive": False}, {"name": "x"}]
     assert sensitive_keys(cats) == {"hiv_status"}
+
+
+def test_mobile_uses_the_same_sensitive_pattern():
+    from pathlib import Path
+    from services.field_registry import SENSITIVE_KEY_PATTERN
+    ts = (Path(__file__).resolve().parents[2] / "mobile" / "utils" / "categoryPayload.ts").read_text()
+    assert f"'{SENSITIVE_KEY_PATTERN}'" in ts

@@ -18,6 +18,7 @@ export interface Category {
   is_required: boolean;
   is_preset: boolean;
   number_scale_max?: number | null; // a number's full-weight value; null = 300 (H2-2.8)
+  is_sensitive?: boolean; // health or similar information: never scored (H2-3.8)
 }
 
 export interface CategoryForm {
@@ -28,11 +29,22 @@ export interface CategoryForm {
   weight: string | number;
   autoTrigger: boolean;
   scaleMax?: string; // number only: the value that counts as the full weight (blank = 300)
+  sensitive?: boolean; // the Sensitive toggle; a sensitive-looking name counts too
 }
 
 export const MAX_CATEGORY_NAME_LENGTH = 50;
 export const MAX_OPTION_LABEL_LENGTH = 50;
 export const MAX_OPTIONS = 50;
+
+// Keys that name health or similar information (H2-3.8). The same string as the
+// backend's field_registry.SENSITIVE_KEY_PATTERN, which also flags them on create.
+export const SENSITIVE_KEY_PATTERN = 'hiv|medical|substance|mental|diagnos|pregnan';
+
+// The backend's category_key: lower case, runs of whitespace and hyphens to "_"
+const categoryKey = (name: string) => name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+export const looksSensitive = (name: string): boolean =>
+  new RegExp(SENSITIVE_KEY_PATTERN, 'i').test(categoryKey(name || ''));
 
 const isSelect = (type: string) => type === 'single_select' || type === 'multi_select';
 const isWeighted = (type: string) => type === 'number' || type === 'single_select';
@@ -122,8 +134,10 @@ export const validateCategoryForm = (form: CategoryForm): string | null => {
 export type CreateCategoryPayload = ReturnType<typeof buildCategoryPayload>;
 
 export const buildCategoryPayload = (form: CategoryForm) => {
-  // Only number and single_select categories may carry an urgency weight.
-  const weighted = isWeighted(form.type);
+  // Only number and single_select categories may carry an urgency weight, and a
+  // sensitive one never does (the backend refuses it: H2-3.8).
+  const sensitive = !!form.sensitive || looksSensitive(form.name);
+  const weighted = isWeighted(form.type) && !sensitive;
   return {
     name: cleanName(form.name),
     type: form.type,
@@ -133,5 +147,6 @@ export const buildCategoryPayload = (form: CategoryForm) => {
     auto_trigger: weighted ? form.autoTrigger : false,
     options: parseOptionsInput(form.optionsText, form.type).options,
     number_scale_max: form.type === 'number' && (form.scaleMax ?? '').trim() !== '' ? Number(form.scaleMax) : null,
+    is_sensitive: sensitive,
   };
 };
