@@ -440,3 +440,28 @@ def test_duplicate_decisions_table():
     assert "client_request_id UUID UNIQUE" in t
     migration = re.sub(r"--[^\n]*", "", (MIGRATIONS / "20261103000003_duplicate_decisions.sql").read_text())
     assert _table_in(migration, "duplicate_decisions") == t
+
+
+# --- pgvector halfvec embeddings (H2-4.1) -------------------------------------------
+
+def test_vector_extension_and_halfvec_column():
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in FLAT
+    assert "halfvec(3072) NOT NULL" in _column_def("individual_embeddings", "embedding")
+    assert "embedding_data" not in SQL
+
+@pytest.mark.parametrize("column,type_", [("model", "TEXT NOT NULL"), ("text_hash", "TEXT NOT NULL"),
+                                          ("source_updated_at", "TIMESTAMPTZ NOT NULL")])
+def test_individual_embeddings_freshness_columns(column, type_):
+    assert _column_def("individual_embeddings", column).startswith(type_)
+
+def test_individual_embeddings_hnsw_index():
+    assert re.search(r"CREATE INDEX IF NOT EXISTS \w+ ON individual_embeddings "
+                     r"USING hnsw \(embedding halfvec_cosine_ops\)", FLAT)
+
+def test_halfvec_migration_casts_json_text_and_drops_jsonb():
+    m = _norm((MIGRATIONS / "20261104000001_pgvector_halfvec_embeddings.sql").read_text())
+    assert "(embedding_data::text)::halfvec(3072)" in m
+    assert "jsonb_array_length(embedding_data) <> 3072" in m
+    assert "DROP COLUMN embedding_data" in m
+    assert "encode(sha256(convert_to(embedding_text, 'UTF8')), 'hex')" in m
+    assert "USING hnsw (embedding halfvec_cosine_ops)" in m

@@ -177,7 +177,7 @@ def test_embedding_upsert_uses_existing_columns():
     svc = EmbeddingService.__new__(EmbeddingService)
     svc.dimensions = 3
     svc.generate_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3])
-    sb = FakeSupabase().on("individual_embeddings", "upsert", data=[])
+    sb = FakeSupabase().on("individual_embeddings", "select", data=[]).on("individual_embeddings", "upsert", data=[])
     asyncio.run(svc.store_individual_embedding(sb, ROW, CATEGORIES))
     _assert_known(sb)
 

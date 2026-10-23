@@ -57,6 +57,7 @@ def _reset_process_state():
     from services import context_service
     from db import client as db_client
     from services import openai_service
+    from services import embedding_service
     from services.rate_limit import reset_rate_limits
 
     def reset():
@@ -66,6 +67,7 @@ def _reset_process_state():
         auth._auth_client = None
         db_client._client = None
         openai_service._service = None
+        embedding_service._service = None
 
     overrides = dict(app.dependency_overrides)
     reset()

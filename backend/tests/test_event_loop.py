@@ -78,9 +78,10 @@ def test_transcribe_categories_read_runs_off_the_loop():
 @pytest.mark.real_embedding_task                                          # Review Focus 1
 async def test_background_embedding_reads_and_upserts_off_the_loop():
     from api.individuals import generate_embedding_background
-    sb = FakeSupabase().on("categories", "select", data=[]).on("individual_embeddings", "upsert", data=[])
+    sb = (FakeSupabase().on("categories", "select", data=[]).on("individual_embeddings", "select", data=[])
+          .on("individual_embeddings", "upsert", data=[]))
     with patch("api.individuals.get_supabase", return_value=sb), \
          patch("services.embedding_service.EmbeddingService.generate_embedding",
                new=AsyncMock(return_value=[0.0] * 3072)):
         await generate_embedding_background(ID, {"id": ID, "name": "Ann", "data": {}})
-    assert [c.verb for c in sb.calls] == ["select", "upsert"]
+    assert [c.verb for c in sb.calls] == ["select", "select", "upsert"]   # categories, existing row, upsert

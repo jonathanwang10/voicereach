@@ -1,9 +1,11 @@
 """
 Embedding service for semantic search using OpenAI's text-embedding-3-large model
 """
+import hashlib
 import os
+from datetime import datetime, timezone
 import numpy as np
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from openai import AsyncOpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
@@ -19,6 +21,13 @@ load_dotenv()
 DEFAULT_SIMILARITY_THRESHOLD = 0.15
 
 
+def embedding_text_hash(text: str) -> str:
+    """sha256 hex of the embedding text; equal to Postgres
+    encode(sha256(convert_to(t, 'UTF8')), 'hex'). A row whose stored hash differs
+    from the hash of the text built now is stale (H2-4.1)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 class EmbeddingService:
     def __init__(self):
         # Fail fast instead of the SDK defaults (600 s read, 2 retries)
@@ -29,24 +38,23 @@ class EmbeddingService:
     def model(self) -> str:
         return model_config.EMBEDDING_MODEL
         
+    async def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """One embeddings call for several texts, results in input order.
+
+        Raises:
+            ValueError: a vector is not `self.dimensions` long (a model mismatch would
+            otherwise leave rows the halfvec(3072) column can't take)
+        """
+        response = await self.client.embeddings.create(model=self.model, input=texts)
+        vectors = [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
+        for vector in vectors:
+            if len(vector) != self.dimensions:
+                raise ValueError(f"Embedding has {len(vector)} dimensions, expected {self.dimensions}")
+        return vectors
+
     async def generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate embedding for a given text using OpenAI's text-embedding-3-large
-        
-        Args:
-            text: Text to embed
-            
-        Returns:
-            List of 3072 float values representing the embedding
-        """
-        try:
-            response = await self.client.embeddings.create(
-                model=self.model,
-                input=text
-            )
-            return response.data[0].embedding
-        except Exception as e:
-            raise Exception(f"Failed to generate embedding: {str(e)}")
+        """The 3072-float embedding of one text."""
+        return (await self.generate_embeddings([text]))[0]
     
     async def generate_individual_embedding(
         self, individual: Dict[str, Any], categories: List[Dict[str, Any]]
@@ -70,18 +78,36 @@ class EmbeddingService:
         return embedding, text
 
     async def store_individual_embedding(
-        self, supabase: Any, individual: Dict[str, Any], categories: List[Dict[str, Any]]
-    ) -> int:
-        """Embed one person and upsert the vector with the text it was built from.
-        Used by the save path, /generate, /generate-all and the backfill script.
-        Returns the vector length."""
-        embedding, text = await self.generate_individual_embedding(individual, categories)
+        self, supabase: Any, individual: Dict[str, Any], categories: List[Dict[str, Any]],
+        *, force: bool = False,
+    ) -> bool:
+        """Embed one person and upsert the vector with its text, model and text hash.
+
+        A stored row whose model and text hash match the text built now is fresh:
+        no OpenAI call and no write, unless `force` (H2-4.1). Returns True when it
+        embedded. Used by the save path, /generate, /generate-all and the backfill.
+        """
+        text = build_embedding_text(individual, categories)
+        text_hash = embedding_text_hash(text)
+        if not force:
+            existing = (await run_db(lambda: supabase.table("individual_embeddings")
+                                     .select("model, text_hash").eq("individual_id", individual["id"])
+                                     .limit(1).execute())).data or []
+            if existing and existing[0].get("model") == self.model and existing[0].get("text_hash") == text_hash:
+                return False
+        embedding = await self.generate_embedding(text)
+        if len(embedding) != self.dimensions:
+            raise ValueError(f"Embedding has {len(embedding)} dimensions, expected {self.dimensions}")
+        source_updated_at = individual.get("updated_at") or datetime.now(timezone.utc).isoformat()
         await run_db(lambda: supabase.table("individual_embeddings").upsert({
             "individual_id": individual["id"],
-            "embedding_data": embedding,
+            "embedding": embedding,
             "embedding_text": text,
+            "model": self.model,
+            "text_hash": text_hash,
+            "source_updated_at": source_updated_at,
         }, on_conflict="individual_id").execute())
-        return len(embedding)
+        return True
 
     async def search_similar_individuals(
         self, 
@@ -155,3 +181,14 @@ class EmbeddingService:
             top_k,
             similarity_threshold
         )
+
+
+_service: Optional[EmbeddingService] = None
+
+
+def get_embedding_service() -> EmbeddingService:
+    """The process's one EmbeddingService (one AsyncOpenAI client), built on first use."""
+    global _service
+    if _service is None:
+        _service = EmbeddingService()
+    return _service

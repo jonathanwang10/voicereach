@@ -26,6 +26,8 @@
 -- Supabase expects; functions that use similarity() / % pin
 -- `SET search_path = public, extensions`.
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+-- pgvector for halfvec embeddings (H2-4.1); needs 0.7.0 or later
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
 -- ---------------------------------------------------------------------------
 -- categories — the schema-as-data table. Rows here define the app's fields.
@@ -126,14 +128,18 @@ CREATE TABLE IF NOT EXISTS duplicate_decisions (
 );
 
 -- ---------------------------------------------------------------------------
--- individual_embeddings — 3072-dim vectors stored as a JSON array.
--- (pgvector would be the right home; the app does cosine similarity in Python.)
+-- individual_embeddings — one 3072-dim pgvector halfvec per person, with the
+-- text it was built from, the model, and a hash of that text: a row is fresh
+-- while the model matches and the text built now hashes the same (H2-4.1).
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS individual_embeddings (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     individual_id  UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE,
-    embedding_data JSONB NOT NULL,
+    embedding      halfvec(3072) NOT NULL,
     embedding_text TEXT NOT NULL,
+    model          TEXT NOT NULL,
+    text_hash      TEXT NOT NULL,          -- sha256 hex of embedding_text
+    source_updated_at TIMESTAMPTZ NOT NULL, -- individuals.updated_at the text was built from
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),   -- maintained by set_updated_at()
     UNIQUE (individual_id)
@@ -457,6 +463,9 @@ DROP INDEX IF EXISTS idx_individuals_name;          -- the old b-tree, which can
                                                     -- replaced by the trigram index below
 
 CREATE INDEX IF NOT EXISTS idx_interactions_latest    ON interactions(individual_id, created_at DESC);
+-- Cosine-distance nearest neighbours for semantic search (H2-4.1)
+CREATE INDEX IF NOT EXISTS idx_individual_embeddings_hnsw
+    ON individual_embeddings USING hnsw (embedding halfvec_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_individuals_name_trgm ON individuals USING gin (name extensions.gin_trgm_ops);
 
 -- H2-3.5: duplicate candidates in one call. Name leg: trigram match (`%`, served by the GIN

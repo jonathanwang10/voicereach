@@ -57,6 +57,10 @@ Checked on 2026-10-23 against the pgvector README, `CHANGELOG.md`, `sql/vector.s
 8. **`most_urgent` calls a new SQL function, `most_urgent_individuals`** (the roadmap names no function). An unknown `near` raises `retrieval.UnknownAreaError` (a `ValueError`) instead of returning `[]`, which the assistant would read as "nobody urgent there".
 9. **Search screen:** queries of 3+ characters wait for a 600 ms pause. Shorter ones keep 300 ms: the server does no semantic leg for them, so waiting longer buys nothing.
 
+**Executor deviations (recorded while implementing):**
+
+- Task 1: Phase 1's `test_embeddings_use_embedding_model` fake reply now carries `index` and a 3072-float vector (the dimension check moved into `generate_embeddings`). The background-task test patches `api.individuals.get_embedding_service`, and a new test checks the save passes `updated_at` to it.
+
 ## Review Focus
 
 1. **Query text that is SQL, LIKE or tsquery syntax** (`50%_`, `a & !b`, `"`, `O'Brien`, `:*`, emoji): it should be searched literally and never cause a 500. Task 4 adds a route test that sends these strings unchanged as `p_query`, plus static SQL checks for the ILIKE escape and the alphanumeric-only prefix tokens. Phase 8's db tests run them for real.
@@ -86,7 +90,7 @@ Checked on 2026-10-23 against the pgvector README, `CHANGELOG.md`, `sql/vector.s
   - `generate_embedding(text)` becomes `(await self.generate_embeddings([text]))[0]`.
   - `async def EmbeddingService.store_individual_embedding(self, supabase, individual: dict, categories: list[dict], *, force: bool = False) -> bool`: `individual` has `id`, `name`, `data`, `updated_at`. It builds the text and its hash and reads the existing row (`select("model, text_hash").eq("individual_id", id).limit(1)`). With `force=False`, a row whose `model == self.model` and whose `text_hash` matches is fresh: no OpenAI call, no write, returns `False`. Otherwise it embeds and upserts `{"individual_id", "embedding", "embedding_text", "model", "text_hash", "source_updated_at"}` with `on_conflict="individual_id"` and returns `True`. Every `.execute()` goes through `run_db`. `source_updated_at` is `individual["updated_at"]`, else the current UTC time in ISO format.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `test_embedding_text.py`, add `"updated_at": "2026-09-09T00:00:00+00:00"` to `PERSON`. Move the store tests (`test_stored_text_is_the_embedded_text`, `test_wrong_dimension_vector_is_not_stored`, `test_background_task_uses_categories`, `test_generate_route_uses_categories`) from `MagicMock`/`_Tables` onto `FakeSupabase`, scripting `on("individual_embeddings", "select", data=[])` plus an upsert that echoes. Then add:
 
@@ -155,12 +159,12 @@ Phase 2's `test_migrations.py` covers idempotency and the `schema.sql` fold for 
 
 `test_schema_contract.py::test_embedding_upsert_uses_existing_columns` scripts `on("individual_embeddings", "select", data=[])` before the upsert. Phase 1's `test_event_loop.py::test_background_embedding_reads_and_upserts_off_the_loop` also scripts that select and expects `["select", "select", "upsert"]` (categories, existing row, upsert).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python -m pytest backend/tests/test_embedding_text.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL (`embedding_text_hash` is not defined, there is no `embedding` column, the migration file is missing).
 
-- [ ] **Step 3: Write the migration** (exact SQL; the order matters)
+- [x] **Step 3: Write the migration** (exact SQL; the order matters)
 
 ```sql
 -- H2-4.1: embeddings move from a JSONB array to pgvector halfvec(3072) with an HNSW index
@@ -207,24 +211,24 @@ CREATE INDEX IF NOT EXISTS idx_individual_embeddings_hnsw
 NOTIFY pgrst, 'reload schema';
 ```
 
-- [ ] **Step 4: Fold the change into `schema.sql`**
+- [x] **Step 4: Fold the change into `schema.sql`**
 
 Put `CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;` before the first table. Rewrite the `individual_embeddings` table as `id`, `individual_id` (unchanged), `embedding halfvec(3072) NOT NULL`, `embedding_text TEXT NOT NULL`, `model TEXT NOT NULL`, `text_hash TEXT NOT NULL -- sha256 hex of embedding_text`, `source_updated_at TIMESTAMPTZ NOT NULL -- individuals.updated_at the text was built from`, then the timestamps and `UNIQUE (individual_id)`. Replace the "JSON array / pgvector would be the right home" comment, and add the HNSW index next to `idx_interactions_latest`. `schema.sql` is for a fresh database; an existing one upgrades through the migration.
 
-- [ ] **Step 5: Implement the `embedding_service.py` interfaces above**
+- [x] **Step 5: Implement the `embedding_service.py` interfaces above**
 
 Then update the callers. `/generate` calls `store_individual_embedding(..., force=True)` and still returns `"embedding_dimensions": svc.dimensions`. The background task's `individual_data` gains `"updated_at": result.individual.updated_at.isoformat()`. The search route's Python cosine leg keeps reading `embedding_data`: against the new schema it finds none and falls back to text matches only, until Task 4 replaces it.
 
-- [ ] **Step 6: Append to the manual-steps file**
+- [x] **Step 6: Append to the manual-steps file**
 
 Under **Apply migrations** (the file Phase 1 created): `20261104000001_pgvector_halfvec_embeddings.sql`. Before it, check the version with `select extversion from pg_extension where extname = 'vector';` and expect `0.7.0` or later. If no row comes back, the migration installs it; if it's older than 0.7.0, run `ALTER EXTENSION vector UPDATE;` first.
 
-- [ ] **Step 7: Run the tests, then the global checks**
+- [x] **Step 7: Run the tests, then the global checks**
 
 Run: `python -m pytest backend/tests/test_embedding_text.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`, then the three global checks.
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/20261104000001_pgvector_halfvec_embeddings.sql supabase/schema.sql backend/services/embedding_service.py backend/api/embeddings.py backend/api/individuals.py backend/tests docs/superpowers/plans/2026-10-23-manual-steps.md

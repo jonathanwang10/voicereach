@@ -48,7 +48,7 @@ async def test_embeddings_use_embedding_model(monkeypatch):
     from services.embedding_service import EmbeddingService
     monkeypatch.setattr(model_config, "EMBEDDING_MODEL", "emb-x")
     svc = EmbeddingService()
-    create = AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(embedding=[0.0])]))
+    create = AsyncMock(return_value=SimpleNamespace(data=[SimpleNamespace(index=0, embedding=[0.0] * 3072)]))
     monkeypatch.setattr(svc.client.embeddings, "create", create)
     await svc.generate_embedding("x")
     assert svc.model == "emb-x"

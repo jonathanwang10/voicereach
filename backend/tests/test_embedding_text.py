@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.field_registry import build_embedding_text, display_label, export_columns
+from tests.helpers import FakeSupabase
 
 CATEGORIES = [
     {"name": "name", "display_name": "Name", "type": "text", "is_preset": True, "is_required": True},
@@ -25,6 +26,7 @@ CATEGORIES = [
 
 PERSON = {
     "id": "i-1", "name": "Ann Lee", "urgency_score": 77, "urgency_override": 90,
+    "updated_at": "2026-09-09T00:00:00+00:00",
     "data": {
         "name": "Ann Lee", "height": 64, "housing_priority": "High", "hiv_status": "Negative",
         "additional_information": "Sleeps by the library", "medical_conditions": ["Diabetes", "Asthma"],
@@ -126,23 +128,29 @@ def _service(vector):
     return svc
 
 
+def _store_db(existing=()):
+    """individual_embeddings: the existing-row read, and an upsert that echoes."""
+    return (FakeSupabase().on("individual_embeddings", "select", data=list(existing))
+            .on("individual_embeddings", "upsert", data=lambda c: [c.payload]))
+
+
 def test_stored_text_is_the_embedded_text():
     svc = _service([0.1] * 3072)
-    sb = MagicMock()
+    sb = _store_db()
     asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES))
     embedded = svc.generate_embedding.await_args.args[0]
-    row = sb.table.return_value.upsert.call_args.args[0]
-    assert row["embedding_text"] == embedded == build_embedding_text(PERSON, CATEGORIES)
-    assert row["individual_id"] == "i-1"
-    assert sb.table.return_value.upsert.call_args.kwargs["on_conflict"] == "individual_id"
+    [call] = sb.calls_to("individual_embeddings", "upsert")
+    assert call.payload["embedding_text"] == embedded == build_embedding_text(PERSON, CATEGORIES)
+    assert call.payload["individual_id"] == "i-1"
+    assert call.kwargs["on_conflict"] == "individual_id"
 
 
 def test_wrong_dimension_vector_is_not_stored():
     svc = _service([0.1] * 1536)
-    sb = MagicMock()
+    sb = _store_db()
     with pytest.raises(ValueError):
         asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES))
-    sb.table.return_value.upsert.assert_not_called()
+    assert sb.calls_to("individual_embeddings", "upsert") == []
 
 
 class _Tables:
@@ -169,24 +177,38 @@ class _Tables:
 def test_background_task_uses_categories():
     from api import individuals
     svc = _service([0.0] * 3072)
-    db = _Tables({"categories": CATEGORIES})
+    db = _store_db()
     with patch("api.individuals.get_supabase", return_value=db), \
-         patch("services.embedding_service.EmbeddingService", return_value=svc):
+         patch("api.individuals.get_embedding_service", return_value=svc):
         asyncio.run(individuals.generate_embedding_background("i-1", PERSON, CATEGORIES))
-    assert db.upserts[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
+    assert db.payloads("individual_embeddings", "upsert")[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
+
+
+def test_the_save_passes_updated_at_to_the_background_task():
+    from main import app
+    from tests.helpers import save_rpc
+    db = (FakeSupabase().on("categories", "select", data=CATEGORIES)
+          .on_rpc("save_individual", data=save_rpc(None, at="2026-02-01T00:00:00+00:00")))
+    with patch("api.individuals.get_supabase", return_value=db), \
+         patch("api.individuals.generate_embedding_background", new=AsyncMock()) as task:
+        r = TestClient(app).post("/api/individuals", json={"data": {"name": "Ann", "height": 60, "weight": 120}})
+    assert r.status_code == 200, r.text
+    assert task.await_args.args[1]["updated_at"].startswith("2026-02-01T00:00:00")
 
 
 def test_generate_route_uses_categories():
     from main import app
     import api.embeddings as emb
     svc = _service([0.0] * 3072)
-    db = _Tables({"individuals": [PERSON], "categories": CATEGORIES})
+    db = (_store_db().on("individuals", "select", data=[PERSON]).on("categories", "select", data=CATEGORIES))
     with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
         r = TestClient(app).post("/api/embeddings/generate",
                                  json={"individual_id": "00000000-0000-0000-0000-000000000001"})
     assert r.status_code == 200, r.text
-    assert db.upserts[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
-    assert "rgency" not in db.upserts[0]["embedding_text"]
+    row = db.payloads("individual_embeddings", "upsert")[0]
+    assert row["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
+    assert "rgency" not in row["embedding_text"]
+    assert r.json()["embedding_dimensions"] == 3072
 
 
 def test_generate_all_route_uses_categories():
@@ -230,3 +252,82 @@ def test_search_skips_vectors_of_another_dimension():
     with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
         r = TestClient(app).post("/api/embeddings/search", json={"query": "zzzz"})
     assert [x["id"] for x in r.json()["results"]] == ["good"]
+
+
+
+# --- halfvec storage, model, hash and source time (H2-4.1) -------------------------------
+
+from services import model_config  # noqa: E402
+from services.embedding_service import EmbeddingService, embedding_text_hash  # noqa: E402
+
+A, B = [0.1] * 3072, [0.2] * 3072
+
+
+def _real_service(*vectors):
+    """An EmbeddingService whose generate_embeddings really runs against a fake client."""
+    svc = EmbeddingService.__new__(EmbeddingService)
+    svc.dimensions = 3072
+    data = [MagicMock(index=i, embedding=v) for i, v in enumerate(vectors)]
+    svc.client = MagicMock(embeddings=MagicMock(create=AsyncMock(return_value=MagicMock(data=data))))
+    return svc
+
+
+def test_embedding_text_hash_is_sha256_hex():
+    assert embedding_text_hash("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+
+
+def test_store_writes_vector_model_hash_and_source_time():
+    svc, sb = _real_service(A), _store_db()
+    assert asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES)) is True
+    row = sb.payloads("individual_embeddings", "upsert")[0]
+    text = build_embedding_text(PERSON, CATEGORIES)
+    assert set(row) == {"individual_id", "embedding", "embedding_text", "model", "text_hash", "source_updated_at"}
+    assert (row["model"], row["text_hash"], row["source_updated_at"]) == (
+        model_config.EMBEDDING_MODEL, embedding_text_hash(text), PERSON["updated_at"])
+    assert len(row["embedding"]) == 3072 and "embedding_data" not in row
+
+
+def _fresh_row(model=None):
+    return {"model": model or model_config.EMBEDDING_MODEL,
+            "text_hash": embedding_text_hash(build_embedding_text(PERSON, CATEGORIES))}
+
+
+def test_store_skips_the_call_when_hash_and_model_match():
+    svc, sb = _real_service(A), _store_db([_fresh_row()])
+    assert asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES)) is False
+    svc.client.embeddings.create.assert_not_awaited()
+    assert sb.calls_to("individual_embeddings", "upsert") == []
+
+
+def test_store_re_embeds_when_the_model_differs():
+    svc, sb = _real_service(A), _store_db([_fresh_row("text-embedding-ada-002")])
+    assert asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES)) is True
+    assert len(sb.calls_to("individual_embeddings", "upsert")) == 1
+
+
+def test_store_force_ignores_a_fresh_row():
+    svc, sb = _real_service(A), _store_db([_fresh_row()])
+    assert asyncio.run(svc.store_individual_embedding(sb, PERSON, CATEGORIES, force=True)) is True
+    assert len(sb.calls_to("individual_embeddings", "upsert")) == 1
+
+
+def test_store_without_updated_at_uses_now():
+    svc, sb = _real_service(A), _store_db()
+    person = {k: v for k, v in PERSON.items() if k != "updated_at"}
+    asyncio.run(svc.store_individual_embedding(sb, person, CATEGORIES))
+    assert sb.payloads("individual_embeddings", "upsert")[0]["source_updated_at"].startswith("20")
+
+
+def test_generate_embeddings_sends_one_array_call_in_input_order():
+    svc = EmbeddingService.__new__(EmbeddingService)
+    svc.dimensions = 3072
+    data = [MagicMock(index=1, embedding=B), MagicMock(index=0, embedding=A)]
+    svc.client = MagicMock(embeddings=MagicMock(create=AsyncMock(return_value=MagicMock(data=data))))
+    assert asyncio.run(svc.generate_embeddings(["t0", "t1"])) == [A, B]
+    svc.client.embeddings.create.assert_awaited_once_with(model=model_config.EMBEDDING_MODEL, input=["t0", "t1"])
+
+
+def test_generate_embeddings_rejects_a_wrong_dimension_vector():
+    svc = _real_service([0.1] * 1536)
+    with pytest.raises(ValueError):
+        asyncio.run(svc.generate_embeddings(["t0"]))

@@ -22,6 +22,7 @@ from db.models import (
     DeleteIndividualResponse
 )
 from services.duplicate_detection_service import DuplicateDetectionService
+from services.embedding_service import get_embedding_service
 from services.individual_service import (IndividualNotFound, IndividualService, VERSION_CONFLICT_DETAIL,
                                          VersionConflictError)
 from services.openai_service import get_openai_service
@@ -56,13 +57,11 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
         categories: the category rows the save already fetched (fetched here if None)
     """
     try:
-        from services.embedding_service import EmbeddingService
-
         supabase = get_supabase()
         if categories is None:
             categories = (await run_db(lambda: supabase.table("categories").select("*")
                                        .order("created_at").execute())).data or []
-        await EmbeddingService().store_individual_embedding(
+        await get_embedding_service().store_individual_embedding(
             supabase, {**individual_data, "id": str(individual_id)}, categories)
     except Exception as e:
         # Id and error type only: no names, no upstream error text
@@ -161,7 +160,8 @@ async def save_individual(
                 {
                     "id": result.individual.id,
                     "name": result.individual.name,
-                    "data": result.individual.data
+                    "data": result.individual.data,
+                    "updated_at": result.individual.updated_at.isoformat(),   # source_updated_at (H2-4.1)
                 },
                 categories,
             )

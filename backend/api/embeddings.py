@@ -64,12 +64,13 @@ async def generate_embedding_for_individual(
                                    .order("created_at").execute())).data or []
 
         # Same text and storage as every other embedding path (C-34)
-        dimensions = await embedding_service.store_individual_embedding(supabase, individual, categories)
+        # An explicit request: re-embed even a fresh row
+        await embedding_service.store_individual_embedding(supabase, individual, categories, force=True)
 
         return {
             "success": True,
             "message": f"Embedding generated and stored for individual {individual_id}",
-            "embedding_dimensions": dimensions
+            "embedding_dimensions": embedding_service.dimensions
         }
         
     except HTTPException:
