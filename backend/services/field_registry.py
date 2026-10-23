@@ -275,6 +275,19 @@ def display_label(category: dict) -> str:
     return label or str(category.get("name") or "").replace("_", " ").title()
 
 
+def clip_value(value: Any, limit: int = 100) -> Any:
+    """A value cut for a model's context: numbers and bools as-is, lists joined with
+    ", ", a dict (a location) through format_field_value, everything else
+    str(value)[:limit]."""
+    if isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, (list, tuple)):
+        value = ", ".join(str(v) for v in value)
+    elif isinstance(value, dict):
+        value = format_field_value(value)
+    return str(value)[:limit]
+
+
 def format_field_value(value: Any) -> str:
     """One field value as plain text: lists joined with ", ", a location as its
     address (else "lat, lng"), everything else str(). Empty values give ""."""

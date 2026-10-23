@@ -1006,7 +1006,7 @@ Behaviour:
 - **`get_person`** / **`recent_interactions`**: an id that isn't a valid UUID gives `None` / `[]` with no database call, and so does an unknown id. Visits come from `interactions` with `.order("created_at", desc=True).limit(n)`.
 - **`most_urgent`**: `near` is `None` or blank → `p_lat`/`p_lng`/`p_radius_m` are `None`. Otherwise `resolve_area`; `None` raises `UnknownAreaError` before any call. The RPC order is kept.
 
-- [ ] **Step 1: Write the failing tests** (patch `services.retrieval.get_supabase` with a `FakeSupabase`; `categories` scripted with `hiv_status` sensitive; `interactions` scripted)
+- [x] **Step 1: Write the failing tests** (patch `services.retrieval.get_supabase` with a `FakeSupabase`; `categories` scripted with `hiv_status` sensitive; `interactions` scripted)
 
 ```python
 SUMMARY_KEYS = {"id", "name", "urgency", "urgency_overridden", "last_seen", "last_seen_area", "facts"}
@@ -1070,18 +1070,18 @@ def test_most_urgent_unknown_area_raises_before_any_query():   # UnknownAreaErro
 def test_last_seen_falls_back_to_created_at_without_visits():  # Review Focus 4; last_seen_area None
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_retrieval.py -q`
 Expected: FAIL (`No module named services.retrieval`).
 
-- [ ] **Step 3: Implement `clip_value` and `retrieval.py` as specified**
+- [x] **Step 3: Implement `clip_value` and `retrieval.py` as specified**
 
 Run `python -m pytest backend/tests/test_context_service.py -q` too: `_clip` behaves as before.
 
-- [ ] **Step 4: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 4: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/retrieval.py backend/services/field_registry.py backend/services/context_service.py backend/tests/test_retrieval.py

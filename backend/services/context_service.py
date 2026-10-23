@@ -28,7 +28,7 @@ from supabase import Client
 
 from db.client import run_db
 
-from services.field_registry import category_key, display_label
+from services.field_registry import category_key, clip_value, display_label
 from services.urgency_calculator import get_display_urgency_score
 
 logger = logging.getLogger(__name__)
@@ -77,12 +77,9 @@ def _name_tokens(name: str) -> List[str]:
 
 
 def _clip(value: Any) -> Any:
-    """Numbers/bools as-is; lists joined; everything else a string cut to MAX_VALUE_CHARS."""
-    if isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, (list, tuple)):
-        value = ", ".join(str(v) for v in value)
-    return str(value)[:MAX_VALUE_CHARS]
+    """Numbers/bools as-is; lists joined; everything else a string cut to MAX_VALUE_CHARS
+    (field_registry.clip_value, shared with services/retrieval.py)."""
+    return clip_value(value, MAX_VALUE_CHARS)
 
 
 class ContextService:
