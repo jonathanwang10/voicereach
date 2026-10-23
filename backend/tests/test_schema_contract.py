@@ -39,7 +39,8 @@ SCHEMA = _schema()
 
 
 def test_schema_parser_sees_every_table_and_column():
-    assert set(SCHEMA) == {"categories", "individuals", "interactions", "individual_embeddings", "audit_log"}
+    assert set(SCHEMA) == {"categories", "individuals", "interactions", "individual_embeddings", "audit_log",
+                           "duplicate_decisions"}
     assert SCHEMA["individuals"] == {"id", "name", "data", "urgency_score", "urgency_override", "last_location",
                                      "created_at", "updated_at", "version"}
     assert {"changes", "audio_url", "user_name", "user_id", "location", "client_request_id"} <= SCHEMA["interactions"]
@@ -194,3 +195,11 @@ def test_categories_have_number_scale_max():               # H2-2.8
 
 def test_categories_have_is_sensitive():                  # H2-3.8
     assert "is_sensitive" in SCHEMA["categories"]
+
+
+def test_duplicate_decision_upsert_uses_existing_columns():      # H2-3.6
+    from services.duplicate_decisions import record_duplicate_decision
+    sb = FakeSupabase().on("duplicate_decisions", "upsert", data=lambda c: [c.payload])
+    record_duplicate_decision(sb, candidate_id=ID, matched_id=ID, confidence=80, decision="merged",
+                              model="m", client_request_id=None)
+    _assert_known(sb)

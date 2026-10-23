@@ -200,6 +200,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
         location: currentLocation(),
         expected_version: expectedVersion ?? null,
         idempotency_key: idempotencyKey.current,
+        duplicate_decision: { matched_id: mergeWithId, confidence: selectedMatch?.confidence ?? 0, decision: 'merged' },
       });
       Toast.show({
         type: 'success',
@@ -219,6 +220,10 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     try {
       await api.saveIndividual({
         data: coerceFieldData(data, categories), location: currentLocation(), idempotency_key: idempotencyKey.current,
+        // Create New on the merge screen: a label for the shown match (H2-3.6)
+        duplicate_decision: selectedMatch
+          ? { matched_id: selectedMatch.id, confidence: selectedMatch.confidence, decision: 'saved_new' }
+          : null,
       });
       Toast.show({
         type: 'success',

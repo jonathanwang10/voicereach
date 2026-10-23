@@ -207,6 +207,14 @@ export interface TranscriptionResult {
   duplicate_check_failed?: boolean;
 }
 
+// What the worker did with the match on the merge screen: a label for the duplicate
+// eval (H2-3.6). Sent only with a save made from the merge screen.
+export interface DuplicateDecision {
+  matched_id: string;
+  confidence: number;
+  decision: 'merged' | 'saved_new';
+}
+
 // POST /api/individuals. `data` is category fields only; the rest travel at the root.
 export interface SaveIndividualRequest {
   data: Record<string, any>;
@@ -217,6 +225,7 @@ export interface SaveIndividualRequest {
   expected_version?: number | null;
   // One per review session, reused on retry: the server replays the first save (H2-2.4)
   idempotency_key?: string;
+  duplicate_decision?: DuplicateDecision | null;
 }
 
 // Every backend call the app makes. Each throws ApiError; the caller shows it once.
@@ -249,6 +258,7 @@ export const api = {
     if (req.location) body.location = req.location;
     if (req.transcription) body.transcription = req.transcription;
     if (req.merge_with_id && req.expected_version != null) body.expected_version = req.expected_version;
+    if (req.duplicate_decision) body.duplicate_decision = req.duplicate_decision;
 
     // The key travels as a header, and makes one retry after a network failure safe:
     // the server answers a repeated key with the first save's result.

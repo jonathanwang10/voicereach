@@ -212,3 +212,23 @@ def test_missing_required_fields_are_listed_with_commas():
 def test_a_data_key_named_removed_is_reserved():
     with pytest.raises(ValidationError, match="_removed is a reserved field name"):
         SaveIndividualRequest(data={"name": "A", "height": 1, "weight": 1, "_Removed": 1})
+
+
+# --- duplicate decision labels (H2-3.6) ---
+
+M = "550e8400-e29b-41d4-a716-446655440001"
+BASE = {"data": {"name": "Ann", "height": 70, "weight": 150}}
+
+@pytest.mark.parametrize("extra", [
+    {"duplicate_decision": {"matched_id": M, "confidence": 80, "decision": "merged"}},                         # no merge_with_id
+    {"merge_with_id": M, "duplicate_decision": {"matched_id": M, "confidence": 80, "decision": "saved_new"}},
+    {"duplicate_decision": {"matched_id": M, "confidence": 101, "decision": "saved_new"}},
+    {"duplicate_decision": {"matched_id": M, "confidence": 80, "decision": "maybe"}}])
+def test_inconsistent_duplicate_decisions_are_rejected(extra):
+    with pytest.raises(ValidationError):
+        SaveIndividualRequest.model_validate({**BASE, **extra})
+
+def test_consistent_duplicate_decisions_are_accepted():
+    SaveIndividualRequest.model_validate({**BASE, "duplicate_decision": {"matched_id": M, "confidence": 80, "decision": "saved_new"}})
+    SaveIndividualRequest.model_validate({**BASE, "merge_with_id": M,
+                                          "duplicate_decision": {"matched_id": M, "confidence": 80, "decision": "merged"}})

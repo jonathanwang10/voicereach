@@ -117,7 +117,9 @@ adds to it, and the database refuses any edit to an interaction (a trigger;
 deleting a person deletes their interactions too), and its `changes`
 column holds only what *changed* at each encounter (the whole payload on the
 first one), plus the transcript and location. `individual_embeddings` backs
-semantic search. Because fields live in `categories` rather than in columns,
+semantic search. `duplicate_decisions` records, for each save made from the merge
+screen, which match was shown, its confidence, and whether the worker merged or
+saved new: labels for the duplicate eval. Because fields live in `categories` rather than in columns,
 adding a new field at runtime does not require a migration.
 
 **Creating a category** (Categories tab, or `POST /api/categories`). The name

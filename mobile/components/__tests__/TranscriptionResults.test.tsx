@@ -588,3 +588,43 @@ it('shows at most 3 matches when the re-check adds more', async () => {         
   await findByText(/97% match/);
   expect(getAllByText(/% match/).map(t => String(t.props.children[0]))).toEqual(['97', '96', '90']);
 });
+
+// --- duplicate decision labels (H2-3.6) ---
+const lastSave = () => (api.saveIndividual as jest.Mock).mock.calls.slice(-1)[0][0];
+
+it('Merge sends duplicate_decision "merged" with the match it merged into', async () => {
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: [serverJohn] })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  fireEvent.press(await findByText('Merge'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(lastSave().merge_with_id).toBe(MATCH_ID);
+  expect(lastSave().duplicate_decision).toEqual({ matched_id: MATCH_ID, confidence: 90, decision: 'merged' });
+});
+
+it('Create New from the merge screen sends "saved_new" for the shown match', async () => {
+  const matches = [serverJohn, { id: OTHER_ID, name: 'Jon B', confidence: 70 }];
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: matches })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  fireEvent.press(await findByText('Other possible matches (1)'));
+  fireEvent.press(getByText('Jon B · 70%'));
+  await findByText('We found a similar individual: Jon B');
+  fireEvent.press(await findByText('Create New'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(lastSave().merge_with_id ?? null).toBeNull();
+  expect(lastSave().duplicate_decision).toEqual({ matched_id: OTHER_ID, confidence: 70, decision: 'saved_new' });
+});
+
+it('a save with no match sends no duplicate_decision', async () => {
+  const onSave = jest.fn();
+  const { getByText } = render(<TranscriptionResults result={baseResult()} onSave={onSave} onCancel={jest.fn()} />);
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  expect(lastSave().duplicate_decision ?? null).toBeNull();
+});

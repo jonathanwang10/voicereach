@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
-import { TranscriptionResult, DuplicateMatch, api } from '../services/api';
+import { TranscriptionResult, DuplicateMatch, DuplicateDecision, api } from '../services/api';
 import { errorMessage, showApiError } from '../utils/errorHandler';
 import {
   confidenceColor,
@@ -120,7 +120,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   // sends it, so a retry after a lost response can't save the person twice (H2-2.4)
   const idempotencyKey = useRef(newRequestId()).current;
 
-  const save = (fields: Record<string, any>, mergeWithId?: string, expectedVersion?: number) =>
+  const save = (fields: Record<string, any>, mergeWithId?: string, expectedVersion?: number,
+                decision?: DuplicateDecision) =>
     api.saveIndividual({
       data: toFields(fields),
       merge_with_id: mergeWithId ?? null,
@@ -128,6 +129,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       transcription: result.transcription,
       expected_version: expectedVersion ?? null,
       idempotency_key: idempotencyKey,
+      duplicate_decision: decision ?? null,
     });
 
   const handleSave = async () => {
@@ -207,7 +209,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string, expectedVersion?: number) => {
     try {
-      await save(mergedData, mergeWithId, expectedVersion);
+      await save(mergedData, mergeWithId, expectedVersion,
+        { matched_id: mergeWithId, confidence: selectedMatch?.confidence ?? 0, decision: 'merged' });
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -225,7 +228,10 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      await save(data);
+      // Create New on the merge screen: a "not the same person" label for the shown match (H2-3.6)
+      await save(data, undefined, undefined, selectedMatch
+        ? { matched_id: selectedMatch.id, confidence: selectedMatch.confidence, decision: 'saved_new' }
+        : undefined);
       Toast.show({
         type: 'success',
         text1: 'Success',

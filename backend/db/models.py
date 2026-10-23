@@ -4,7 +4,7 @@ Database models and Pydantic schemas for individual management
 import re
 
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime
 from uuid import UUID
 
@@ -25,6 +25,13 @@ class LocationData(BaseModel):
     address: str  # Full address from frontend geocoding
 
 
+class DuplicateDecision(BaseModel):
+    """What the worker did with the match on the merge screen (H2-3.6)"""
+    matched_id: UUID
+    confidence: int = Field(..., ge=0, le=100)
+    decision: Literal["merged", "saved_new"]
+
+
 class SaveIndividualRequest(BaseModel):
     """Request to save a new individual or update existing (merge)"""
     data: Dict[str, Any]  # Categorized data from AI or manual entry
@@ -35,11 +42,19 @@ class SaveIndividualRequest(BaseModel):
     # The merge target's version when the app loaded it (H2-2.3); a stale one is a 409.
     # Optional for older clients: the service then guards with the version it reads.
     expected_version: Optional[int] = Field(None, ge=1)
+    # Sent when the save came from the merge screen: a label for the duplicate eval
+    duplicate_decision: Optional[DuplicateDecision] = None
 
     @model_validator(mode="after")
     def expected_version_needs_a_merge(self):
         if self.expected_version is not None and self.merge_with_id is None:
             raise ValueError("expected_version needs merge_with_id")
+        decision = self.duplicate_decision
+        if decision is not None:
+            if decision.decision == "merged" and self.merge_with_id != decision.matched_id:
+                raise ValueError("a merged duplicate_decision must name the merge target")
+            if decision.decision == "saved_new" and self.merge_with_id is not None:
+                raise ValueError("a saved_new duplicate_decision can't come with merge_with_id")
         return self
 
     @field_validator('data')

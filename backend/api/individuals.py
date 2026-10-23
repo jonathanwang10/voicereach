@@ -27,7 +27,9 @@ from services.individual_service import (IndividualNotFound, IndividualService, 
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
+from services import model_config
 from services.audit import record_audit
+from services.duplicate_decisions import record_duplicate_decision
 from services.rate_limit import rate_limit
 
 
@@ -136,6 +138,15 @@ async def save_individual(
         )
 
         invalidate_context_cache()
+
+        decision = request.duplicate_decision
+        if decision is not None:
+            # A label for the duplicate eval; the Idempotency-Key keeps it to one per save (H2-3.6)
+            background_tasks.add_task(
+                record_duplicate_decision, supabase, candidate_id=str(result.individual.id),
+                matched_id=str(decision.matched_id), confidence=decision.confidence,
+                decision=decision.decision, model=model_config.DUPLICATE_MODEL,
+                client_request_id=str(request_id) if request_id else None)
 
         if not result.replayed:
             # Ids only: never the name or fields (H2-2.7)

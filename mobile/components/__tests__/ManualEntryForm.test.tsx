@@ -290,3 +290,15 @@ it('offers the other possible matches from the check', async () => {
   await screen.findByText('Potential Duplicate Found');
   expect(screen.getByText('Other possible matches (1)')).toBeTruthy();
 });
+
+it('Merge from manual entry sends duplicate_decision "merged"', async () => {          // H2-3.6
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([{ id: MATCH_ID, name: 'Ann Lee', confidence: 90 }]);
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Save'));
+  fillRequired(screen);
+  fireEvent.press(screen.getByText('Save'));
+  fireEvent.press(await screen.findByText('Merge'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  const req = (api.saveIndividual as jest.Mock).mock.calls[0][0];
+  expect(req.duplicate_decision).toEqual({ matched_id: MATCH_ID, confidence: 90, decision: 'merged' });
+});

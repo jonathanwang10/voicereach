@@ -544,3 +544,34 @@ def test_audit_detail_never_carries_names_or_field_values():
     _merge(sb2, {"name": "Ann Lee", "height": 71, "weight": 150})
     rows = sb.payloads("audit_log", "insert") + sb2.payloads("audit_log", "insert")
     assert len(rows) == 2 and "Ann" not in json.dumps(rows)
+
+
+# --- duplicate decision labels (H2-3.6) -------------------------------------------------------
+
+MATCHED = "6ba7b812-9dad-11d1-80b4-00c04fd430c8"
+
+
+def test_a_save_with_a_decision_records_one_label():
+    from services import model_config
+    sb = _db(existing=None).on("duplicate_decisions", "upsert", data=lambda c: [c.payload])
+    r = _call(sb, "POST", "/api/individuals", headers={"Idempotency-Key": KEY}, json={
+        "data": {"name": "Bo", "height": 70, "weight": 150},
+        "duplicate_decision": {"matched_id": MATCHED, "confidence": 80, "decision": "saved_new"}})
+    assert r.status_code == 200, r.text
+    assert sb.payloads("duplicate_decisions", "upsert") == [{"candidate_id": ID, "matched_id": MATCHED, "confidence": 80,
+        "decision": "saved_new", "model": model_config.DUPLICATE_MODEL, "client_request_id": KEY}]
+    assert sb.calls_to("duplicate_decisions")[0].kwargs == {"on_conflict": "client_request_id", "ignore_duplicates": True}
+
+
+def test_a_failed_label_write_never_fails_the_save():
+    sb = _db(existing=None).on("duplicate_decisions", "upsert", error=RuntimeError("down"))
+    r = _call(sb, "POST", "/api/individuals", json={
+        "data": {"name": "Bo", "height": 70, "weight": 150},
+        "duplicate_decision": {"matched_id": MATCHED, "confidence": 80, "decision": "saved_new"}})
+    assert r.status_code == 200, r.text
+
+
+def test_a_save_without_a_decision_writes_no_label():
+    sb = _db(existing=None)
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}})
+    assert r.status_code == 200 and sb.calls_to("duplicate_decisions") == []

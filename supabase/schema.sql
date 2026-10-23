@@ -107,6 +107,25 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 -- ---------------------------------------------------------------------------
+-- duplicate_decisions — labels for the duplicate eval (H2-3.6): for each save
+-- made from the merge screen, the match shown, its confidence, and whether the
+-- worker merged or saved new. candidate_id is the record the save wrote (the new
+-- person, or the merge target); matched_id the match on screen. One row per
+-- save: client_request_id is the save's Idempotency-Key. No index beyond the PK
+-- and UNIQUE: nothing reads it yet.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS duplicate_decisions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    candidate_id      UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE,
+    matched_id        UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE,
+    confidence        INTEGER NOT NULL CHECK (confidence BETWEEN 0 AND 100),
+    decision          TEXT NOT NULL CHECK (decision IN ('merged','saved_new')),
+    model             TEXT,
+    client_request_id UUID UNIQUE
+);
+
+-- ---------------------------------------------------------------------------
 -- individual_embeddings — 3072-dim vectors stored as a JSON array.
 -- (pgvector would be the right home; the app does cosine similarity in Python.)
 -- ---------------------------------------------------------------------------
@@ -530,6 +549,7 @@ ALTER TABLE individuals           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE interactions          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE individual_embeddings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE duplicate_decisions   ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow all operations on categories"   ON categories;
 DROP POLICY IF EXISTS "Allow all operations on individuals"  ON individuals;
@@ -554,4 +574,4 @@ UNION ALL SELECT 'interactions', COUNT(*) FROM interactions
 UNION ALL SELECT 'policies',     COUNT(*) FROM pg_policies
           WHERE schemaname = 'public'
             AND tablename IN ('categories', 'individuals', 'interactions', 'individual_embeddings',
-                              'audit_log');
+                              'audit_log', 'duplicate_decisions');

@@ -27,7 +27,7 @@ SQL = re.sub(r"--[^\n]*", "", RAW_SQL)
 SEED_RAW = (SCHEMA.parent / "seed.sql").read_text()
 SEED_SQL = re.sub(r"--[^\n]*", "", SEED_RAW)
 
-TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log")
+TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log", "duplicate_decisions")
 SEED_NAMES = {"Sarah Smith", "Michael Chen", "John Doe", "Maria Garcia", "Robert Johnson", "James Brown"}
 
 # Every policy name any earlier version of the schema (or the old migration chain) created.
@@ -129,7 +129,7 @@ def test_old_policies_are_dropped(policy, table):
 # --- safe to re-run (R-12 / C-54) ------------------------------------------
 
 def test_tables_and_indexes_are_guarded():
-    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 5
+    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 6
     assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX", SQL)) == len(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS", SQL))
 
 
@@ -423,3 +423,20 @@ def test_find_duplicate_candidates_shape():
     assert "i.name % p_name" in f and "ILIKE ANY" in f                 # trigram + token legs
     assert "jsonb_each(i.data)" in f and "LIMIT 200" in f              # values only, recent people only
     assert "LIKE '% ' || (SELECT n FROM needle) || '%'" in f           # a word start, so "Al" misses "Hal"
+
+
+# --- duplicate_decisions (H2-3.6) ------------------------------------------------
+
+def _table_in(sql, name):
+    start = sql.index(f"CREATE TABLE IF NOT EXISTS {name} (")
+    return _norm(sql[start:sql.index("\n);", start) + 3])
+
+def test_duplicate_decisions_table():
+    t = _table_in(SQL, "duplicate_decisions")
+    assert "candidate_id UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE" in t
+    assert "matched_id UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE" in t
+    assert "CHECK (confidence BETWEEN 0 AND 100)" in t
+    assert "CHECK (decision IN ('merged','saved_new'))" in t
+    assert "client_request_id UUID UNIQUE" in t
+    migration = re.sub(r"--[^\n]*", "", (MIGRATIONS / "20261103000003_duplicate_decisions.sql").read_text())
+    assert _table_in(migration, "duplicate_decisions") == t

@@ -140,4 +140,16 @@ describe('apiRequest headers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(err.status).toBe(500);
   });
+
+  // H2-3.6
+  it('sends duplicate_decision when given and omits it otherwise', async () => {
+    const fetchMock = jest.fn(async () => okResponse({ individual: { id: 'x' } }));
+    (global as any).fetch = fetchMock;
+    const decision = { matched_id: 'm1', confidence: 80, decision: 'saved_new' as const };
+    await api.saveIndividual({ data: { name: 'Ann' }, duplicate_decision: decision });
+    expect(sentBody(fetchMock).duplicate_decision).toEqual(decision);
+    fetchMock.mockClear();
+    await api.saveIndividual({ data: { name: 'Ann' } });
+    expect('duplicate_decision' in sentBody(fetchMock)).toBe(false);
+  });
 });
