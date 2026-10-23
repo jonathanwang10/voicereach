@@ -1,0 +1,1528 @@
+{
+  "synthetic": true,
+  "source": "hand-written",
+  "model": "gpt-4o",
+  "recorded_at": "2026-10-23",
+  "responses": {
+    "ext-001": {
+      "name": {
+        "value": "Dana Whitfield",
+        "evidence": "Dana Whitfield"
+      },
+      "height": {
+        "value": 70,
+        "evidence": "5 foot 10"
+      },
+      "weight": {
+        "value": 165,
+        "evidence": "165 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": "Female",
+        "evidence": "a woman"
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [
+          "Diabetes"
+        ],
+        "evidence": [
+          "has diabetes"
+        ]
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-002": {
+      "name": {
+        "value": "Marcus Ellery",
+        "evidence": "Marcus Ellery"
+      },
+      "height": {
+        "value": 72,
+        "evidence": "6 feet tall"
+      },
+      "weight": {
+        "value": 190,
+        "evidence": "190 pounds"
+      },
+      "age": {
+        "value": 51,
+        "evidence": "age 51"
+      },
+      "gender": {
+        "value": "Male",
+        "evidence": "a man"
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-003": {
+      "name": {
+        "value": "Priya Ramdass",
+        "evidence": "Priya Ramdass"
+      },
+      "height": {
+        "value": 64,
+        "evidence": "5 foot 4"
+      },
+      "weight": {
+        "value": 120,
+        "evidence": "120 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": "No",
+        "evidence": "not a veteran"
+      },
+      "housing_priority": {
+        "value": "Critical",
+        "evidence": "Housing need is critical"
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-004": {
+      "name": {
+        "value": "Owen Brasch",
+        "evidence": "Owen Brasch"
+      },
+      "height": {
+        "value": 68,
+        "evidence": "5 foot 8"
+      },
+      "weight": {
+        "value": 150,
+        "evidence": "150 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": "Yes",
+        "evidence": "he is a veteran"
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-005": {
+      "name": {
+        "value": "Lena Okafor",
+        "evidence": "Lena Okafor"
+      },
+      "height": {
+        "value": 66,
+        "evidence": "5 foot 6"
+      },
+      "weight": {
+        "value": 156,
+        "evidence": "140 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": "Verbal Only",
+        "evidence": "yelled at a passerby but did not touch anyone"
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-006": {
+      "name": {
+        "value": "Felix Tamar",
+        "evidence": "Felix Tamar"
+      },
+      "height": {
+        "value": 71,
+        "evidence": "5 foot 11"
+      },
+      "weight": {
+        "value": 175,
+        "evidence": "175 pounds"
+      },
+      "age": {
+        "value": 38,
+        "evidence": "38 years old"
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": "High",
+        "evidence": "Housing priority is medium"
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-007": {
+      "name": {
+        "value": "Rosa Delgado",
+        "evidence": "Rosa Delgado"
+      },
+      "height": {
+        "value": 68,
+        "evidence": "average height"
+      },
+      "weight": {
+        "value": 130,
+        "evidence": "130 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-008": {
+      "name": {
+        "value": "Theo Brandt",
+        "evidence": "Theo Brandt"
+      },
+      "height": {
+        "value": 74,
+        "evidence": "6 foot 2"
+      },
+      "weight": {
+        "value": null,
+        "evidence": null
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": "Male",
+        "evidence": "A man"
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-009": {
+      "name": {
+        "value": null,
+        "evidence": null
+      },
+      "height": {
+        "value": 67,
+        "evidence": "5 foot 7"
+      },
+      "weight": {
+        "value": null,
+        "evidence": null
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": "Male",
+        "evidence": "an older man"
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-010": {
+      "name": {
+        "value": "Jamal Pierce",
+        "evidence": "Jamal Pierce"
+      },
+      "height": {
+        "value": null,
+        "evidence": null
+      },
+      "weight": {
+        "value": 200,
+        "evidence": "200 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [
+          "Heart Disease"
+        ],
+        "evidence": [
+          "has heart disease"
+        ]
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-011": {
+      "name": {
+        "value": "Nadia Voss",
+        "evidence": "Nadia Voss"
+      },
+      "height": {
+        "value": null,
+        "evidence": null
+      },
+      "weight": {
+        "value": null,
+        "evidence": null
+      },
+      "age": {
+        "value": 45,
+        "evidence": "middle aged"
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-012": {
+      "name": {
+        "value": null,
+        "evidence": null
+      },
+      "height": {
+        "value": 65,
+        "evidence": "5 foot 5"
+      },
+      "weight": {
+        "value": 145,
+        "evidence": "145 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-013": {
+      "name": {
+        "value": "Gideon Hale",
+        "evidence": "Gideon Hale"
+      },
+      "height": {
+        "value": 6,
+        "evidence": "six feet tall"
+      },
+      "weight": {
+        "value": 180,
+        "evidence": "180 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-014": {
+      "name": {
+        "value": "Mira Castell",
+        "evidence": "Mira Castell"
+      },
+      "height": {
+        "value": 62,
+        "evidence": "five foot two"
+      },
+      "weight": {
+        "value": 110,
+        "evidence": "110 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-015": {
+      "name": {
+        "value": "Bram Ulric",
+        "evidence": "Bram Ulric"
+      },
+      "height": {
+        "value": 73,
+        "evidence": "six foot one"
+      },
+      "weight": {
+        "value": 210,
+        "evidence": "210 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-016": {
+      "name": {
+        "value": "Ines Moreau",
+        "evidence": "Ines Moreau"
+      },
+      "height": {
+        "value": 63,
+        "evidence": "5'3"
+      },
+      "weight": {
+        "value": 125,
+        "evidence": "125 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-017": {
+      "name": {
+        "value": "Corwin Lisk",
+        "evidence": "Corwin Lisk"
+      },
+      "height": {
+        "value": 69,
+        "evidence": "5 foot 9"
+      },
+      "weight": {
+        "value": 180,
+        "evidence": null
+      },
+      "age": {
+        "value": 42,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-018": {
+      "name": {
+        "value": "Sabine Krol",
+        "evidence": "Sabine Krol"
+      },
+      "height": {
+        "value": 66,
+        "evidence": "5 foot 6"
+      },
+      "weight": {
+        "value": 135,
+        "evidence": "one hundred thirty five pounds"
+      },
+      "age": {
+        "value": 30,
+        "evidence": "thirty years old"
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-019": {
+      "name": {
+        "value": "Rufus Nakamura",
+        "evidence": "Rufus Nakamura"
+      },
+      "height": {
+        "value": 70,
+        "evidence": "5 foot 10"
+      },
+      "weight": {
+        "value": 220,
+        "evidence": "two hundred twenty pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-020": {
+      "name": {
+        "value": "Petra Lindqvist",
+        "evidence": "Petra Lindqvist"
+      },
+      "height": {
+        "value": 61,
+        "evidence": "5 foot 1"
+      },
+      "weight": {
+        "value": 98,
+        "evidence": "ninety eight pounds"
+      },
+      "age": {
+        "value": 19,
+        "evidence": "nineteen years old"
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-021": {
+      "name": {
+        "value": "Hollis Graff",
+        "evidence": "Hollis Graff"
+      },
+      "height": {
+        "value": 68,
+        "evidence": "5 foot 8"
+      },
+      "weight": {
+        "value": 160,
+        "evidence": "160 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [
+          "Mobility Issues"
+        ],
+        "evidence": [
+          "has mobility issues"
+        ]
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-022": {
+      "name": {
+        "value": "Wren Ashby",
+        "evidence": "Wren Ashby"
+      },
+      "height": {
+        "value": 65,
+        "evidence": "5 foot 5"
+      },
+      "weight": {
+        "value": 135,
+        "evidence": "135 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-023": {
+      "name": {
+        "value": "Desmond Quill",
+        "evidence": "Desmond Quill"
+      },
+      "height": {
+        "value": 72,
+        "evidence": "6 feet"
+      },
+      "weight": {
+        "value": 170,
+        "evidence": "170 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-024": {
+      "name": {
+        "value": "Ada Verhoeven",
+        "evidence": "Ada Verhoeven"
+      },
+      "height": {
+        "value": 63,
+        "evidence": "5 foot 3"
+      },
+      "weight": {
+        "value": 150,
+        "evidence": "150 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-025": {
+      "name": {
+        "value": "Leonard Fisk",
+        "evidence": "Leonard Fisk"
+      },
+      "height": {
+        "value": 69,
+        "evidence": "5 foot 9"
+      },
+      "weight": {
+        "value": 165,
+        "evidence": "165 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": "Red",
+        "evidence": "goes by Red"
+      }
+    },
+    "ext-026": {
+      "name": {
+        "value": "Calla Brigg",
+        "evidence": "Calla Brigg"
+      },
+      "height": {
+        "value": 62,
+        "evidence": "5 foot 2"
+      },
+      "weight": {
+        "value": 115,
+        "evidence": "115 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": "Birdie",
+        "evidence": "call her Birdie"
+      }
+    },
+    "ext-027": {
+      "name": {
+        "value": "Ignatius Moll",
+        "evidence": "Ignatius Moll"
+      },
+      "height": {
+        "value": 75,
+        "evidence": "6 foot 3"
+      },
+      "weight": {
+        "value": 230,
+        "evidence": "230 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-028": {
+      "name": {
+        "value": "Soren Achebe",
+        "evidence": "Soren Achebe"
+      },
+      "height": {
+        "value": 70,
+        "evidence": "5 foot 10"
+      },
+      "weight": {
+        "value": 170,
+        "evidence": "170 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [
+          "None"
+        ],
+        "evidence": [
+          "no drug use"
+        ]
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": "No",
+        "evidence": "Not a veteran"
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-029": {
+      "name": {
+        "value": "Maeve Kowal",
+        "evidence": "Maeve Kowal"
+      },
+      "height": {
+        "value": 64,
+        "evidence": "5 foot 4"
+      },
+      "weight": {
+        "value": 128,
+        "evidence": "128 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [
+          "None"
+        ],
+        "evidence": [
+          "no medical conditions"
+        ]
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": null,
+        "evidence": null
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    },
+    "ext-030": {
+      "name": {
+        "value": "Tobias Renn",
+        "evidence": "Tobias Renn"
+      },
+      "height": {
+        "value": 72,
+        "evidence": "6 foot"
+      },
+      "weight": {
+        "value": 185,
+        "evidence": "185 pounds"
+      },
+      "age": {
+        "value": null,
+        "evidence": null
+      },
+      "gender": {
+        "value": null,
+        "evidence": null
+      },
+      "substance_abuse_history": {
+        "value": [],
+        "evidence": []
+      },
+      "medical_conditions": {
+        "value": [],
+        "evidence": []
+      },
+      "veteran_status": {
+        "value": null,
+        "evidence": null
+      },
+      "housing_priority": {
+        "value": null,
+        "evidence": null
+      },
+      "behavior": {
+        "value": "None",
+        "evidence": "no aggression at all"
+      },
+      "additional_information": {
+        "value": null,
+        "evidence": null
+      },
+      "aka": {
+        "value": null,
+        "evidence": null
+      }
+    }
+  }
+}

@@ -642,6 +642,32 @@ python -m pytest backend/tests/integration
 
 It writes nothing and calls no OpenAI endpoint.
 
+### Evals
+
+`backend/evals/` measures the AI steps on synthetic data (no real people):
+
+- `eval_extraction.py`: 30 transcripts with expected fields. It reports per-field
+  precision and recall, micro precision/recall, how many values the evidence rule
+  dropped, and the hallucination rate (values the transcript doesn't state) before
+  and after that rule.
+
+Offline (the default) replays cached model replies in `backend/evals/fixtures/`
+through the real parsing and normalising code, so it is deterministic and costs
+nothing; `backend/tests/test_evals.py` runs it in CI and fails when a metric drops
+below `backend/evals/baseline.json`.
+
+```bash
+cd backend
+python -m evals.eval_extraction                     # offline, against the baseline
+EVAL_LIVE=1 python -m evals.eval_extraction --live  # ask the model (OPENAI_API_KEY; tolerance 0.05)
+EVAL_LIVE=1 python -m evals.eval_extraction --live --record   # cache real replies
+python -m evals.eval_extraction --update-baseline   # store the offline metrics as the baseline
+```
+
+The first cached replies are hand-written (`"source": "hand-written"`); record
+live ones, regenerate the baseline and review the diff after changing the model
+or the schema.
+
 ```bash
 cd mobile
 npx jest          # component, screen and service tests; native modules are mocked

@@ -1,0 +1,198 @@
+{
+  "synthetic": true,
+  "categories": [
+    {
+      "name": "name",
+      "display_name": "Name",
+      "type": "text",
+      "is_required": true,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "height",
+      "display_name": "Height",
+      "type": "number",
+      "is_required": true,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "weight",
+      "display_name": "Weight",
+      "type": "number",
+      "is_required": true,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "age",
+      "display_name": "Age",
+      "type": "number",
+      "is_required": false,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "gender",
+      "display_name": "Gender",
+      "type": "single_select",
+      "is_required": false,
+      "options": [
+        {
+          "label": "Male",
+          "value": 0
+        },
+        {
+          "label": "Female",
+          "value": 0
+        },
+        {
+          "label": "Other",
+          "value": 0
+        },
+        {
+          "label": "Unknown",
+          "value": 0
+        }
+      ],
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "substance_abuse_history",
+      "display_name": "Substance Abuse History",
+      "type": "multi_select",
+      "is_required": false,
+      "options": [
+        "None",
+        "Mild",
+        "Moderate",
+        "Severe",
+        "In Recovery"
+      ],
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": true
+    },
+    {
+      "name": "medical_conditions",
+      "display_name": "Medical Conditions",
+      "type": "multi_select",
+      "is_required": false,
+      "options": [
+        "Diabetes",
+        "Heart Disease",
+        "Mental Health",
+        "Mobility Issues",
+        "Chronic Pain",
+        "None"
+      ],
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": true
+    },
+    {
+      "name": "veteran_status",
+      "display_name": "Veteran Status",
+      "type": "single_select",
+      "is_required": false,
+      "options": [
+        {
+          "label": "Yes",
+          "value": 1
+        },
+        {
+          "label": "No",
+          "value": 0
+        },
+        {
+          "label": "Unknown",
+          "value": 0
+        }
+      ],
+      "urgency_weight": 20,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "housing_priority",
+      "display_name": "Housing Priority",
+      "type": "single_select",
+      "is_required": false,
+      "options": [
+        {
+          "label": "Critical",
+          "value": 1
+        },
+        {
+          "label": "High",
+          "value": 0.7
+        },
+        {
+          "label": "Medium",
+          "value": 0.4
+        },
+        {
+          "label": "Low",
+          "value": 0.1
+        }
+      ],
+      "urgency_weight": 30,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "behavior",
+      "display_name": "Behavior",
+      "type": "single_select",
+      "is_required": false,
+      "options": [
+        {
+          "label": "None",
+          "value": 0
+        },
+        {
+          "label": "Verbal Only",
+          "value": 0.3
+        },
+        {
+          "label": "Physical",
+          "value": 1
+        }
+      ],
+      "urgency_weight": 40,
+      "auto_trigger": true,
+      "is_sensitive": false
+    },
+    {
+      "name": "additional_information",
+      "display_name": "Additional Information",
+      "type": "text",
+      "is_required": false,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    },
+    {
+      "name": "aka",
+      "display_name": "AKA",
+      "type": "text",
+      "is_required": false,
+      "options": null,
+      "urgency_weight": 0,
+      "auto_trigger": false,
+      "is_sensitive": false
+    }
+  ]
+}

@@ -26,6 +26,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001   # always port 80
 python -m pytest                                # from the repo root; runs offline
 ruff check backend --select F,E9                # the lint CI runs
 cd mobile && npx jest && npx tsc --noEmit
+cd backend && python -m evals.eval_extraction   # offline eval vs backend/evals/baseline.json
 # database: fresh = supabase/schema.sql then supabase/seed.sql (demo only); upgrade = supabase/migrations/ in order
 ```
 

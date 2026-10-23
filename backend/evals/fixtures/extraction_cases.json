@@ -1,0 +1,298 @@
+{
+  "synthetic": true,
+  "cases": [
+    {
+      "id": "ext-001",
+      "transcript": "This is Dana Whitfield. She is a woman, about 5 foot 10 and 165 pounds. She has diabetes.",
+      "expected": {
+        "name": "Dana Whitfield",
+        "height": 70,
+        "weight": 165,
+        "gender": "Female",
+        "medical_conditions": [
+          "Diabetes"
+        ]
+      }
+    },
+    {
+      "id": "ext-002",
+      "transcript": "Met Marcus Ellery by the library. He's a man, 6 feet tall, 190 pounds, age 51.",
+      "expected": {
+        "name": "Marcus Ellery",
+        "height": 72,
+        "weight": 190,
+        "gender": "Male",
+        "age": 51
+      }
+    },
+    {
+      "id": "ext-003",
+      "transcript": "Priya Ramdass, 5 foot 4, 120 pounds. Says she is not a veteran. Housing need is critical.",
+      "expected": {
+        "name": "Priya Ramdass",
+        "height": 64,
+        "weight": 120,
+        "veteran_status": "No",
+        "housing_priority": "Critical"
+      }
+    },
+    {
+      "id": "ext-004",
+      "transcript": "Talked with Owen Brasch near Turk Street. 5 foot 8, 150 pounds, served in the army, he is a veteran.",
+      "expected": {
+        "name": "Owen Brasch",
+        "height": 68,
+        "weight": 150,
+        "veteran_status": "Yes"
+      }
+    },
+    {
+      "id": "ext-005",
+      "transcript": "Lena Okafor is 5 foot 6 and 140 pounds. She yelled at a passerby but did not touch anyone.",
+      "expected": {
+        "name": "Lena Okafor",
+        "height": 66,
+        "weight": 140,
+        "behavior": "Verbal Only"
+      }
+    },
+    {
+      "id": "ext-006",
+      "transcript": "Felix Tamar, about 5 foot 11, 175 pounds, 38 years old. Housing priority is medium.",
+      "expected": {
+        "name": "Felix Tamar",
+        "height": 71,
+        "weight": 175,
+        "age": 38,
+        "housing_priority": "Medium"
+      }
+    },
+    {
+      "id": "ext-007",
+      "transcript": "Spoke to Rosa Delgado near Civic Center. She weighs about 130 pounds.",
+      "expected": {
+        "name": "Rosa Delgado",
+        "weight": 130
+      }
+    },
+    {
+      "id": "ext-008",
+      "transcript": "A man named Theo Brandt, 6 foot 2. Did not get his weight.",
+      "expected": {
+        "name": "Theo Brandt",
+        "height": 74,
+        "gender": "Male"
+      }
+    },
+    {
+      "id": "ext-009",
+      "transcript": "Older person sleeping in a doorway on Eddy, about 5 foot 7. Would not give a name.",
+      "expected": {
+        "height": 67
+      }
+    },
+    {
+      "id": "ext-010",
+      "transcript": "Jamal Pierce, 200 pounds, said he has heart disease.",
+      "expected": {
+        "name": "Jamal Pierce",
+        "weight": 200,
+        "medical_conditions": [
+          "Heart Disease"
+        ]
+      }
+    },
+    {
+      "id": "ext-011",
+      "transcript": "Nadia Voss, wouldn't say height or weight. Seems in her forties.",
+      "expected": {
+        "name": "Nadia Voss"
+      }
+    },
+    {
+      "id": "ext-012",
+      "transcript": "Couldn't get a name. About 5 foot 5, maybe 145 pounds, near the Embarcadero.",
+      "expected": {
+        "height": 65,
+        "weight": 145
+      }
+    },
+    {
+      "id": "ext-013",
+      "transcript": "Gideon Hale is six feet tall and 180 pounds.",
+      "expected": {
+        "name": "Gideon Hale",
+        "height": 72,
+        "weight": 180
+      }
+    },
+    {
+      "id": "ext-014",
+      "transcript": "Mira Castell, five foot two, 110 pounds.",
+      "expected": {
+        "name": "Mira Castell",
+        "height": 62,
+        "weight": 110
+      }
+    },
+    {
+      "id": "ext-015",
+      "transcript": "Bram Ulric stands about six foot one and weighs 210 pounds.",
+      "expected": {
+        "name": "Bram Ulric",
+        "height": 73,
+        "weight": 210
+      }
+    },
+    {
+      "id": "ext-016",
+      "transcript": "Ines Moreau, 5'3, 125 pounds.",
+      "expected": {
+        "name": "Ines Moreau",
+        "height": 63,
+        "weight": 125
+      }
+    },
+    {
+      "id": "ext-017",
+      "transcript": "Corwin Lisk, 5 foot 9, weighs about one hundred eighty pounds, forty two years old.",
+      "expected": {
+        "name": "Corwin Lisk",
+        "height": 69,
+        "weight": 180,
+        "age": 42
+      }
+    },
+    {
+      "id": "ext-018",
+      "transcript": "Sabine Krol is thirty years old, 5 foot 6, one hundred thirty five pounds.",
+      "expected": {
+        "name": "Sabine Krol",
+        "height": 66,
+        "weight": 135,
+        "age": 30
+      }
+    },
+    {
+      "id": "ext-019",
+      "transcript": "Rufus Nakamura, 5 foot 10, two hundred twenty pounds, sixty five years old.",
+      "expected": {
+        "name": "Rufus Nakamura",
+        "height": 70,
+        "weight": 220,
+        "age": 65
+      }
+    },
+    {
+      "id": "ext-020",
+      "transcript": "Petra Lindqvist, 5 foot 1, ninety eight pounds, nineteen years old.",
+      "expected": {
+        "name": "Petra Lindqvist",
+        "height": 61,
+        "weight": 98,
+        "age": 19
+      }
+    },
+    {
+      "id": "ext-021",
+      "transcript": "Hollis Graff uses a cane and moves slowly. 5 foot 8, 160 pounds.",
+      "expected": {
+        "name": "Hollis Graff",
+        "height": 68,
+        "weight": 160
+      }
+    },
+    {
+      "id": "ext-022",
+      "transcript": "Wren Ashby keeps rubbing her lower back. 5 foot 5, 135 pounds.",
+      "expected": {
+        "name": "Wren Ashby",
+        "height": 65,
+        "weight": 135
+      }
+    },
+    {
+      "id": "ext-023",
+      "transcript": "Desmond Quill was talking to himself the whole time. 6 feet, 170 pounds.",
+      "expected": {
+        "name": "Desmond Quill",
+        "height": 72,
+        "weight": 170
+      }
+    },
+    {
+      "id": "ext-024",
+      "transcript": "Ada Verhoeven drinks a lot of soda and checks her blood sugar. 5 foot 3, 150 pounds.",
+      "expected": {
+        "name": "Ada Verhoeven",
+        "height": 63,
+        "weight": 150
+      }
+    },
+    {
+      "id": "ext-025",
+      "transcript": "Leonard Fisk, goes by Red, 5 foot 9, 165 pounds.",
+      "expected": {
+        "name": "Leonard Fisk",
+        "aka": "Red",
+        "height": 69,
+        "weight": 165
+      }
+    },
+    {
+      "id": "ext-026",
+      "transcript": "Calla Brigg, people call her Birdie. 5 foot 2, 115 pounds.",
+      "expected": {
+        "name": "Calla Brigg",
+        "aka": "Birdie",
+        "height": 62,
+        "weight": 115
+      }
+    },
+    {
+      "id": "ext-027",
+      "transcript": "Ignatius Moll, also known as Iggy, 6 foot 3, 230 pounds.",
+      "expected": {
+        "name": "Ignatius Moll",
+        "aka": "Iggy",
+        "height": 75,
+        "weight": 230
+      }
+    },
+    {
+      "id": "ext-028",
+      "transcript": "Soren Achebe, 5 foot 10, 170 pounds. Says no drug use. Not a veteran.",
+      "expected": {
+        "name": "Soren Achebe",
+        "height": 70,
+        "weight": 170,
+        "substance_abuse_history": [
+          "None"
+        ],
+        "veteran_status": "No"
+      }
+    },
+    {
+      "id": "ext-029",
+      "transcript": "Maeve Kowal, 5 foot 4, 128 pounds, no medical conditions.",
+      "expected": {
+        "name": "Maeve Kowal",
+        "height": 64,
+        "weight": 128,
+        "medical_conditions": [
+          "None"
+        ]
+      }
+    },
+    {
+      "id": "ext-030",
+      "transcript": "Tobias Renn, 6 foot, 185 pounds. Calm the whole time, no aggression at all.",
+      "expected": {
+        "name": "Tobias Renn",
+        "height": 72,
+        "weight": 185,
+        "behavior": "None"
+      }
+    }
+  ]
+}

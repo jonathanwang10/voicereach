@@ -127,7 +127,8 @@ def test_backend_code_has_no_print_calls():
     offenders = []
     for path in backend.rglob("*.py"):
         rel = path.relative_to(backend)
-        if rel.parts[0] in ("tests", "scripts") or ".venv" in str(rel):
+        # scripts/ and evals/ are command-line tools (evals print metrics of synthetic data)
+        if rel.parts[0] in ("tests", "scripts", "evals") or ".venv" in str(rel):
             continue
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "print":
