@@ -30,6 +30,7 @@ _PROCESS_KEY = "__process__"
 
 _lock = threading.Lock()
 _buckets: dict[tuple[str, str], tuple[float, int]] = {}  # (bucket, key) -> (window start, count)
+_sessions: dict[str, int] = {}  # limit_key -> open realtime sessions
 
 
 def limit_from_env(env_var: str, default: int) -> int:
@@ -63,9 +64,36 @@ def check_rate_limit(bucket: str, key: str, limit: int, window_s: float = WINDOW
 
 
 def reset_rate_limits() -> None:
-    """Forget every window (tests)."""
+    """Forget every window and session count (tests)."""
     with _lock:
         _buckets.clear()
+        _sessions.clear()
+
+
+def acquire_session(key: str, per_key: int, total: int) -> bool:
+    """Take one realtime session slot for `key`; False when the key already holds
+    `per_key` or the process holds `total` (H2-1.7). Pair with release_session."""
+    with _lock:
+        if _sessions.get(key, 0) >= per_key or sum(_sessions.values()) >= total:
+            return False
+        _sessions[key] = _sessions.get(key, 0) + 1
+        return True
+
+
+def release_session(key: str) -> None:
+    """Give one slot back (never below 0)."""
+    with _lock:
+        count = _sessions.get(key, 0) - 1
+        if count > 0:
+            _sessions[key] = count
+        else:
+            _sessions.pop(key, None)
+
+
+def active_sessions(key: str | None = None) -> int:
+    """Open sessions for `key`, or for the whole process when key is None."""
+    with _lock:
+        return sum(_sessions.values()) if key is None else _sessions.get(key, 0)
 
 
 def limit_key(user_id: str, device_id: str | None) -> str:

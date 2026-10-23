@@ -38,6 +38,7 @@ Environment variables (`backend/.env`):
 | `RATE_LIMIT_*_PER_MIN` | Optional per-user-and-device limits on the paid or heavy endpoints; `RATE_LIMIT_*_TOTAL_PER_MIN` caps each bucket per process (default 5x). See the root README's Limits |
 | `LOG_LEVEL` | Optional backend log level (default `INFO`) |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
+| `REALTIME_MAX_SESSIONS_PER_USER`, `REALTIME_MAX_SESSIONS_TOTAL` | Optional caps on open realtime sessions per phone (default 2) and per process (default 20) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |
 | `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `whisper-1`, `gpt-realtime`, `text-embedding-3-large`; `services/model_config.py`) |
 

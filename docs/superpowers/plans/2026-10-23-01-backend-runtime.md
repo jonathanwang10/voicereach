@@ -1139,7 +1139,7 @@ Roadmap item 7 (concurrent sessions).
 
   Phase 5's reconnect relies on the 1008 close and on slots being released in `finally`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `test_rate_limit.py`:
 
@@ -1200,16 +1200,16 @@ def test_rate_limited_connect_holds_no_slot(ws_env, monkeypatch):
     assert _wait_for_no_sessions()
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_rate_limit.py backend/tests/test_realtime_guard.py -k "session or slot" -v`
 Expected: FAIL with `AttributeError: module 'services.rate_limit' has no attribute 'acquire_session'`.
 
-- [ ] **Step 3: Implement** the three functions under the existing `_lock`, as a `dict[str, int]` plus a total. Wire them into the proxy as listed under **Files**, and update the docs.
+- [x] **Step 3: Implement** the three functions under the existing `_lock`, as a `dict[str, int]` plus a total. Wire them into the proxy as listed under **Files**, and update the docs.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/rate_limit.py backend/main.py backend/tests backend/.env.example README.md CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md

@@ -473,3 +473,70 @@ def test_ws_connect_limit_is_per_device(ws_env, monkeypatch):
             time.sleep(0.01)
     assert len(upstreams) == 2
     assert json.loads(upstreams[1].sent[-1]) == {"type": "response.cancel"}
+
+
+# --- concurrent session caps (H2-1.7) ----------------------------------------------------
+
+from services import rate_limit as rl  # noqa: E402
+
+
+def _wait_for_no_sessions():
+    import time
+    for _ in range(200):
+        if rl.active_sessions() == 0:
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_ws_third_session_for_one_user_is_refused(ws_env):
+    assert rl.acquire_session("user-ws", 2, 20) and rl.acquire_session("user-ws", 2, 20)
+    with _connect() as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1008 and "voice sessions" in exc.value.reason
+
+
+def test_ws_process_cap(ws_env, monkeypatch):
+    monkeypatch.setenv("REALTIME_MAX_SESSIONS_TOTAL", "1")
+    assert rl.acquire_session("someone-else", 2, 20)
+    with _connect() as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1008
+
+
+def test_ws_releases_its_slot_when_the_session_ends(ws_env):
+    with _connect() as ws:
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+    assert _wait_for_no_sessions()
+
+
+def test_ws_releases_its_slot_after_an_upstream_failure(monkeypatch):    # Review Focus 4
+    import main
+
+    class _Fail(_FakeSecretClient):
+        async def post(self, *a, **k):
+            r = MagicMock()
+            r.is_success = False
+            r.status_code = 500
+            return r
+    monkeypatch.setattr(main, "verify_token", lambda token: "user-ws")
+    monkeypatch.setattr(main.httpx, "AsyncClient", _Fail)
+    with _connect() as ws:
+        assert json.loads(ws.receive_text())["type"] == "error"
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1011
+    assert _wait_for_no_sessions()
+
+
+def test_rate_limited_connect_holds_no_slot(ws_env, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_WS_CONNECT_PER_MIN", "1")
+    with _connect() as ws:
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+    with _connect() as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1008
+    assert _wait_for_no_sessions()

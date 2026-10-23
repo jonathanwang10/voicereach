@@ -16,7 +16,8 @@ from starlette.concurrency import run_in_threadpool
 from db.client import get_supabase
 from api.auth import verify_token
 from api.device import clean_device_id
-from services.rate_limit import check_keyed_limit
+from services.rate_limit import (acquire_session, check_keyed_limit, limit_from_env, limit_key,
+                                release_session)
 from services.realtime_guard import build_context_item, error_event, sanitize_client_event
 
 # Load environment variables
@@ -248,8 +249,9 @@ async def websocket_realtime_proxy(websocket: WebSocket):
     - The token is checked before accept(): a missing, invalid or not-allowed token
       closes the handshake, which the client sees as an HTTP 403.
     - After accept(): an Auth outage closes with 1011; too many connects
-      (RATE_LIMIT_WS_CONNECT_PER_MIN) or reaching REALTIME_MAX_SESSION_SECONDS
-      closes with 1008; an upstream failure closes with 1011; a normal end with 1000.
+      (RATE_LIMIT_WS_CONNECT_PER_MIN), too many open sessions
+      (REALTIME_MAX_SESSIONS_PER_USER per phone, REALTIME_MAX_SESSIONS_TOTAL per
+      process) or reaching REALTIME_MAX_SESSION_SECONDS closes with 1008; an upstream failure closes with 1011; a normal end with 1000.
     - The server sets the session config once. Client frames pass only through the
       allowlist in services/realtime_guard.py; a dropped frame gets an error event.
     """
@@ -268,6 +270,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
 
     await websocket.accept()
     close_code, close_reason = 1000, ""
+    session_key = None  # set once a session slot is held; released in finally
     try:
         if auth_outage:
             close_code, close_reason = 1011, "Auth service unavailable"
@@ -276,6 +279,13 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         if check_keyed_limit("ws_connect", user_id, device_id, "RATE_LIMIT_WS_CONNECT_PER_MIN", 10) is not None:
             close_code, close_reason = 1008, "Too many connections. Try again in a minute."
             return
+        # Concurrent sessions per phone (user + device id) and per process (H2-1.7)
+        key = limit_key(user_id, device_id)
+        if not acquire_session(key, limit_from_env("REALTIME_MAX_SESSIONS_PER_USER", 2),
+                               limit_from_env("REALTIME_MAX_SESSIONS_TOTAL", 20)):
+            close_code, close_reason = 1008, "Too many voice sessions open. Close one and try again."
+            return
+        session_key = key
 
         api_key = os.getenv("OPENAI_API_KEY")
         session_config = {
@@ -384,6 +394,8 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         except Exception:
             pass
     finally:
+        if session_key is not None:
+            release_session(session_key)
         await _close(websocket, close_code, close_reason)
 
 # Import API routers

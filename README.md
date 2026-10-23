@@ -405,6 +405,7 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | A saved `name` | 200 characters | 422 |
 | Realtime client frame | 1 MB; only the allowed event types (below) | error event, frame dropped |
 | Realtime session | `REALTIME_MAX_SESSION_SECONDS` (600) | close 1008 |
+| Open realtime sessions | `REALTIME_MAX_SESSIONS_PER_USER` (2, per user + `X-Device-Id`), `REALTIME_MAX_SESSIONS_TOTAL` (20, per process) | close 1008 "Too many voice sessions open. Close one and try again." |
 
 Requests per minute (a fixed 60 s window; a 429 carries `Retry-After`). Each
 window is keyed on the user id plus the phone's `X-Device-Id` header when it sends

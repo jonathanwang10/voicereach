@@ -72,6 +72,8 @@ only after `npx expo prebuild --platform ios`.
   request, plus save, category create and delete, take `Depends(rate_limit(...))`
   (`backend/services/rate_limit.py`) instead of `get_current_user`; limits key on the
   user id plus `X-Device-Id` (`api/device.py`), with a per-process total per bucket.
+  Open realtime sessions are capped per phone and per process (`acquire_session`;
+  the proxy releases the slot in `finally`).
   Large bodies are capped in `BODY_LIMITS` (`backend/main.py`).
   The proxy forwards only the client events in `services/realtime_guard.py`; database
   text goes to the model only as a delimited `user` item (`build_context_item`), never

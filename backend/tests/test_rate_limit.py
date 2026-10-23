@@ -156,3 +156,19 @@ def test_total_defaults_to_five_times_the_per_device_limit(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_X_PER_MIN", "1")
     allowed = [rl.check_keyed_limit("x", "u", f"device-{i:04d}", "RATE_LIMIT_X_PER_MIN", 9) is None for i in range(6)]
     assert allowed == [True] * 5 + [False]
+
+
+# --- realtime session slots (H2-1.7) ---------------------------------------------------
+
+def test_session_slots_per_key_and_per_process():
+    assert rl.acquire_session("a", 2, 3) and rl.acquire_session("a", 2, 3)
+    assert not rl.acquire_session("a", 2, 3)                 # per key
+    assert rl.acquire_session("b", 2, 3)
+    assert not rl.acquire_session("c", 2, 3)                 # per process
+    rl.release_session("a")
+    assert rl.acquire_session("c", 2, 3)
+    assert (rl.active_sessions(), rl.active_sessions("a")) == (3, 1)
+
+def test_release_never_goes_below_zero():
+    rl.release_session("nobody")
+    assert rl.active_sessions("nobody") == 0 and rl.active_sessions() == 0

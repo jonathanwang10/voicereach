@@ -22,6 +22,8 @@ Each file is idempotent.
 | `RATE_LIMIT_CATEGORY_CREATE_PER_MIN` | 10 | backend | 1 |
 | `RATE_LIMIT_DELETE_PER_MIN` | 30 | backend | 1 |
 | `RATE_LIMIT_<NAME>_TOTAL_PER_MIN` | 5 x that bucket's per-device limit | backend | 1 |
+| `REALTIME_MAX_SESSIONS_PER_USER` | 2 (per user + `X-Device-Id`) | backend | 1 |
+| `REALTIME_MAX_SESSIONS_TOTAL` | 20 (per process) | backend | 1 |
 | `ENABLE_API_DOCS` | unset (off; `1` serves `/docs`, `/redoc`, `/openapi.json`) | backend | 1 |
 
 ## Device checks
