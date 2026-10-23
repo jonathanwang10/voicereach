@@ -92,7 +92,7 @@
   - An rpc result is `SimpleNamespace(data=<scripted value>)`, unchanged: a scripted `None` stays `None`, a dict stays a dict. The `None -> []` coercion is for table queries only. `single`/`maybe_single` behave as for tables.
   - `pg_error(code: str, message: str = "database error") -> postgrest.exceptions.APIError`, built from `{"code": code, "message": message, "details": None, "hint": None}`, so `.code == code`. Use it to simulate a `RAISE ... USING ERRCODE`.
 
-- [ ] **Step 1: Write the failing tests** in `backend/tests/test_fake_supabase.py`
+- [x] **Step 1: Write the failing tests** in `backend/tests/test_fake_supabase.py`
 
 ```python
 from uuid import uuid4
@@ -139,19 +139,19 @@ def test_rpc_null_result_stays_none():
     assert FakeSupabase().on_rpc("f", data=None).rpc("f").execute().data is None
 ```
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_fake_supabase.py -q`
 Expected: FAIL. `on_rpc`, `rpc` and `pg_error` don't exist yet.
 
-- [ ] **Step 3: Implement** `on_rpc`, `rpc`, `rpc_params` and `pg_error` in `backend/tests/helpers.py`. Store rpc rules as `_Rule(table=name, verb="rpc", ...)`. In `on()`, keep `assert verb in _VERBS` so `"rpc"` can only come through `on_rpc`. Give `_Chain` a constructor path that starts with the rpc `Call` already set. Extend the class docstring with the rpc chain shape.
+- [x] **Step 3: Implement** `on_rpc`, `rpc`, `rpc_params` and `pg_error` in `backend/tests/helpers.py`. Store rpc rules as `_Rule(table=name, verb="rpc", ...)`. In `on()`, keep `assert verb in _VERBS` so `"rpc"` can only come through `on_rpc`. Give `_Chain` a constructor path that starts with the rpc `Call` already set. Extend the class docstring with the rpc chain shape.
 
-- [ ] **Step 4: Run the new tests and the whole suite**
+- [x] **Step 4: Run the new tests and the whole suite**
 
 Run: `python -m pytest -q`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/tests/helpers.py backend/tests/test_fake_supabase.py

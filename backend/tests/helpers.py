@@ -1,6 +1,7 @@
 """Shared test helpers: strict and in-memory Supabase fakes, row builders, route listing."""
 import asyncio
 import copy
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -113,6 +114,13 @@ class FakeSupabase:
       `error=exc` makes execute() raise it.
     - maybe_single() gives the first row, or None for no rows (as postgrest does);
       single() gives the first row and raises APIError PGRST116 for no rows.
+    - A function call is rpc(name, params)[.<modifier>(...)].execute(), scripted with
+      on_rpc(name, data=, error=, times=) under the same rules. It is recorded as
+      Call(table=name, verb="rpc", payload=params); rpc_params(name) lists them. Table
+      rules never answer an rpc and rpc rules never answer a table query. The params
+      must be JSON-serialisable (the real client sends them as JSON), and the result is
+      the scripted value as is (None stays None). pg_error(code) builds the APIError a
+      `RAISE ... USING ERRCODE` gives.
     """
 
     def __init__(self):
@@ -125,8 +133,21 @@ class FakeSupabase:
         self.rules.append(_Rule(table, verb, data, error, times))
         return self
 
+    def on_rpc(self, name: str, data: Any = None, error: BaseException = None,
+               times: Optional[int] = None) -> "FakeSupabase":
+        self.rules.append(_Rule(name, "rpc", data, error, times))
+        return self
+
     def table(self, name: str) -> "_Chain":
         return _Chain(self, name)
+
+    def rpc(self, name: str, params: Optional[dict] = None) -> "_Chain":
+        chain = _Chain(self, name)
+        chain._call = Call(name, "rpc", copy.deepcopy(params or {}))
+        return chain
+
+    def rpc_params(self, name: str) -> List[dict]:
+        return [c.payload for c in self.calls_to(name, "rpc")]
 
     def calls_to(self, table: str, verb: Optional[str] = None) -> List[Call]:
         return [c for c in self.calls if c.table == table and (verb is None or c.verb == verb)]
@@ -144,6 +165,8 @@ class FakeSupabase:
                 data = rule.data(call) if callable(rule.data) else copy.deepcopy(rule.data)
                 return data
         mods = "".join(f".{n}()" for n, _, _ in call.mods)
+        if call.verb == "rpc":
+            raise AssertionError(f"FakeSupabase: nothing scripted for rpc({call.table!r}){mods}.execute()")
         raise AssertionError(
             f"FakeSupabase: nothing scripted for table({call.table!r}).{call.verb}(){mods}.execute()")
 
@@ -172,6 +195,11 @@ class _Chain:
         assert_off_event_loop(f"FakeSupabase: table({self._table!r}).execute()")
         assert self._call is not None, f"execute() with no select/insert/update/... on {self._table}"
         call = self._call
+        if call.verb == "rpc":
+            try:
+                json.dumps(call.payload)
+            except (TypeError, ValueError) as e:
+                raise AssertionError(f"FakeSupabase: rpc({call.table!r}) params are not JSON-serialisable: {e}")
         self._sb.calls.append(call)
         data = self._sb._result(call)
         names = {n for n, _, _ in call.mods}
@@ -184,7 +212,15 @@ class _Chain:
                 raise APIError({"code": "PGRST116", "message": "JSON object requested, multiple (or no) rows returned",
                                 "details": "The result contains 0 rows", "hint": None})
             return SimpleNamespace(data=rows[0])
+        if call.verb == "rpc":
+            return SimpleNamespace(data=data)
         return SimpleNamespace(data=data if data is not None else [])
+
+
+def pg_error(code: str, message: str = "database error"):
+    """The APIError postgrest raises for a SQLSTATE (e.g. a `RAISE ... USING ERRCODE`)."""
+    from postgrest.exceptions import APIError
+    return APIError({"code": code, "message": message, "details": None, "hint": None})
 
 
 def paged(rows: list) -> Callable[["Call"], list]:
