@@ -49,7 +49,7 @@ def _db(existing_categories=CATEGORIES, individuals=(JAMES, ANA, SAM)):
 
 
 def _post(body, sb):
-    with patch("api.categories.create_client", return_value=sb):
+    with patch("api.categories.get_supabase", return_value=sb):
         return TestClient(app).post("/api/categories", json=body)
 
 

@@ -2,16 +2,13 @@
 Individual management API endpoints
 """
 import logging
-import os
 from fastapi import APIRouter, HTTPException, Depends, status, Query, BackgroundTasks, Body
 from fastapi.responses import JSONResponse
 from uuid import UUID
 from typing import Any, Dict, Optional
-from supabase import create_client, Client
-from dotenv import load_dotenv
-
 from api.auth import get_current_user
 from api.errors import internal_error
+from db.client import get_supabase
 from db.models import (
     SaveIndividualRequest,
     SaveIndividualResponse,
@@ -39,21 +36,6 @@ def get_current_user_name(user_id: str = Depends(get_current_user)) -> str:
     return "Demo User"
 
 
-def get_supabase_client() -> Client:
-    """Get Supabase client with credentials from environment"""
-    load_dotenv()
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
-    
-    if not url or not key:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Missing Supabase credentials"
-        )
-    
-    return create_client(url, key)
-
-
 async def generate_embedding_background(individual_id: str, individual_data: dict,
                                         categories: Optional[list] = None):
     """
@@ -68,7 +50,7 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
     try:
         from services.embedding_service import EmbeddingService
 
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         if categories is None:
             categories = supabase.table("categories").select("*").order("created_at").execute().data or []
         await EmbeddingService().store_individual_embedding(
@@ -97,7 +79,7 @@ async def save_individual(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Initialize service
         service = IndividualService(supabase)
@@ -193,7 +175,7 @@ async def search_individuals(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Initialize service
         service = IndividualService(supabase)
@@ -231,7 +213,7 @@ async def get_individual(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Initialize service
         service = IndividualService(supabase)
@@ -270,7 +252,7 @@ async def update_urgency_override(
     - 404 if individual not found
     """
     try:
-        service = IndividualService(get_supabase_client())
+        service = IndividualService(get_supabase())
 
         try:
             result = await service.update_urgency_override(
@@ -303,7 +285,7 @@ async def delete_individual(
     404 if there is no such individual.
     """
     try:
-        service = IndividualService(get_supabase_client())
+        service = IndividualService(get_supabase())
 
         if not await service.delete_individual(individual_id):
             raise HTTPException(
@@ -338,7 +320,7 @@ async def get_interactions(
     - Supports pagination with limit/offset
     """
     try:
-        service = IndividualService(get_supabase_client())
+        service = IndividualService(get_supabase())
         return await service.get_interactions(individual_id, limit=limit, offset=offset)
 
     except HTTPException:
@@ -362,7 +344,7 @@ async def check_duplicates(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Initialize duplicate detection service
         from services.duplicate_detection_service import DuplicateDetectionService

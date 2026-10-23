@@ -52,7 +52,7 @@ def _search_client():
 
 def test_route_returns_429_with_retry_after(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN", "2")
-    with patch("api.embeddings.get_supabase_client", return_value=_search_client()):
+    with patch("api.embeddings.get_supabase", return_value=_search_client()):
         codes = [_client().post("/api/embeddings/search", json={"query": "x"}) for _ in range(3)]
     assert [r.status_code for r in codes] == [200, 200, 429]
     assert codes[2].json() == {"detail": "Too many requests. Try again in a minute."}
@@ -62,7 +62,7 @@ def test_route_returns_429_with_retry_after(monkeypatch):
 def test_generate_all_defaults_to_one_per_minute():
     sb = MagicMock()
     sb.table.return_value.select.return_value.execute.return_value.data = []
-    with patch("api.embeddings.get_supabase_client", return_value=sb):
+    with patch("api.embeddings.get_supabase", return_value=sb):
         first = _client().post("/api/embeddings/generate-all")
         second = _client().post("/api/embeddings/generate-all")
     assert first.status_code == 200
@@ -74,7 +74,7 @@ def test_limits_are_per_user(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_GENERATE_ALL_PER_MIN", "1")
     sb = MagicMock()
     sb.table.return_value.select.return_value.execute.return_value.data = []
-    with patch("api.embeddings.get_supabase_client", return_value=sb):
+    with patch("api.embeddings.get_supabase", return_value=sb):
         assert _client().post("/api/embeddings/generate-all").status_code == 200
         app.dependency_overrides[get_current_user] = lambda: "someone-else"
         assert _client().post("/api/embeddings/generate-all").status_code == 200
@@ -97,9 +97,9 @@ PAID_ROUTES = [
 @pytest.mark.parametrize("env_var,method,path,kwargs", PAID_ROUTES)
 def test_every_paid_route_is_rate_limited(env_var, method, path, kwargs, monkeypatch):
     monkeypatch.setenv(env_var, "1")
-    with patch("api.embeddings.get_supabase_client", side_effect=RuntimeError("no db")), \
-         patch("api.individuals.get_supabase_client", side_effect=RuntimeError("no db")), \
-         patch("api.transcription.create_client", side_effect=RuntimeError("no db")):
+    with patch("api.embeddings.get_supabase", side_effect=RuntimeError("no db")), \
+         patch("api.individuals.get_supabase", side_effect=RuntimeError("no db")), \
+         patch("api.transcription.get_supabase", side_effect=RuntimeError("no db")):
         first = getattr(_client(), method)(path, **kwargs)
         second = getattr(_client(), method)(path, **kwargs)
     # the first call gets through to the route (which then fails on the missing database,

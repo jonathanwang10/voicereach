@@ -54,7 +54,7 @@ def _db(existing=EXISTING, interactions=()):
 
 
 def _call(sb, method, path, **kwargs):
-    with patch("api.individuals.get_supabase_client", return_value=sb):
+    with patch("api.individuals.get_supabase", return_value=sb):
         return TestClient(app).request(method, path, **kwargs)
 
 

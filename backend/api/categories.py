@@ -5,12 +5,11 @@ Minimal implementation for Task 2.0 prerequisite
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any
-import os
 import csv
 import io
-from supabase import create_client, Client
 from api.auth import get_current_user
 from api.errors import internal_error
+from db.client import get_supabase
 from db.models import CreateCategoryRequest, CategoryResponse
 from services.field_registry import category_key, export_columns, format_field_value
 from services.individual_service import fetch_last_seen, rescore_all_individuals
@@ -68,10 +67,7 @@ async def export_csv(user_id: str = Depends(get_current_user)):
     prefixed with "'". An empty database gives a header-only CSV.
     """
     try:
-        supabase: Client = create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_SERVICE_KEY")
-        )
+        supabase = get_supabase()
 
         categories = supabase.table("categories").select("*").order("created_at").execute().data or []
         individuals = supabase.table("individuals").select("*").order("created_at", desc=True).execute().data or []
@@ -111,11 +107,7 @@ async def get_categories(user_id: str = Depends(get_current_user)):
     Returns categories with their configuration for use in GPT-4o categorization.
     """
     try:
-        # Initialize Supabase client inside function to ensure env vars are loaded
-        supabase: Client = create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_SERVICE_KEY")  # Use service key for full access
-        )
+        supabase = get_supabase()
         
         # Fetch all categories from database
         response = supabase.table("categories").select("*").order("created_at").execute()
@@ -177,10 +169,7 @@ async def create_category(
     scripts/rescore_urgency.py repairs the scores later.
     """
     try:
-        supabase: Client = create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_SERVICE_KEY")
-        )
+        supabase = get_supabase()
 
         key = category_key(request.name)
         conflict = HTTPException(

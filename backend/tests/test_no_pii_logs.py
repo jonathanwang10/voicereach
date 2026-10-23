@@ -124,7 +124,7 @@ def test_save_path_logs_no_person_data(capture, capsys):
             raise RuntimeError(f"embedding failed for {SENTINEL_NAME}")
 
     db = FakeDB()
-    with patch("api.individuals.get_supabase_client", return_value=db), \
+    with patch("api.individuals.get_supabase", return_value=db), \
          patch("services.embedding_service.EmbeddingService", _FailingEmbeddings):
         r = _client().post("/api/individuals", json={
             "data": {"name": SENTINEL_NAME, "height": 70, "weight": 160},
@@ -136,7 +136,7 @@ def test_save_path_logs_no_person_data(capture, capsys):
 
 
 def test_failed_save_logs_no_person_data(capture, capsys):
-    with patch("api.individuals.get_supabase_client", return_value=FakeDB(fail=True)):
+    with patch("api.individuals.get_supabase", return_value=FakeDB(fail=True)):
         r = _client().post("/api/individuals", json={"data": {"name": SENTINEL_NAME, "height": 70, "weight": 160}})
     assert r.status_code == 500
     _assert_clean(capture, capsys)
@@ -151,7 +151,7 @@ def test_transcribe_path_logs_no_transcript(capture, capsys):
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(side_effect=RuntimeError(f"no match for {SENTINEL_NAME}"))
     with patch("api.transcription.OpenAIService", return_value=openai_mock), \
-         patch("api.transcription.create_client", return_value=FakeDB()), \
+         patch("api.transcription.get_supabase", return_value=FakeDB()), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
     assert r.status_code == 200, r.text
@@ -173,7 +173,7 @@ def test_llm_comparison_failure_logs_only_the_error_type(capture, capsys):
 # --- search -------------------------------------------------------------------------
 
 def test_list_search_logs_no_search_term(capture, capsys):
-    with patch("api.individuals.get_supabase_client", return_value=FakeDB()):
+    with patch("api.individuals.get_supabase", return_value=FakeDB()):
         r = _client().get("/api/individuals", params={"search": SENTINEL_NAME})
     assert r.status_code == 200 and r.json()["total"] == 1
     _assert_clean(capture, capsys)
@@ -183,7 +183,7 @@ def test_semantic_search_logs_no_query_or_names(capture, capsys):
     import api.embeddings as emb
     rows = [{"individual_id": PERSON["id"], "individuals": PERSON,
              "embedding_data": [0.0] * emb.embedding_service.dimensions}]
-    with patch("api.embeddings.get_supabase_client", return_value=FakeDB({"individual_embeddings": rows})), \
+    with patch("api.embeddings.get_supabase", return_value=FakeDB({"individual_embeddings": rows})), \
          patch.object(emb.embedding_service, "semantic_search",
                       AsyncMock(side_effect=RuntimeError(f"bad query {SENTINEL_NAME}"))):
         r = _client().post("/api/embeddings/search", json={"query": SENTINEL_NAME})

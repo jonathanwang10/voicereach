@@ -4,13 +4,12 @@ Audio transcription and categorization endpoints
 import asyncio
 import base64
 import logging
-import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from supabase import create_client, Client
 
 from api.errors import internal_error
+from db.client import get_supabase
 from services.openai_service import AudioTooLarge, OpenAIService, temp_audio_file
 from services.rate_limit import rate_limit
 from services.validation_helper import validate_categorized_data
@@ -70,10 +69,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
     try:
         # Initialize services
         openai_service = OpenAIService()
-        supabase: Client = create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_SERVICE_KEY")  # Use service key for full access
-        )
+        supabase = get_supabase()
         
         # 1. Fetch all categories from database
         categories_response = supabase.table("categories").select("*").order("created_at").execute()

@@ -99,7 +99,7 @@ def test_save_path_loads_categories_in_creation_order():
                                            "individual_id": "00000000-0000-0000-0000-000000000009",
                                            "user_name": "Demo User", "location": None,
                                            "has_transcription": False, "created_at": "2025-01-01T00:00:00Z"}})
-    with patch("api.individuals.get_supabase_client", return_value=sb), \
+    with patch("api.individuals.get_supabase", return_value=sb), \
          patch("services.individual_service.IndividualService.save_individual", new=AsyncMock(return_value=saved)):
         r = TestClient(app).post("/api/individuals", json={"data": {"name": "Ann", "height": 60, "weight": 120}})
     assert r.status_code == 200, r.text
@@ -170,7 +170,7 @@ def test_background_task_uses_categories():
     from api import individuals
     svc = _service([0.0] * 3072)
     db = _Tables({"categories": CATEGORIES})
-    with patch("api.individuals.get_supabase_client", return_value=db), \
+    with patch("api.individuals.get_supabase", return_value=db), \
          patch("services.embedding_service.EmbeddingService", return_value=svc):
         asyncio.run(individuals.generate_embedding_background("i-1", PERSON, CATEGORIES))
     assert db.upserts[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
@@ -181,7 +181,7 @@ def test_generate_route_uses_categories():
     import api.embeddings as emb
     svc = _service([0.0] * 3072)
     db = _Tables({"individuals": [PERSON], "categories": CATEGORIES})
-    with patch.object(emb, "get_supabase_client", return_value=db), patch.object(emb, "embedding_service", svc):
+    with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
         r = TestClient(app).post("/api/embeddings/generate",
                                  json={"individual_id": "00000000-0000-0000-0000-000000000001"})
     assert r.status_code == 200, r.text
@@ -194,7 +194,7 @@ def test_generate_all_route_uses_categories():
     import api.embeddings as emb
     svc = _service([0.0] * 3072)
     db = _Tables({"individuals": [PERSON, dict(PERSON, id="i-2", name="Bo")], "categories": CATEGORIES})
-    with patch.object(emb, "get_supabase_client", return_value=db), patch.object(emb, "embedding_service", svc):
+    with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
         r = TestClient(app).post("/api/embeddings/generate-all")
     assert r.json()["generated_count"] == 2
     assert all(u["embedding_text"].startswith("Name: ") and "HIV status" in u["embedding_text"]
@@ -227,6 +227,6 @@ def test_search_skips_vectors_of_another_dimension():
     svc.semantic_search = lambda *a, **k: EmbeddingService.semantic_search(svc, *a, **k)
     svc.search_similar_individuals = lambda *a, **k: EmbeddingService.search_similar_individuals(svc, *a, **k)
     db = _Tables({"individuals": [], "individual_embeddings": rows, "interactions": []})
-    with patch.object(emb, "get_supabase_client", return_value=db), patch.object(emb, "embedding_service", svc):
+    with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
         r = TestClient(app).post("/api/embeddings/search", json={"query": "zzzz"})
     assert [x["id"] for x in r.json()["results"]] == ["good"]

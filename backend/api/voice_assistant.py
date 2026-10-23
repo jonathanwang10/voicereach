@@ -2,13 +2,12 @@
 Voice Assistant API endpoints for OpenAI Realtime API integration
 """
 import logging
-import os
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from api.auth import get_current_user
 from api.errors import internal_error
 from pydantic import BaseModel
 from typing import Dict, Any, List
-from supabase import create_client, Client
+from db.client import get_supabase
 from services.openai_service import OpenAIService, temp_audio_file
 from services.context_service import get_context_service
 from services.rate_limit import rate_limit
@@ -20,11 +19,6 @@ logger = logging.getLogger(__name__)
 MAX_ASSISTANT_AUDIO_BYTES = 3 * 1024 * 1024
 
 router = APIRouter(prefix="/api/voice-assistant")
-
-# Initialize Supabase client
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-supabase: Client = create_client(supabase_url, supabase_key)
 
 class ContextRequest(BaseModel):
     message: str
@@ -126,7 +120,7 @@ async def get_context_for_message(
     formatted context information for the AI assistant.
     """
     try:
-        context_service = get_context_service(supabase)
+        context_service = get_context_service(get_supabase())
 
         # Get context for the message
         result = await context_service.get_context_for_message(request.message)

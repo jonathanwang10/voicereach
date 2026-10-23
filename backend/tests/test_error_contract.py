@@ -51,19 +51,19 @@ def test_internal_error_is_generic_and_logs_only_the_type(caplog):
 
 IND_ID = str(uuid4())
 BROKEN_ROUTES = [
-    ("get", "/api/categories", None, "api.categories.create_client"),
-    ("post", "/api/categories", {"name": "Shoes", "type": "text", "priority": "low"}, "api.categories.create_client"),
-    ("get", "/api/export", None, "api.categories.create_client"),
-    ("get", "/api/individuals", None, "api.individuals.get_supabase_client"),
-    ("get", f"/api/individuals/{IND_ID}", None, "api.individuals.get_supabase_client"),
-    ("get", f"/api/individuals/{IND_ID}/interactions", None, "api.individuals.get_supabase_client"),
-    ("put", f"/api/individuals/{IND_ID}/urgency-override", {"urgency_override": 50}, "api.individuals.get_supabase_client"),
-    ("post", "/api/individuals", {"data": {"name": "Ann", "height": 60, "weight": 120}}, "api.individuals.get_supabase_client"),
-    ("post", "/api/embeddings/search", {"query": "veteran"}, "api.embeddings.get_supabase_client"),
-    ("post", "/api/embeddings/generate", {"individual_id": IND_ID}, "api.embeddings.get_supabase_client"),
-    ("post", "/api/embeddings/generate-all", None, "api.embeddings.get_supabase_client"),
-    ("get", "/api/embeddings/status", None, "api.embeddings.get_supabase_client"),
-    ("post", "/api/transcribe", {"audio_data": "AAAA"}, "api.transcription.create_client"),
+    ("get", "/api/categories", None, "api.categories.get_supabase"),
+    ("post", "/api/categories", {"name": "Shoes", "type": "text", "priority": "low"}, "api.categories.get_supabase"),
+    ("get", "/api/export", None, "api.categories.get_supabase"),
+    ("get", "/api/individuals", None, "api.individuals.get_supabase"),
+    ("get", f"/api/individuals/{IND_ID}", None, "api.individuals.get_supabase"),
+    ("get", f"/api/individuals/{IND_ID}/interactions", None, "api.individuals.get_supabase"),
+    ("put", f"/api/individuals/{IND_ID}/urgency-override", {"urgency_override": 50}, "api.individuals.get_supabase"),
+    ("post", "/api/individuals", {"data": {"name": "Ann", "height": 60, "weight": 120}}, "api.individuals.get_supabase"),
+    ("post", "/api/embeddings/search", {"query": "veteran"}, "api.embeddings.get_supabase"),
+    ("post", "/api/embeddings/generate", {"individual_id": IND_ID}, "api.embeddings.get_supabase"),
+    ("post", "/api/embeddings/generate-all", None, "api.embeddings.get_supabase"),
+    ("get", "/api/embeddings/status", None, "api.embeddings.get_supabase"),
+    ("post", "/api/transcribe", {"audio_data": "AAAA"}, "api.transcription.get_supabase"),
 ]
 
 
@@ -83,7 +83,7 @@ def test_database_failure_returns_generic_500(method, path, body, target):
 def test_check_duplicates_failure_is_generic_500():
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(side_effect=RuntimeError(SECRET))
-    with patch("api.individuals.get_supabase_client", return_value=MagicMock()), \
+    with patch("api.individuals.get_supabase", return_value=MagicMock()), \
          patch("services.openai_service.OpenAIService"), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         response = _client().post("/api/individuals/check-duplicates", json={"name": "Ann"})
@@ -122,7 +122,7 @@ def _categories_supabase():
 
 
 def test_transcribe_without_audio_is_400_not_500():
-    with patch("api.transcription.create_client", return_value=_categories_supabase()), \
+    with patch("api.transcription.get_supabase", return_value=_categories_supabase()), \
          patch("api.transcription.OpenAIService"):
         response = _client().post("/api/transcribe", json={})
     assert response.status_code == 400
@@ -139,14 +139,14 @@ def test_assistant_transcribe_non_audio_is_400_not_500():
 def test_generate_embedding_missing_individual_is_404_not_500():
     sb = MagicMock()
     sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = []
-    with patch("api.embeddings.get_supabase_client", return_value=sb):
+    with patch("api.embeddings.get_supabase", return_value=sb):
         response = _client().post("/api/embeddings/generate", json={"individual_id": IND_ID})
     assert response.status_code == 404
     assert response.json() == {"detail": "Individual not found"}
 
 
 def test_generate_embedding_malformed_id_is_422():
-    with patch("api.embeddings.get_supabase_client", return_value=_broken_supabase()):
+    with patch("api.embeddings.get_supabase", return_value=_broken_supabase()):
         response = _client().post("/api/embeddings/generate", json={"individual_id": "not-a-uuid"})
     assert response.status_code == 422
 
@@ -154,13 +154,13 @@ def test_generate_embedding_malformed_id_is_422():
 # --- services re-raise instead of hiding outages (C-17) -------------------------------
 
 def test_profile_on_database_outage_is_500_not_404():
-    with patch("api.individuals.get_supabase_client", return_value=_broken_supabase()):
+    with patch("api.individuals.get_supabase", return_value=_broken_supabase()):
         response = _client().get(f"/api/individuals/{IND_ID}")
     assert response.status_code == 500
 
 
 def test_search_on_database_outage_is_500_not_empty_200():
-    with patch("api.individuals.get_supabase_client", return_value=_broken_supabase()):
+    with patch("api.individuals.get_supabase", return_value=_broken_supabase()):
         response = _client().get("/api/individuals?search=ann")
     assert response.status_code == 500
 

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from services.context_service import get_context_service
 from starlette.concurrency import run_in_threadpool
-from supabase import create_client, Client
+from db.client import get_supabase
 from api.auth import verify_token
 from services.rate_limit import check_rate_limit, limit_from_env
 from services.realtime_guard import build_context_item, error_event, sanitize_client_event
@@ -153,11 +153,6 @@ class BodySizeLimitMiddleware:
 
 app.add_middleware(BodySizeLimitMiddleware, limits=BODY_LIMITS)
 
-# Initialize Supabase client for context service
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-supabase: Client = create_client(supabase_url, supabase_key)
-
 @app.get("/health")
 async def health_check():
     """Simple health check endpoint"""
@@ -193,7 +188,7 @@ async def process_client_message_with_context(message_str: str) -> list[str]:
         return frames
 
     try:
-        context_result = await get_context_service(supabase).get_context_for_message(text)
+        context_result = await get_context_service(get_supabase()).get_context_for_message(text)
     except Exception as e:
         logger.warning("Context lookup failed, forwarding without context: %s", type(e).__name__)
         return frames

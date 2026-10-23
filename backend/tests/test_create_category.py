@@ -62,7 +62,7 @@ class _CategoryQuery:
 
 def _post(body, db=None):
     db = db or _CategoryDB()
-    with patch("api.categories.create_client", return_value=db):
+    with patch("api.categories.get_supabase", return_value=db):
         return TestClient(app).post("/api/categories", json=body), db
 
 
@@ -159,7 +159,7 @@ def test_reject_duplicate_name_is_case_insensitive():
 def test_get_categories_returns_display_name():
     db = _CategoryDB([{"id": str(uuid4()), "name": "hiv_status", "display_name": "HIV status", "type": "text",
                        "is_required": False, "is_preset": False}])
-    with patch("api.categories.create_client", return_value=db):
+    with patch("api.categories.get_supabase", return_value=db):
         cats = TestClient(app).get("/api/categories").json()["categories"]
     assert cats[0]["display_name"] == "HIV status"
 
@@ -184,7 +184,7 @@ def test_get_categories_maps_rows_and_fills_defaults():
         {"id": "c2", "name": "mood", "type": "single_select", "is_required": False, "is_preset": False,
          "options": [{"label": "Calm", "value": 0}]},  # an old row without priority/weight/trigger
     ])
-    with patch("api.categories.create_client", return_value=db):
+    with patch("api.categories.get_supabase", return_value=db):
         r = TestClient(app).get("/api/categories")
     assert r.status_code == 200
     assert r.json()["categories"][1] == {

@@ -1,8 +1,9 @@
 """Make every backend test importable offline, and give every test a clean process.
 
-backend/main.py and api/embeddings.py create Supabase/OpenAI clients at import
-time, so tests need *some* values. These dummies point nowhere; anything that
-really calls out must mock the client. The one live test is
+The Supabase client (db.client.get_supabase) is built lazily on first use, but
+the OpenAI SDK and api/auth still read these env vars, so tests need *some*
+values. These dummies point nowhere; anything that really calls out must mock
+the client (patch the importing module's `get_supabase`). The one live test is
 tests/integration/test_live_smoke.py, skipped unless its env vars are set.
 """
 import os
@@ -43,12 +44,14 @@ def _reset_process_state():
     - rate-limit windows (services.rate_limit)
     - the shared ContextService and its cache (services.context_service._context_service)
     - the verified-token cache and the Supabase Auth client (api.auth._cache, _auth_client)
+    - the shared service-key Supabase client (db.client._client)
     - app.dependency_overrides: restored to exactly what it was, so a test that
       installs an override (or pops the fake user) can't leak it into the next one
     """
     from main import app
     from api import auth
     from services import context_service
+    from db import client as db_client
     from services.rate_limit import reset_rate_limits
 
     def reset():
@@ -56,6 +59,7 @@ def _reset_process_state():
         context_service._context_service = None
         auth._cache.clear()
         auth._auth_client = None
+        db_client._client = None
 
     overrides = dict(app.dependency_overrides)
     reset()

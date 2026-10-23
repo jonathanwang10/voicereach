@@ -89,7 +89,7 @@ def test_embeddings_search_results_carry_last_seen_and_display_score():
 
     people = [person(1, name="Sam", urgency_score=30, urgency_override=90)]
     sb = FakeListDB(people, [{"individual_id": ID1, "created_at": "2026-08-01T00:00:00+00:00", "location": None}])
-    with patch("api.embeddings.get_supabase_client", return_value=sb), \
+    with patch("api.embeddings.get_supabase", return_value=sb), \
          patch("api.embeddings.embedding_service") as emb:
         emb.semantic_search = MagicMock(side_effect=lambda *a, **k: _none())
         r = TestClient(app, raise_server_exceptions=False).post("/api/embeddings/search", json={"query": "sam"})

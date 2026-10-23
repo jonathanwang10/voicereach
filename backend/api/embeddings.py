@@ -3,12 +3,11 @@ Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
 import logging
-import os
 from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
-from supabase import create_client, Client
+from db.client import get_supabase
 from pydantic import BaseModel, Field
 from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
@@ -40,18 +39,6 @@ class GenerateEmbeddingRequest(BaseModel):
     individual_id: UUID
 
 
-def get_supabase_client() -> Client:
-    """Get Supabase client instance"""
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
-    
-    # Ensure real Supabase credentials are provided
-    if not url or not key:
-        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be provided - no mock data allowed")
-    
-    return create_client(url, key)
-
-
 @router.post("/generate")
 async def generate_embedding_for_individual(
     request: GenerateEmbeddingRequest,
@@ -63,7 +50,7 @@ async def generate_embedding_for_individual(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Get individual data from database
         individual_id = str(request.individual_id)
@@ -103,7 +90,7 @@ async def semantic_search_individuals(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Text leg: the shared value-only matcher (C-01). A name match is "exact"
         # (score 1.0), a match in a data value is "value" (score 0.9).
@@ -206,7 +193,7 @@ async def generate_embeddings_for_all_individuals(
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Get all individuals
         result = supabase.table("individuals").select("*").execute()
@@ -250,7 +237,7 @@ async def get_embedding_status(user_id: str = Depends(get_current_user)):
     """
     try:
         # Get Supabase client
-        supabase = get_supabase_client()
+        supabase = get_supabase()
         
         # Count total individuals
         total_result = supabase.table("individuals").select("id", count="exact").execute()

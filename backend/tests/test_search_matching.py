@@ -154,7 +154,7 @@ def _post_search(sb, query, semantic=()):
     async def fake_semantic(*a, **k):
         return list(semantic)
 
-    with patch("api.embeddings.get_supabase_client", return_value=sb), \
+    with patch("api.embeddings.get_supabase", return_value=sb), \
          patch("api.embeddings.embedding_service") as emb:
         emb.semantic_search = MagicMock(side_effect=fake_semantic)
         emb.dimensions = 1  # the fake stored vectors below are 1-d

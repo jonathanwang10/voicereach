@@ -45,7 +45,7 @@ def _transcribe(raw_categorized):
     dup = MagicMock()
     dup.return_value.find_duplicates = AsyncMock(return_value=[])
     with patch("api.transcription.OpenAIService", return_value=openai_mock), \
-         patch("api.transcription.create_client", return_value=supabase), \
+         patch("api.transcription.get_supabase", return_value=supabase), \
          patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
         response = TestClient(app).post("/api/transcribe", json={"audio_data": "AAAA"})
     return response, dup.return_value.find_duplicates
@@ -84,7 +84,7 @@ def test_save_route_passes_normalised_data():
     )
     supabase = MagicMock()
     supabase.table.return_value.select.return_value.order.return_value.execute.return_value.data = CATEGORIES
-    with patch("api.individuals.get_supabase_client", return_value=supabase), \
+    with patch("api.individuals.get_supabase", return_value=supabase), \
          patch("api.individuals.IndividualService") as svc:
         svc.return_value.save_individual = AsyncMock(return_value=result)
         response = TestClient(app).post("/api/individuals", json={"data": {
@@ -97,7 +97,7 @@ def test_save_route_passes_normalised_data():
 def test_save_route_rejects_invalid_values_with_field_messages():
     supabase = MagicMock()
     supabase.table.return_value.select.return_value.execute.return_value.data = CATEGORIES
-    with patch("api.individuals.get_supabase_client", return_value=supabase):
+    with patch("api.individuals.get_supabase", return_value=supabase):
         response = TestClient(app).post("/api/individuals", json={"data": {
             "name": "Ann", "height": 70, "weight": 150, "gender": "maybe"}})
     assert response.status_code == 400

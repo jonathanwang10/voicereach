@@ -117,7 +117,7 @@ def _assert_known(sb):
 def test_individual_writes_use_existing_columns():
     sb = _recording_db()
     client = TestClient(app)
-    with patch("api.individuals.get_supabase_client", return_value=sb):
+    with patch("api.individuals.get_supabase", return_value=sb):
         body = {"data": {"name": "Ann", "height": 70, "weight": 150}, "location": LOCATION,
                 "transcription": "t", "audio_url": "a.m4a"}
         assert client.post("/api/individuals", json=body).status_code == 200
@@ -131,7 +131,7 @@ def test_individual_writes_use_existing_columns():
 def test_category_insert_uses_existing_columns():
     sb = FakeSupabase().on("categories", "select", data=[])
     sb.on("categories", "insert", data=lambda call: [call.payload])
-    with patch("api.categories.create_client", return_value=sb):
+    with patch("api.categories.get_supabase", return_value=sb):
         r = TestClient(app).post("/api/categories", json={"name": "Shoe size", "type": "number", "urgency_weight": 5})
     assert r.status_code == 201, r.text
     _assert_known(sb)

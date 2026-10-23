@@ -19,7 +19,7 @@ def _client():
 # --- body caps (413) -----------------------------------------------------------------
 
 def test_transcribe_body_over_8mb_is_413_before_any_work():
-    with patch("api.transcription.create_client") as create_client:
+    with patch("api.transcription.get_supabase") as create_client:
         r = _client().post("/api/transcribe", json={"audio_data": "A" * (8 * MB + 1)})
     assert r.status_code == 413
     assert "detail" in r.json()
@@ -56,7 +56,7 @@ def test_chunked_body_through_fastapi_is_413_not_400():
     def chunks():
         for _ in range(30):
             yield b"x" * 1024
-    with patch("api.individuals.get_supabase_client") as gsc:
+    with patch("api.individuals.get_supabase") as gsc:
         r = _client().post("/api/individuals/check-duplicates", content=chunks(),
                            headers={"content-type": "application/json"})
     assert r.request.headers.get("transfer-encoding") == "chunked"
@@ -84,7 +84,7 @@ def test_assistant_audio_under_cap_is_transcribed():
 
 
 def test_check_duplicates_body_over_20kb_is_413():
-    with patch("api.individuals.get_supabase_client") as gsc:
+    with patch("api.individuals.get_supabase") as gsc:
         r = _client().post("/api/individuals/check-duplicates", json={"name": "A", "notes": "x" * 21_000})
     assert r.status_code == 413
     gsc.assert_not_called()
@@ -106,7 +106,7 @@ def test_check_duplicates_needs_an_object_body():
     {"query": "x" * 501},
 ])
 def test_embeddings_search_rejects_out_of_range_requests(body):
-    with patch("api.embeddings.get_supabase_client") as gsc:
+    with patch("api.embeddings.get_supabase") as gsc:
         r = _client().post("/api/embeddings/search", json=body)
     assert r.status_code == 422
     gsc.assert_not_called()
@@ -115,7 +115,7 @@ def test_embeddings_search_rejects_out_of_range_requests(body):
 def test_embeddings_search_accepts_bounds():
     sb = MagicMock()
     sb.table.return_value.select.return_value.execute.return_value.data = []
-    with patch("api.embeddings.get_supabase_client", return_value=sb):
+    with patch("api.embeddings.get_supabase", return_value=sb):
         r = _client().post("/api/embeddings/search",
                            json={"query": "x" * 500, "top_k": 50, "similarity_threshold": 1})
     assert r.status_code == 200
@@ -205,7 +205,7 @@ def test_audio_url_too_large_is_413_from_the_route(monkeypatch):
         {"name": "name", "type": "text", "is_required": True, "options": None}]
     svc = MagicMock()
     svc.return_value.transcribe_audio = AsyncMock(side_effect=AudioTooLarge("Audio file is larger than 5 MB"))
-    with patch("api.transcription.create_client", return_value=sb), \
+    with patch("api.transcription.get_supabase", return_value=sb), \
          patch("api.transcription.OpenAIService", svc):
         r = _client().post("/api/transcribe", json={"audio_url": "https://x.supabase.co/a.m4a"})
     assert r.status_code == 413
@@ -244,7 +244,7 @@ def test_transcribe_route_answers_before_the_app_gives_up(monkeypatch):
 
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = slow
-    with patch("api.transcription.create_client", return_value=sb), \
+    with patch("api.transcription.get_supabase", return_value=sb), \
          patch("api.transcription.OpenAIService", svc):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
     assert r.status_code == 504
@@ -298,7 +298,7 @@ def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
         {"name": "name", "type": "text", "is_required": True, "options": None}]
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = failing
-    with patch("api.transcription.create_client", return_value=sb), \
+    with patch("api.transcription.get_supabase", return_value=sb), \
          patch("api.transcription.OpenAIService", svc), \
          patch("api.voice_assistant.OpenAIService", svc):
         r = _client().post(route, **kwargs)

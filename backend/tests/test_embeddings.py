@@ -66,7 +66,7 @@ def test_search_route_returns_semantic_hits_in_score_order():
     rows = [{"individual_id": ids[name], "embedding_data": vec, "individuals": people[i]}
             for i, (name, vec) in enumerate(STORED)]
     sb = FakeListDB(people, [], embeddings=rows)
-    with patch.object(emb, "get_supabase_client", return_value=sb), patch.object(emb, "embedding_service", _service()):
+    with patch.object(emb, "get_supabase", return_value=sb), patch.object(emb, "embedding_service", _service()):
         r = TestClient(app).post("/api/embeddings/search", json={"query": "zzz"})  # no text match
     assert r.status_code == 200, r.text
     body = r.json()

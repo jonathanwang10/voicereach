@@ -41,7 +41,7 @@ class _ExportDB:
 
 def _export(db):
     from main import app
-    with patch("api.categories.create_client", return_value=db):
+    with patch("api.categories.get_supabase", return_value=db):
         r = TestClient(app).get("/api/export")
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("text/csv")
@@ -137,7 +137,7 @@ def test_export_route_registered_once():
 def test_embedding_upsert_conflicts_on_individual_id():
     from api import individuals
     sb = MagicMock()
-    with patch("api.individuals.get_supabase_client", return_value=sb), \
+    with patch("api.individuals.get_supabase", return_value=sb), \
          patch("services.embedding_service.EmbeddingService.generate_embedding",
                new=AsyncMock(return_value=[0.0] * 3072)):
         asyncio.run(individuals.generate_embedding_background("i-1", {"name": "Ann", "data": {}}, []))

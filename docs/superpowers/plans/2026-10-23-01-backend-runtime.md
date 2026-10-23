@@ -161,7 +161,7 @@ Roadmap item 2, first half.
 - Produces: `backend/db/client.py: def get_supabase() -> Client`. The client is built lazily, once, under a `threading.Lock`, and is the only `create_client` call for the service key. `POSTGREST_TIMEOUT_SECONDS = 20`. The cached client lives in module-level `_client`.
 - Produces (test convention, used by every later task and phase): routes import the name (`from db.client import get_supabase`), and tests patch it per module: `patch("api.individuals.get_supabase", return_value=fake)`.
 
-- [ ] **Step 1: Write the failing tests** in `backend/tests/test_db_client.py`
+- [x] **Step 1: Write the failing tests** in `backend/tests/test_db_client.py`
 
 ```python
 import os, threading, time
@@ -211,18 +211,18 @@ def test_no_module_builds_a_client_at_import():
     assert not hasattr(main, "supabase") and not hasattr(voice_assistant, "supabase")
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_db_client.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'db.client'`.
 
-- [ ] **Step 3: Implement `get_supabase() -> Client` in `backend/db/client.py`**
+- [x] **Step 3: Implement `get_supabase() -> Client` in `backend/db/client.py`**
 
 The client is `create_client(url, key, options=ClientOptions(postgrest_client_timeout=POSTGREST_TIMEOUT_SECONDS))`, with `ClientOptions` from `supabase`. Use double-checked locking on `_client`. Raise `RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")` when either is unset. It must be a `RuntimeError`, not a `ValueError`: `/api/transcribe` maps `ValueError` to a 400. Don't call `load_dotenv` (`main.py` already does). Add a "why" comment: a 20 s PostgREST timeout sits below the 110 s transcribe deadline (H2-1.2).
 
 Then replace every service-key `create_client` and `get_supabase_client()` listed under **Files** with `get_supabase()`. Delete the import-time clients at `main.py:156-159` and `voice_assistant.py:24-27`. Update `conftest.py` so its docstring no longer says modules build clients at import, and add `db_client._client = None` to `reset()`.
 
-- [ ] **Step 4: Rename the test patch targets**
+- [x] **Step 4: Rename the test patch targets**
 
 Run from the repo root:
 
@@ -236,11 +236,11 @@ grep -rlE "get_supabase_client|(transcription|categories)\.create_client" backen
 
 Expected: `grep -rn "get_supabase_client\|\.create_client\"" backend/tests` finds only `test_rescore.py` (the script's own `get_supabase_client`, which stays).
 
-- [ ] **Step 5: Run the new tests and the full checks**
+- [x] **Step 5: Run the new tests and the full checks**
 
 Run: `python -m pytest backend/tests/test_db_client.py -v`. Expected: 5 passed. Then run the full checks.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/db/client.py backend/api backend/main.py backend/tests
