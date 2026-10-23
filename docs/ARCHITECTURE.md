@@ -113,7 +113,7 @@ below.
 
 ## API structure
 
-All routes except `GET /health` and `GET /` need
+All routes except `GET /health` need
 `Authorization: Bearer <Supabase access token>`.
 
 - **Transcription:** `POST /api/transcribe` — audio to transcript, fields and

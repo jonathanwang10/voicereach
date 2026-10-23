@@ -19,6 +19,9 @@ os.environ.setdefault("SUPABASE_URL", "http://127.0.0.1:9")
 os.environ.setdefault("SUPABASE_ANON_KEY", _DUMMY_JWT)
 os.environ.setdefault("SUPABASE_SERVICE_KEY", _DUMMY_JWT)
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy")
+# Forced, not setdefault: load_dotenv() never overrides a set variable, so a developer's
+# backend/.env can't turn the API docs on under test (H2-1.6).
+os.environ["ENABLE_API_DOCS"] = "0"
 
 
 import pytest  # noqa: E402

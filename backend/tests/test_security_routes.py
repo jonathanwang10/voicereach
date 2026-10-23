@@ -9,7 +9,7 @@ from tests.helpers import all_route_paths
 
 SAMPLE_ID = "550e8400-e29b-41d4-a716-446655440001"
 # The only HTTP routes that answer without a token
-PUBLIC = {"/health", "/", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+PUBLIC = {"/health"}
 
 
 def _paths():
@@ -67,7 +67,7 @@ def test_every_api_route_is_401_without_a_token(method, path):
 
 
 @pytest.mark.real_auth
-@pytest.mark.parametrize("path", sorted(PUBLIC - {"/docs/oauth2-redirect"}))
+@pytest.mark.parametrize("path", sorted(PUBLIC))
 def test_public_routes_answer_without_a_token(path):
     assert TestClient(app).get(path).status_code == 200
 
@@ -77,3 +77,16 @@ def test_ssrf_guard_rejects_lookalike_host():
     svc = OpenAIService.__new__(OpenAIService)
     with pytest.raises(ValueError):
         asyncio.run(svc.transcribe_audio("https://supabase.evil.com/x.m4a"))
+
+
+from main import api_docs_urls  # noqa: E402
+
+def test_api_docs_urls_only_with_enable_api_docs_1():
+    off = {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    assert api_docs_urls(None) == off and api_docs_urls("0") == off and api_docs_urls("true") == off
+    assert api_docs_urls("1") == {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+
+@pytest.mark.real_auth
+@pytest.mark.parametrize("path", ["/", "/docs", "/redoc", "/openapi.json"])
+def test_docs_and_root_are_404_by_default(path):
+    assert TestClient(app).get(path).status_code == 404

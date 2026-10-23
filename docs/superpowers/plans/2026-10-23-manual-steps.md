@@ -18,6 +18,7 @@ Each file is idempotent.
 | `TRANSCRIBE_MODEL` | `whisper-1` | backend | 1 |
 | `REALTIME_MODEL` | `gpt-realtime` | backend | 1 |
 | `EMBEDDING_MODEL` | `text-embedding-3-large` | backend | 1 |
+| `ENABLE_API_DOCS` | unset (off; `1` serves `/docs`, `/redoc`, `/openapi.json`) | backend | 1 |
 
 ## Device checks
 

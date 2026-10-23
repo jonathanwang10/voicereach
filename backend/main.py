@@ -63,7 +63,17 @@ configure_logging(os.getenv("LOG_LEVEL"))
 logging.getLogger("uvicorn.access").addFilter(DropQueryString())
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SF Homeless Outreach API", version="0.1.0")
+
+
+def api_docs_urls(value: str | None) -> dict[str, str | None]:
+    """FastAPI's docs URLs: on only for ENABLE_API_DOCS=1 exactly. The schema lists every
+    route and field, so a public deployment doesn't publish it by default (H2-1.6)."""
+    if value == "1":
+        return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+app = FastAPI(title="SF Homeless Outreach API", version="0.1.0", **api_docs_urls(os.getenv("ENABLE_API_DOCS")))
 
 
 def cors_allow_origins(value: str | None) -> list[str]:
@@ -159,16 +169,6 @@ app.add_middleware(BodySizeLimitMiddleware, limits=BODY_LIMITS)
 async def health_check():
     """Simple health check endpoint"""
     return {"status": "ok"}
-
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "SF Homeless Outreach API",
-        "framework": "FastAPI",
-        "project": "sf10x-hackathon",
-        "note": "If you see Flask errors, Railway deployed the wrong project!"
-    }
 
 async def process_client_message_with_context(message_str: str) -> list[str]:
     """

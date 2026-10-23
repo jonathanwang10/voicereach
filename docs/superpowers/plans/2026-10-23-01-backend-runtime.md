@@ -53,6 +53,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 - Task 5: `check_duplicates` now imports `DuplicateDetectionService` at module top (as the task says), so `test_error_contract.py`'s patch target moved to `api.individuals.DuplicateDetectionService`.
 - Task 7: `test_request_limits.py`'s temp-file test stub `failing(path)` now takes `**kwargs`, because the assistant route passes `limits=QUESTION_LIMITS`.
 - Task 9: two more older tests pinned the old behaviour and were updated with it: `test_delete_individual.py` (a merge into a missing person now raises `IndividualNotFound`) and `test_individuals_routes.py` (the 422 detail now lists `weight` with commas).
+- Task 11: `docs/ARCHITECTURE.md` also said `GET /` was public; fixed in the same commit.
 
 ## Decisions the roadmap left open
 
@@ -988,7 +989,7 @@ Roadmap item 6.
 **Interfaces:**
 - Produces: `main.py: def api_docs_urls(value: str | None) -> dict[str, str | None]`.
 
-- [ ] **Step 1: Write the failing tests** in `test_security_routes.py`
+- [x] **Step 1: Write the failing tests** in `test_security_routes.py`
 
 ```python
 from main import api_docs_urls
@@ -1004,16 +1005,16 @@ def test_docs_and_root_are_404_by_default(path):
     assert TestClient(app).get(path).status_code == 404
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_security_routes.py -v`
 Expected: FAIL with `ImportError: cannot import name 'api_docs_urls'`.
 
-- [ ] **Step 3: Implement** `api_docs_urls` (only the exact string `"1"` enables the docs), delete `root`, set `PUBLIC = {"/health"}`, and update the docs.
+- [x] **Step 3: Implement** `api_docs_urls` (only the exact string `"1"` enables the docs), delete `root`, set `PUBLIC = {"/health"}`, and update the docs.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass. `test_every_api_route_is_401_without_a_token` still covers every route.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass. `test_every_api_route_is_401_without_a_token` still covers every route.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/main.py backend/tests backend/.env.example README.md backend/README.md docs/superpowers/plans/2026-10-23-manual-steps.md

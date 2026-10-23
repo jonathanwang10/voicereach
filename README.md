@@ -430,7 +430,7 @@ dropped and answered with `{"type": "error", "error": {"code":
 the model only as a `user` item with id `ctx_...`, fenced as REFERENCE DATA that
 the session instructions say never to obey.
 
-Interactive docs are at `/docs` when the server is running. Endpoint detail and
+Interactive docs are at `/docs` when the server runs with `ENABLE_API_DOCS=1` (off by default). Endpoint detail and
 request bodies are in [`backend/README.md`](backend/README.md).
 
 ### Two rules worth knowing before changing anything
