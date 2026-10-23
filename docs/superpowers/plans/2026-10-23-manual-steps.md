@@ -14,6 +14,10 @@ Each file is idempotent.
 
 | Name | Default | Service | Phase |
 |---|---|---|---|
+| `CHAT_MODEL` | `gpt-4o` | backend | 1 |
+| `TRANSCRIBE_MODEL` | `whisper-1` | backend | 1 |
+| `REALTIME_MODEL` | `gpt-realtime` | backend | 1 |
+| `EMBEDDING_MODEL` | `text-embedding-3-large` | backend | 1 |
 
 ## Device checks
 

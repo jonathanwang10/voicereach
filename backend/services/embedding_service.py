@@ -9,6 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
 from db.client import run_db
+from services import model_config
 from services.field_registry import build_embedding_text
 
 # Load environment variables
@@ -22,8 +23,11 @@ class EmbeddingService:
     def __init__(self):
         # Fail fast instead of the SDK defaults (600 s read, 2 retries)
         self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30, max_retries=1)
-        self.model = "text-embedding-3-large"
         self.dimensions = 3072  # text-embedding-3-large dimensions
+
+    @property
+    def model(self) -> str:
+        return model_config.EMBEDDING_MODEL
         
     async def generate_embedding(self, text: str) -> List[float]:
         """

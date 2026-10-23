@@ -12,6 +12,7 @@ from typing import Iterator, Optional, Dict
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
+from services import model_config
 from services.field_registry import category_key, parse_height_inches
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ class OpenAIService:
     async def _whisper(self, file_path: str) -> str:
         with open(file_path, "rb") as audio_file:
             transcript = await self.whisper_client.audio.transcriptions.create(
-                model="whisper-1",
+                model=model_config.TRANSCRIBE_MODEL,
                 file=audio_file,
                 response_format="text",
                 timeout=WHISPER_TIMEOUT_SECONDS,
@@ -219,7 +220,7 @@ Return JSON only."""
         try:
             # Call GPT-4o API
             response = await self.client.chat.completions.create(
-                model="gpt-4o",
+                model=model_config.CHAT_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a data extraction assistant. Extract only explicitly stated information from transcriptions. Return valid JSON only."},
                     {"role": "user", "content": prompt}
@@ -314,7 +315,7 @@ Return JSON only."""
         try:
             # Call GPT-4o with the comparison prompt
             response = await self.client.chat.completions.create(
-                model="gpt-4o",
+                model=model_config.CHAT_MODEL,
                 messages=[
                     {
                         "role": "system",

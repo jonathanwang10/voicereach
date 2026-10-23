@@ -91,11 +91,14 @@ interaction, else when the record was created. It is shown in whole days, with
 
 Three separate AI capabilities, easy to confuse:
 
-| Capability | Model | Where |
+| Capability | Model (env var) | Where |
 |---|---|---|
-| Transcribe + extract fields | `whisper-1` + `gpt-4o` | `services/openai_service.py` |
-| Semantic search over profiles | `text-embedding-3-large` | `services/embedding_service.py` |
-| Live spoken assistant | `gpt-realtime` (questions transcribed by `whisper-1`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
+| Transcribe + extract fields | `whisper-1` (`TRANSCRIBE_MODEL`) + `gpt-4o` (`CHAT_MODEL`) | `services/openai_service.py` |
+| Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
+| Live spoken assistant | `gpt-realtime` (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
+
+The model names live in `backend/services/model_config.py`; each env var
+overrides its default (blank or unset = the default).
 
 [`docs/VOICE_PIPELINE.md`](docs/VOICE_PIPELINE.md) walks through the whole
 recording-to-save path and the assistant path step by step.

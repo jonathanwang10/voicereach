@@ -10,6 +10,7 @@ import websockets
 from fastapi import FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from services import model_config
 from services.context_service import get_context_service
 from starlette.concurrency import run_in_threadpool
 from db.client import get_supabase
@@ -278,7 +279,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         session_config = {
             "session": {
                 "type": "realtime",
-                "model": "gpt-realtime",
+                "model": model_config.REALTIME_MODEL,
                 # Use audio-only; UI consumes transcript events for text
                 "output_modalities": ["audio"],
                 "instructions": SESSION_INSTRUCTIONS,
@@ -319,7 +320,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
                 return
             ephemeral_key = token_response.json()["value"]
 
-        openai_ws_url = "wss://api.openai.com/v1/realtime?model=gpt-realtime"
+        openai_ws_url = f"wss://api.openai.com/v1/realtime?model={model_config.REALTIME_MODEL}"
         headers = {"Authorization": f"Bearer {ephemeral_key}"}
 
         async with websockets.connect(openai_ws_url, additional_headers=headers) as openai_ws:

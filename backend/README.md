@@ -38,6 +38,7 @@ Environment variables (`backend/.env`):
 | `RATE_LIMIT_*_PER_MIN` | Optional per-account limits on the paid endpoints (see [Limits](#limits)) |
 | `LOG_LEVEL` | Optional backend log level (default `INFO`) |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
+| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `whisper-1`, `gpt-realtime`, `text-embedding-3-large`; `services/model_config.py`) |
 
 Then: API at `http://localhost:8001`, interactive docs at `/docs`, health check
 at `/health`. `backend/.env` is loaded once at startup (`load_dotenv()` never

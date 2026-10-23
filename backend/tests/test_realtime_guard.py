@@ -436,3 +436,15 @@ def test_ws_upstream_secret_failure_closes_with_1011(monkeypatch):
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_text()
     assert exc.value.code == 1011
+
+
+def test_ws_session_uses_realtime_model(ws_env, monkeypatch):
+    import main
+    from services import model_config
+    urls = []
+    monkeypatch.setattr(model_config, "REALTIME_MODEL", "rt-x")
+    monkeypatch.setattr(main.websockets, "connect", lambda url, **k: urls.append(url) or ws_env)
+    with _connect() as ws:
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+    assert _FakeSecretClient.session["session"]["model"] == "rt-x"
+    assert urls == ["wss://api.openai.com/v1/realtime?model=rt-x"]

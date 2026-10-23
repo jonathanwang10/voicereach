@@ -549,7 +549,7 @@ Roadmap item 8.
 **Interfaces:**
 - Produces: `services/model_config.py` with the module constants `CHAT_MODEL` (default `gpt-4o`), `TRANSCRIBE_MODEL` (`whisper-1`), `REALTIME_MODEL` (`gpt-realtime`) and `EMBEDDING_MODEL` (`text-embedding-3-large`). Each is read at import from the env var of the same name; blank or unset uses the default. Consumers write `from services import model_config` and read `model_config.X` at call time, so tests can `monkeypatch.setattr(model_config, "X", ...)`. Phase 3 adds `DUPLICATE_MODEL` and changes the `TRANSCRIBE_MODEL` default to `gpt-transcribe`; Phase 5 reads `TRANSCRIBE_MODEL` for the realtime input transcription. `whisper-1` stays this phase's default so behaviour doesn't change until Phase 3 also adds the vocabulary prompt.
 
-- [ ] **Step 1: Write the failing tests** in `test_model_config.py`
+- [x] **Step 1: Write the failing tests** in `test_model_config.py`
 
 ```python
 import importlib
@@ -611,16 +611,16 @@ def test_ws_session_uses_realtime_model(ws_env, monkeypatch):
     assert urls == ["wss://api.openai.com/v1/realtime?model=rt-x"]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_model_config.py backend/tests/test_realtime_guard.py -k "model" -v`
 Expected: FAIL with `ImportError: cannot import name 'model_config'`.
 
-- [ ] **Step 3: Implement `services/model_config.py`** with a private `_env(name: str, default: str) -> str` helper (strip; blank means default). Replace the six hardcoded names listed under **Files**. Update `.env.example`, both READMEs and the manual-steps env table.
+- [x] **Step 3: Implement `services/model_config.py`** with a private `_env(name: str, default: str) -> str` helper (strip; blank means default). Replace the six hardcoded names listed under **Files**. Update `.env.example`, both READMEs and the manual-steps env table.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services backend/main.py backend/.env.example backend/tests README.md backend/README.md docs/superpowers/plans/2026-10-23-manual-steps.md
