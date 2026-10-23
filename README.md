@@ -132,8 +132,10 @@ number and single-select fields only. A number field also has an optional
 "Scale max": the value that counts as its full weight (blank means 300; for
 "days without food", 10 makes 5 days half the weight). A weighted or auto-trigger category
 changes everyone's urgency (every weighted category is in the denominator), so
-creating one re-scores every stored person (`rescore_all_individuals`; only
-changed scores are written, overrides are kept). Every category, custom ones
+creating one re-scores every stored person, every row, in the background after
+the create is answered (`rescore_all_individuals`; only changed scores are
+written, 500 at a time through the `rescore_batch` SQL function; overrides are
+kept, and a person saved meanwhile is skipped rather than overwritten). Every category, custom ones
 included, becomes an export column, part of each person's semantic-search text,
 and a field the voice assistant is shown (`services/field_registry.py`).
 
@@ -206,7 +208,8 @@ score from the older maths until re-saved. The script recomputes each stored
 `urgency_score` with the current categories and writes only the rows that
 changed (the `updated_at` trigger bumps those rows); `urgency_override` is never
 touched. It reads every row: whole-table reads page past Supabase's API row
-limit (`fetch_all` in `backend/db/client.py`).
+limit (`fetch_all` in `backend/db/client.py`), and writes in batches of 500
+through `rescore_batch` (migration `20261102000005`, so apply the migrations first).
 
 The SQL Editor may ask you to confirm because the file contains `DROP` and
 `DELETE` statements. If you only want to close direct table access, this is

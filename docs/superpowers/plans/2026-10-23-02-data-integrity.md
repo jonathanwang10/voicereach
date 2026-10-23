@@ -55,6 +55,7 @@
 - Task 9: `test_audit_routes_use_phase_1s_device_dependency` moved to Task 10. It asserts that `api.individuals` and `api.categories` import `get_device_id`, which only Task 10 wires up; importing it unused in Task 9 would fail ruff F401.
 - Task 10: the individuals-route audit tests live in `test_individuals_routes.py` (its `_db`/FakeSupabase covers delete too; `test_delete_individual.py`'s route tests mock the service). `_writes()` there leaves `audit_log` rows out so the save tests keep asserting "one rpc, no table writes"; `test_schema_contract.py`'s recording DB scripts `audit_log` and expects its insert.
 - Task 12: the older single-select `toEqual` payload test in `CategoriesScreen.test.tsx` now includes `number_scale_max: null`.
+- Task 13: `create_category` is a sync `def` since Phase 1 (H2-1.1), so `test_create_category_answers_before_rescoring` calls it without `await` from a sync test (an async test would run the strict fake on the event loop). The "no version assignment" check in `test_rescore_batch_function` inspects the SET clause only, since the WHERE clause legitimately reads `i.version = r.version`.
 
 ## File Structure
 
@@ -1033,7 +1034,7 @@ git commit -m "feat(mobile): optional Scale max for number categories (H2-2.8)" 
     4. Return the sum of the returned counts. Invalidate the context cache when that sum is > 0.
   - `api/categories.py: def rescore_in_background() -> None` gets `get_supabase()` and runs the re-score, logging a failure as `"Re-scoring after category create failed: %s", type(e).__name__`. `create_category` takes `background_tasks: BackgroundTasks` and, for a weighted or auto-trigger category, does `background_tasks.add_task(rescore_in_background)` instead of re-scoring inline.
 
-- [ ] **Step 1: Write the failing tests** in `test_rescore.py`. The fixtures gain `"version": 1`. `_db()` scripts `on_rpc("rescore_batch", data=lambda c: len(c.payload["p_rows"]))`. The route patch target becomes Phase 1's `get_supabase` in `api.categories`. Add:
+- [x] **Step 1: Write the failing tests** in `test_rescore.py`. The fixtures gain `"version": 1`. `_db()` scripts `on_rpc("rescore_batch", data=lambda c: len(c.payload["p_rows"]))`. The route patch target becomes Phase 1's `get_supabase` in `api.categories`. Add:
 
 ```python
 def test_rescore_sends_only_changed_rows_through_rescore_batch():
@@ -1067,18 +1068,18 @@ async def test_create_category_answers_before_rescoring():
 
 (Add the route's other dependencies, such as `device_id`, as keyword arguments, matching its final signature.) Keep `test_a_rescore_failure_still_returns_the_created_category` and the other route tests: `TestClient` runs background tasks before it returns. Also add `test_rescore_batch_function` to `test_schema_sql.py`: the signature, `i.version = r.version`, and that the body has no `version =` assignment.
 
-- [ ] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_rescore.py backend/tests/test_schema_sql.py -q`).
+- [x] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_rescore.py backend/tests/test_schema_sql.py -q`).
 
-- [ ] **Step 3: Implement** the migration, the `schema.sql` fold and the Python from the Interfaces block. If the static chain scan in `test_schema_contract.py` can't see a `fetch_all(lambda: ...)` read, follow whatever pattern Phase 1 set for it.
+- [x] **Step 3: Implement** the migration, the `schema.sql` fold and the Python from the Interfaces block. If the static chain scan in `test_schema_contract.py` can't see a `fetch_all(lambda: ...)` read, follow whatever pattern Phase 1 set for it.
 
-- [ ] **Step 4: Docs and manual step.**
+- [x] **Step 4: Docs and manual step.**
   - README: re-scoring now covers every row (no 1000-row cap), runs after the create is answered, and skips rows saved meanwhile.
   - CLAUDE.md: "Creating a weighted or auto-trigger category re-scores everyone in the background (`rescore_all_individuals`, batches of 500 via `rescore_batch`)".
   - Manual-steps file: `5. 20261102000005_rescore_batch.sql. Then: cd backend && python scripts/rescore_urgency.py.`
 
-- [ ] **Step 5: Run the checks.** Expected: PASS.
+- [x] **Step 5: Run the checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/ README.md CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md

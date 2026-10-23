@@ -288,7 +288,7 @@ def test_every_function_pins_its_search_path():
     for m in re.finditer(r"CREATE OR REPLACE FUNCTION (\w+)\(", FLAT):
         assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
 
-@pytest.mark.parametrize("fn", ["save_individual"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
@@ -336,3 +336,14 @@ def test_categories_number_scale_max_column_and_check():
     drop = "ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_number_scale_max_positive;"
     add = f"ALTER TABLE categories ADD CONSTRAINT categories_number_scale_max_positive {check};"
     assert drop in FLAT and add in FLAT and FLAT.index(drop) < FLAT.index(add)
+
+
+# --- rescore_batch (H2-2.9) -----------------------------------------------------
+
+def test_rescore_batch_function():
+    fn = _function("rescore_batch")
+    assert fn.startswith("CREATE OR REPLACE FUNCTION rescore_batch(p_rows jsonb) RETURNS int")
+    assert "i.version = r.version" in fn
+    set_clause = fn[fn.index("SET urgency_score"):fn.index(" FROM jsonb_to_recordset")]
+    assert "version" not in set_clause                  # only save_individual changes version
+    assert "urgency_override" not in fn

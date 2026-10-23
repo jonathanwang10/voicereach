@@ -14,6 +14,7 @@ Each file is idempotent.
 2. `supabase/migrations/20261102000002_interactions_append_only.sql` (Phase 2, Task 8). Check: `update interactions set user_name = user_name where false;` succeeds, and the same without `where false` fails with "interactions are append-only".
 3. `supabase/migrations/20261102000003_audit_log.sql` (Phase 2, Task 9). Check: `delete from audit_log;` fails with "audit_log is append-only".
 4. `supabase/migrations/20261102000004_number_scale_max.sql` (Phase 2, Task 11). Check: `select number_scale_max from categories;` is null for every existing row (scores unchanged).
+5. `supabase/migrations/20261102000005_rescore_batch.sql` (Phase 2, Task 13). Then: `cd backend && python scripts/rescore_urgency.py`.
 
 ## Environment variables
 

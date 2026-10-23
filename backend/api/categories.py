@@ -2,7 +2,7 @@
 Category management endpoints
 Minimal implementation for Task 2.0 prerequisite
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 import csv
@@ -150,9 +150,20 @@ def _is_unique_violation(exc: Exception) -> bool:
     return getattr(exc, "code", None) == "23505"
 
 
+def rescore_in_background() -> None:
+    """Re-score everyone after a weighted category create, once the 201 has gone out
+    (H2-2.9). A failure is logged (error type only); scripts/rescore_urgency.py
+    repairs the scores later."""
+    try:
+        rescore_all_individuals(get_supabase())
+    except Exception as e:
+        logger.warning("Re-scoring after category create failed: %s", type(e).__name__)
+
+
 @router.post("/api/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 def create_category(
     request: CreateCategoryRequest,
+    background_tasks: BackgroundTasks,
     # A weighted category re-scores everyone (H2-1.7)
     user_id: str = Depends(rate_limit("category_create", "RATE_LIMIT_CATEGORY_CREATE_PER_MIN", 10)),
     device_id: Optional[str] = Depends(get_device_id),
@@ -173,8 +184,8 @@ def create_category(
     CreateCategoryRequest, so a bad request is a 422 before this runs.
 
     A category with `urgency_weight > 0` or `auto_trigger` changes the urgency
-    maths for everyone, so every individual is re-scored
-    (`rescore_all_individuals`). A re-score failure is logged and the 201 stands;
+    maths for everyone, so every individual is re-scored in a background task
+    after the 201 (`rescore_in_background`). A re-score failure is logged;
     scripts/rescore_urgency.py repairs the scores later.
     """
     try:
@@ -225,13 +236,10 @@ def create_category(
                      entity_type="category", entity_id=str(created["id"]), detail={"name": created["name"]})
 
         # OD-1: a weighted category joins everyone's denominator, so re-score all
-        # stored scores now. The category exists either way, so a failure here is
-        # logged (error type only) and the create still succeeds.
+        # stored scores, after the response (H2-2.9). The category exists either
+        # way, so a re-score failure never fails the create.
         if (created.get("urgency_weight") or 0) > 0 or created.get("auto_trigger"):
-            try:
-                rescore_all_individuals(supabase)
-            except Exception as e:
-                logger.warning("Re-scoring after category create failed: %s", type(e).__name__)
+            background_tasks.add_task(rescore_in_background)
 
         return CategoryResponse(
             id=created["id"],

@@ -26,13 +26,13 @@ HOUSING = {"name": "housing_priority", "display_name": "Housing Priority", "type
 CATEGORIES = [VETERAN, HOUSING]
 
 # Before: (20 + 21) / 50 -> 82. After a number category of weight 50: 41 / 100 -> 41.
-JAMES = {"id": "id-james", "name": "James", "urgency_score": 82, "urgency_override": None,
+JAMES = {"id": "id-james", "name": "James", "urgency_score": 82, "urgency_override": None, "version": 1,
          "data": {"veteran_status": "Yes", "housing_priority": "High"}}
 # Overridden: the stored score is re-computed, the override is never touched.
-ANA = {"id": "id-ana", "name": "Ana", "urgency_score": 82, "urgency_override": 70,
+ANA = {"id": "id-ana", "name": "Ana", "urgency_score": 82, "urgency_override": 70, "version": 1,
        "data": {"veteran_status": "yes", "housing_priority": "high"}}  # legacy casing
 # Nothing scored: 0 before and after, so it is not written.
-SAM = {"id": "id-sam", "name": "Sam", "urgency_score": 0, "urgency_override": None, "data": {}}
+SAM = {"id": "id-sam", "name": "Sam", "urgency_score": 0, "urgency_override": None, "version": 1, "data": {}}
 
 NEW_NUMBER = {"name": "Days without food", "type": "number", "urgency_weight": 50}
 
@@ -46,7 +46,7 @@ def _db(existing_categories=CATEGORIES, individuals=(JAMES, ANA, SAM)):
     sb.on("categories", "select",
           data=lambda call: list(existing_categories) + sb.payloads("categories", "insert"))
     sb.on("individuals", "select", data=list(individuals))
-    sb.on("individuals", "update", data=lambda call: [call.payload])
+    sb.on_rpc("rescore_batch", data=lambda call: len(call.payload["p_rows"]))
     return sb
 
 
@@ -56,8 +56,9 @@ def _post(body, sb):
 
 
 def _updates(sb):
-    """{id: payload} for every individuals update."""
-    return {c.mod("eq")[0][1]: c.payload for c in sb.calls_to("individuals", "update")}
+    """{id: {"urgency_score": n}} for every row sent to rescore_batch (H2-2.9)."""
+    return {row["id"]: {"urgency_score": row["urgency_score"]}
+            for params in sb.rpc_params("rescore_batch") for row in params["p_rows"]}
 
 
 def test_rescore_service_updates_only_changed_rows_and_never_the_override():
@@ -67,7 +68,7 @@ def test_rescore_service_updates_only_changed_rows_and_never_the_override():
     sb = FakeSupabase()
     sb.on("individuals", "select", data=[JAMES, ANA, SAM])
     sb.on("categories", "select", data=CATEGORIES + [new_cat])
-    sb.on("individuals", "update", data=lambda call: [call.payload])
+    sb.on_rpc("rescore_batch", data=lambda call: len(call.payload["p_rows"]))
 
     assert rescore_all_individuals(sb) == 2
     assert _updates(sb) == {"id-james": {"urgency_score": 41}, "id-ana": {"urgency_score": 41}}
@@ -81,12 +82,12 @@ def test_rescore_service_invalidates_the_context_cache_only_when_something_chang
     with patch("services.context_service.invalidate_context_cache") as inv:
         assert individual_service.rescore_all_individuals(sb) == 0
     inv.assert_not_called()
-    assert not sb.calls_to("individuals", "update")
+    assert not sb.rpc_params("rescore_batch")
 
     sb = FakeSupabase()
     sb.on("individuals", "select", data=[{**JAMES, "urgency_score": 10}])
     sb.on("categories", "select", data=CATEGORIES)
-    sb.on("individuals", "update", data=lambda call: [call.payload])
+    sb.on_rpc("rescore_batch", data=lambda call: len(call.payload["p_rows"]))
     with patch("services.context_service.invalidate_context_cache") as inv:
         assert individual_service.rescore_all_individuals(sb) == 1
     inv.assert_called_once()
@@ -99,7 +100,8 @@ def test_creating_a_weighted_category_rescores_existing_people():
     updates = _updates(sb)
     assert updates == {"id-james": {"urgency_score": 41}, "id-ana": {"urgency_score": 41}}
     assert "id-sam" not in updates                                   # unchanged: not written
-    assert all("urgency_override" not in p for p in updates.values())  # override untouched
+    sent = [row for params in sb.rpc_params("rescore_batch") for row in params["p_rows"]]
+    assert all(set(row) == {"id", "urgency_score", "version"} for row in sent)  # override untouched
 
 
 def test_creating_an_auto_trigger_category_rescores_existing_people():
@@ -151,3 +153,61 @@ def test_rescore_reads_every_page():
     sb = FakeSupabase().on("individuals", "select", data=paged(rows)).on("categories", "select", data=[])
     assert rescore_all_individuals(sb) == 0
     assert len(sb.calls_to("individuals", "select")) == 2
+
+
+# --- rescore_batch (H2-2.9) -------------------------------------------------------------
+
+NEW_CAT = {"name": "days_without_food", "display_name": "Days without food", "type": "number",
+           "urgency_weight": 50, "auto_trigger": False, "options": None}
+
+
+def _service_db(individuals, batch=lambda call: len(call.payload["p_rows"])):
+    sb = FakeSupabase().on("individuals", "select", data=paged(list(individuals)))
+    sb.on("categories", "select", data=CATEGORIES + [NEW_CAT])
+    return sb.on_rpc("rescore_batch", data=batch)
+
+
+def test_rescore_sends_only_changed_rows_through_rescore_batch():
+    sb = _service_db([JAMES, ANA, SAM])
+    assert rescore_all_individuals(sb) == 2
+    assert sb.rpc_params("rescore_batch") == [{"p_rows": [
+        {"id": "id-james", "urgency_score": 41, "version": 1}, {"id": "id-ana", "urgency_score": 41, "version": 1}]}]
+    assert not sb.calls_to("individuals", "update")
+
+
+def test_rescore_writes_in_batches_of_500():
+    people = [{**JAMES, "id": str(uuid.UUID(int=i))} for i in range(1, 1002)]
+    sb = _service_db(people)
+    assert rescore_all_individuals(sb) == 1001
+    assert [len(p["p_rows"]) for p in sb.rpc_params("rescore_batch")] == [500, 500, 1]
+
+
+def test_rescore_returns_what_the_database_updated():
+    sb = _service_db([JAMES, ANA], batch=1)          # one of the two was saved meanwhile
+    assert rescore_all_individuals(sb) == 1
+
+
+def test_rescore_sends_nothing_when_no_score_changed():
+    sb = _service_db([SAM])
+    with patch("services.context_service.invalidate_context_cache") as inv:
+        assert rescore_all_individuals(sb) == 0
+    assert sb.rpc_params("rescore_batch") == []
+    inv.assert_not_called()
+
+
+def test_rescore_never_sends_the_override():
+    sb = _service_db([JAMES, ANA, SAM])
+    rescore_all_individuals(sb)
+    rows = [row for p in sb.rpc_params("rescore_batch") for row in p["p_rows"]]
+    assert rows and all(set(row) == {"id", "urgency_score", "version"} for row in rows)
+
+
+def test_create_category_answers_before_rescoring():   # a sync route since Phase 1 (H2-1.1)
+    from fastapi import BackgroundTasks
+    import api.categories as cats
+    from db.models import CreateCategoryRequest
+    tasks = BackgroundTasks()
+    with patch.object(cats, "rescore_all_individuals") as rescore, patch.object(cats, "get_supabase", return_value=_db()):
+        cats.create_category(CreateCategoryRequest(**NEW_NUMBER), background_tasks=tasks, user_id="u", device_id=None)
+    rescore.assert_not_called()
+    assert [t.func for t in tasks.tasks] == [cats.rescore_in_background]

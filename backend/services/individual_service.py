@@ -98,31 +98,41 @@ def fetch_last_seen(supabase: Client, individual_ids: list) -> Dict[str, Dict[st
     return latest
 
 
+RESCORE_BATCH_SIZE = 500  # rows per rescore_batch call (H2-2.9)
+
+
 def rescore_all_individuals(supabase: Client) -> int:
     """
     Recompute every individual's stored `urgency_score` with the current categories.
 
     OD-1 puts every weighted category in the denominator, so creating one changes
-    everyone's score. Called by `create_category` for a weighted or auto-trigger
-    category, and by scripts/rescore_urgency.py after an upgrade.
-    - One paged read of individuals (fetch_all, every row) and one of categories,
-      then one update per row whose score changed.
+    everyone's score. Called in the background after `create_category` for a
+    weighted or auto-trigger category, and by scripts/rescore_urgency.py after an upgrade.
+    - One paged read of individuals (fetch_all, every row, with each row's version)
+      and one of categories.
     - Scores the normalised data, as a save would; `data` itself is not rewritten.
-    - Writes only `urgency_score`: `urgency_override` is never touched. The
-      `updated_at` trigger bumps each re-scored row.
+    - Only the rows whose score changed are sent, RESCORE_BATCH_SIZE at a time, to
+      the `rescore_batch` SQL function (H2-2.9). It writes only `urgency_score`
+      (never `urgency_override`), and skips a row whose version changed since the
+      read, so a save in between is never overwritten. The `updated_at` trigger
+      bumps each re-scored row.
     - Clears the assistant's context cache if anything changed.
-    Returns the number of rows updated.
+    Returns the number of rows the database updated.
     """
-    individuals = fetch_all(lambda: supabase.table("individuals").select("id, urgency_score, data").order("id"))
+    individuals = fetch_all(lambda: supabase.table("individuals")
+                            .select("id, urgency_score, data, version").order("id"))
     categories = supabase.table("categories").select("*").execute().data or []
-    updated = 0
+    changed = []
     for row in individuals:
         stored = row.get("data")
         data, _ = normalize_individual_data(stored if isinstance(stored, dict) else {}, categories)
         score = calculate_urgency_score(data, categories)
         if score != row.get("urgency_score"):
-            supabase.table("individuals").update({"urgency_score": score}).eq("id", str(row["id"])).execute()
-            updated += 1
+            changed.append({"id": str(row["id"]), "urgency_score": score, "version": row.get("version", 1)})
+    updated = 0
+    for start in range(0, len(changed), RESCORE_BATCH_SIZE):
+        batch = changed[start:start + RESCORE_BATCH_SIZE]
+        updated += supabase.rpc("rescore_batch", {"p_rows": batch}).execute().data or 0
     if updated:
         context_service.invalidate_context_cache()
     return updated
