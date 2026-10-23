@@ -527,7 +527,7 @@ git commit -m "feat(api): save through save_individual with 409 on stale version
     - `getIndividualProfile` maps `version: individual.version ?? 1`.
   - If Phase 6 has already rewritten `getIndividualProfile` (`Promise.all`), add `version` to its new shape. If Phase 6 also added `api.getIndividual(id)` (MergeUI's loader), it already returns the raw individual, `version` included.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 `saveIndividual.test.ts`:
 
@@ -565,21 +565,21 @@ it('does not retry a keyed save after an HTTP 500', async () => { /* 1 call, Api
 
 `utils/__tests__/requestId.test.ts`: `newRequestId()` matches `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i`, and two calls differ. `isVersionConflict` is true for `{status: 409}` and false for `{status: 400}`, `null` and `new Error()`.
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `cd mobile && npx jest services utils/__tests__/requestId.test.ts`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement.** Run `cd mobile && npx expo install expo-crypto`. In `test/setup.js`, add `jest.mock('expo-crypto', () => ({ randomUUID: () => require('crypto').randomUUID() }))`. Then write the code listed under Interfaces.
+- [x] **Step 3: Implement.** Run `cd mobile && npx expo install expo-crypto`. In `test/setup.js`, add `jest.mock('expo-crypto', () => ({ randomUUID: () => require('crypto').randomUUID() }))`. Then write the code listed under Interfaces.
 
-- [ ] **Step 4: Append to the manual-steps file**, under **Device checks**: `N. (Phase 2, Task 5) expo-crypto is a new native module: run cd mobile && npx expo prebuild --platform ios (or pod install in mobile/ios), rebuild with npx expo run:ios, record and save one person. Expected: the save succeeds and the backend log shows no 400 for Idempotency-Key.`
+- [x] **Step 4: Append to the manual-steps file**, under **Device checks**: `N. (Phase 2, Task 5) expo-crypto is a new native module: run cd mobile && npx expo prebuild --platform ios (or pod install in mobile/ios), rebuild with npx expo run:ios, record and save one person. Expected: the save succeeds and the backend log shows no 400 for Idempotency-Key.`
 
-- [ ] **Step 5: Run the full checks**
+- [x] **Step 5: Run the full checks**
 
 Run: `cd mobile && npx tsc --noEmit && npx jest`, then `python -m pytest -q`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add mobile/ docs/superpowers/plans/2026-10-23-manual-steps.md

@@ -6,3 +6,6 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 
 process.env.EXPO_PUBLIC_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key';
+
+// expo-crypto is a native module; Node's crypto gives the same v4 UUIDs.
+jest.mock('expo-crypto', () => ({ randomUUID: () => require('crypto').randomUUID() }));

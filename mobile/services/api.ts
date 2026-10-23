@@ -87,24 +87,27 @@ const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: numbe
 };
 
 // Adds the bearer token and a timeout. On 401 it renews the session and retries once;
-// a network failure is retried once for GET only (a POST may already have been applied).
+// a network failure is retried once for GET only (a POST may already have been applied),
+// or for a non-GET that is safe to repeat (`retryNetwork`: a save with an
+// Idempotency-Key, H2-2.4). Timeouts and HTTP errors are never retried.
 // Returns the Response for any HTTP status; throws ApiError only for network failure,
 // timeout or when no session can be obtained.
 export const authedFetch = async (
   path: string,
   init: RequestInit = {},
-  opts: { timeoutMs?: number } = {}
+  opts: { timeoutMs?: number; retryNetwork?: boolean } = {}
 ): Promise<Response> => {
   const url = getApiUrl(path);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const isGet = (init.method || 'GET').toUpperCase() === 'GET';
+  const retryNetwork = isGet || !!opts.retryNetwork;
 
   const send = async (token: string): Promise<Response> => {
     const request = { ...init, headers: buildHeaders(init, token) };
     try {
       return await fetchWithTimeout(url, request, timeoutMs);
     } catch (e) {
-      if (isGet && e instanceof ApiError && e.kind === 'network') {
+      if (retryNetwork && e instanceof ApiError && e.kind === 'network') {
         await new Promise(resolve => setTimeout(resolve, NETWORK_RETRY_DELAY_MS));
         return fetchWithTimeout(url, request, timeoutMs);
       }
@@ -161,7 +164,7 @@ export const throwIfNotOk = async (res: Response): Promise<void> => {
 export const apiRequest = async <T = any>(
   path: string,
   init: RequestInit = {},
-  opts: { timeoutMs?: number } = {}
+  opts: { timeoutMs?: number; retryNetwork?: boolean } = {}
 ): Promise<T> => {
   const res = await authedFetch(path, init, opts);
   await throwIfNotOk(res);
@@ -210,6 +213,10 @@ export interface SaveIndividualRequest {
   merge_with_id?: string | null;
   location?: LocationData | null;
   transcription?: string | null;
+  // The merge target's version when the review loaded it; a stale one is a 409 (H2-2.3)
+  expected_version?: number | null;
+  // One per review session, reused on retry: the server replays the first save (H2-2.4)
+  idempotency_key?: string;
 }
 
 // Every backend call the app makes. Each throws ApiError; the caller shows it once.
@@ -241,11 +248,15 @@ export const api = {
     if (req.merge_with_id) body.merge_with_id = req.merge_with_id;
     if (req.location) body.location = req.location;
     if (req.transcription) body.transcription = req.transcription;
+    if (req.merge_with_id && req.expected_version != null) body.expected_version = req.expected_version;
 
+    // The key travels as a header, and makes one retry after a network failure safe:
+    // the server answers a repeated key with the first save's result.
     const response = await apiRequest('/api/individuals', {
       method: 'POST',
       body: JSON.stringify(body),
-    });
+      ...(req.idempotency_key ? { headers: { 'Idempotency-Key': req.idempotency_key } } : {}),
+    }, { retryNetwork: !!req.idempotency_key });
     const id = response?.individual?.id;
     // A 2xx without the saved record is a bad reply from the server (502), not a
     // network failure (status 0)
@@ -300,6 +311,7 @@ export const api = {
       updated_at: individual.updated_at,
       last_location: individual.last_location || null,
       last_seen: latest ?? individual.created_at,
+      version: individual.version ?? 1,
       interactions,
       total_interactions: interactions.length
     };

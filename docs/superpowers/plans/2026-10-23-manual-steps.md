@@ -35,6 +35,8 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 
 - Phase 1: none (backend only).
 
+1. D2.1 (Phase 2, Task 5) `expo-crypto` is a new native module: run `cd mobile && npx expo prebuild --platform ios` (or `pod install` in `mobile/ios`), rebuild with `npx expo run:ios`, record and save one person. Expected: the save succeeds and the backend log shows no 400 for `Idempotency-Key`.
+
 ## Owner actions outside code
 
 1. Request OpenAI zero data retention and, if records are real client data, a BAA.

@@ -52,6 +52,7 @@ export interface IndividualProfile {
   interactions: Interaction[];
   total_interactions: number;
   last_seen: string; // latest interaction, else created_at (same rule as the list)
+  version: number; // bumped by every save; a merge sends it back as expected_version (H2-2.3)
   last_location?: {
     latitude: number;
     longitude: number;

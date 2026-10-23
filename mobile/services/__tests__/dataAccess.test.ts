@@ -158,6 +158,15 @@ describe('getIndividualProfile', () => {
     expect(profile.last_seen).toBe('2026-05-01T00:00:00Z');
   });
 
+  it('carries the version the merge sends back, 1 when absent (H2-2.3)', async () => {
+    const respond = (ind: any) => jest.fn(async (u: string) => jsonResponse(200, u.endsWith('/interactions')
+      ? { interactions: [] } : { individual: ind, recent_interactions: [] }));
+    (global as any).fetch = respond({ ...individual, version: 4 });
+    expect((await api.getIndividualProfile('p1')).version).toBe(4);
+    (global as any).fetch = respond(individual);
+    expect((await api.getIndividualProfile('p1')).version).toBe(1);
+  });
+
   it('falls back to created_at when there are no interactions', async () => {
     (global as any).fetch = jest.fn(async (u: string) => jsonResponse(200, u.endsWith('/interactions')
       ? { interactions: [] }

@@ -89,4 +89,55 @@ describe('apiRequest headers', () => {
     const headers = (fetchMock.mock.calls[0] as any)[1].headers;
     expect(headers.Authorization).toBe('Bearer test-token');
   });
+
+  // --- Idempotency-Key, expected_version and the keyed retry (H2-2.3, H2-2.4) ---
+  const KEY = '7d444840-9dc0-11d1-b245-5ffdce74fad2';
+  const headersOf = (m: jest.Mock, i = 0) => (m.mock.calls[i] as any)[1].headers;
+
+  it('sends idempotency_key as the Idempotency-Key header, never in the body', async () => {
+    const fetchMock = jest.fn(async () => okResponse({ individual: { id: 'x' } }));
+    (global as any).fetch = fetchMock;
+    await api.saveIndividual({ data: { name: 'Ann' }, idempotency_key: KEY });
+    expect(headersOf(fetchMock)['Idempotency-Key']).toBe(KEY);
+    expect(Object.keys(sentBody(fetchMock))).toEqual(['data']);
+  });
+
+  it('sends expected_version only with merge_with_id', async () => {
+    const fetchMock = jest.fn(async () => okResponse({ individual: { id: 'x' } }));
+    (global as any).fetch = fetchMock;
+    await api.saveIndividual({ data: { name: 'Ann' }, merge_with_id: 'm1', expected_version: 3 });
+    expect(sentBody(fetchMock).expected_version).toBe(3);
+    fetchMock.mockClear();
+    await api.saveIndividual({ data: { name: 'Ann' }, expected_version: 3 });
+    expect('expected_version' in sentBody(fetchMock)).toBe(false);
+  });
+
+  it('retries a keyed save once after a network failure, with the same key', async () => {
+    const fetchMock = jest.fn()
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce(okResponse({ individual: { id: 'x' } }));
+    (global as any).fetch = fetchMock;
+    await expect(api.saveIndividual({ data: { name: 'Ann' }, idempotency_key: KEY })).resolves.toMatchObject({ id: 'x' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(headersOf(fetchMock, 1)['Idempotency-Key']).toBe(KEY);
+  });
+
+  it('does not retry an unkeyed save after a network failure', async () => {
+    const fetchMock = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    (global as any).fetch = fetchMock;
+    const err = await api.saveIndividual({ data: { name: 'Ann' } }).catch(e => e);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.kind).toBe('network');
+  });
+
+  it('does not retry a keyed save after an HTTP 500', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: false, status: 500, statusText: 'Server Error', text: async () => '{"detail":"Save individual failed"}',
+    }));
+    (global as any).fetch = fetchMock;
+    const err = await api.saveIndividual({ data: { name: 'Ann' }, idempotency_key: KEY }).catch(e => e);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err.status).toBe(500);
+  });
 });
