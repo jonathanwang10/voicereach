@@ -96,7 +96,7 @@ Three separate AI capabilities, easy to confuse:
 
 | Capability | Model (env var) | Where |
 |---|---|---|
-| Transcribe + extract fields | `whisper-1` (`TRANSCRIBE_MODEL`) + `gpt-4o` (`CHAT_MODEL`) | `services/openai_service.py` |
+| Transcribe + extract fields | `whisper-1` (`TRANSCRIBE_MODEL`) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
 | Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
 | Live spoken assistant | `gpt-realtime` (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
 
@@ -499,7 +499,10 @@ names are stripped. Height goes through `parse_height_inches`: a bare numeric
 (so normalising twice is harmless); "5'10", "5′10″", "5 ft 10", "5.5 feet",
 "5, 10", "178 cm" and "1.78 m" are understood; any other number is inches. A
 small number GPT returns for height (e.g. `6`) is converted from feet in
-`categorize_transcription`, where it first enters.
+`parse_extraction` (`services/category_schema.py`), where it first enters.
+Extraction uses a strict JSON schema built from the categories: every value
+comes with its evidence (the transcript words it came from), and a value whose
+evidence isn't in the transcript is dropped, so nothing is inferred.
 Keys that match no category are kept, after the same cleaning.
 The app sends the same shapes (`mobile/utils/fieldValues.ts`): typed numbers,
 height already in inches, canonical labels and multi-select arrays, with empty

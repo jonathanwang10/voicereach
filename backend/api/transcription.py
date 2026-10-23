@@ -85,6 +85,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
         for cat in categories_response.data:
             category_data = {
                 "name": cat["name"],
+                "display_name": cat.get("display_name"),   # the schema's field descriptions
                 "type": cat["type"],
                 "is_required": cat["is_required"],
                 "options": cat.get("options", None)

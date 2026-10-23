@@ -62,6 +62,11 @@ only after `npx expo prebuild --platform ios`.
   `rescore_batch`; run `backend/scripts/rescore_urgency.py` after upgrading). A category
   with `is_sensitive` never scores or auto-triggers, and `POST /api/categories` refuses a
   weight or auto-trigger on one with 400 `Sensitive fields can't affect urgency.`
+- **Extraction** (`services/category_schema.py`): a strict json_schema built from the
+  categories, temperature 0; every value carries `evidence` (transcript words), and a
+  value whose evidence isn't in the transcript is dropped (numbers: their digits or
+  number word suffice). Nothing is inferred; a missing required field is
+  `missing_required`. The transcript is its own fenced `user` message.
 - **Duplicates:** candidates are pre-ranked (name tokens, then height/weight
   closeness) and GPT-4o scores the top 8 (`MAX_LLM_CANDIDATES`); matches below 60
   are dropped and the backend returns only the best. Voice review may add a

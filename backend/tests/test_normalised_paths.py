@@ -155,20 +155,19 @@ def test_get_changed_fields_ignores_empty_new_values():
     assert svc.get_changed_fields({"age": 40}, {"age": 40, "gender": None, "notes": ""}) == {}
 
 
-# --- C-67: GPT keys matched regardless of case/spacing ---
-async def test_categorize_matches_gpt_keys_case_insensitively():
+# --- C-67 superseded by the strict schema (H2-3.1): only category keys are read ---
+async def test_categorize_takes_only_the_schema_keys():
+    """The strict schema fixes the keys (H2-3.1), so the old case-insensitive key repair
+    (C-67) is gone: a key that isn't a category key is ignored, never guessed at."""
     svc = OpenAIService.__new__(OpenAIService)
-    reply = {"Name": "Ann", "Height": "5 ft 6", "weight": 140, "Housing Status": "Shelter",
-             "Medical_Conditions": "diabetes, cancer"}
+    reply = {"Name": {"value": "Ann", "evidence": "Ann"}, "name": {"value": "Ann", "evidence": "Ann"},
+             "height": {"value": 66, "evidence": "5 ft 6"}}
     completion = MagicMock()
-    completion.choices = [MagicMock(message=MagicMock(content=json.dumps(reply)))]
+    completion.choices = [MagicMock(message=MagicMock(content=json.dumps(reply), refusal=None))]
     svc.client = MagicMock()
     svc.client.chat.completions.create = AsyncMock(return_value=completion)
-    result = await svc.categorize_transcription("text", CATEGORIES)
-    assert result["name"] == "Ann"
-    assert result["height"] == 66
-    assert result["Housing_status"] == "Shelter"
-    assert result["medical_conditions"] == ["Diabetes", "Cancer"]
+    result = await svc.categorize_transcription("This is Ann, 5 ft 6", CATEGORIES)
+    assert result == {"name": "Ann", "height": 66}
 
 
 # --- embedding text joins list items with map(str) and never splits strings ---
@@ -186,12 +185,14 @@ async def test_embedding_text_joins_lists_and_strings_safely():
     assert "Substance Abuse History: Mild, 3" in text
 
 
-@pytest.mark.parametrize("gpt_height,expected", [(6, 72), (5.5, 66), ("6", 72), (70, 70), ("9 in", 9)])
-async def test_categorize_still_treats_small_gpt_numbers_as_feet(gpt_height, expected):
+@pytest.mark.parametrize("gpt_height,evidence,expected", [
+    (6, "six feet", 72), (5.5, "five and a half feet", 66), (70, "70 inches", 70), (9, "9 feet", 108)])
+async def test_categorize_still_treats_small_gpt_numbers_as_feet(gpt_height, evidence, expected):
     svc = OpenAIService.__new__(OpenAIService)
+    reply = {"height": {"value": gpt_height, "evidence": evidence}}
     completion = MagicMock()
-    completion.choices = [MagicMock(message=MagicMock(content=json.dumps({"name": "Ann", "height": gpt_height})))]
+    completion.choices = [MagicMock(message=MagicMock(content=json.dumps(reply), refusal=None))]
     svc.client = MagicMock()
     svc.client.chat.completions.create = AsyncMock(return_value=completion)
-    result = await svc.categorize_transcription("text", CATEGORIES)
+    result = await svc.categorize_transcription(f"He is {evidence} tall", CATEGORIES)
     assert result["height"] == expected

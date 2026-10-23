@@ -190,6 +190,19 @@ def test_llm_comparison_failure_logs_only_the_error_type(capture, capsys):
     _assert_clean(capture, capsys)
 
 
+def test_dropped_values_log_only_a_count(capture, capsys):                # H2-3.3
+    from services.openai_service import OpenAIService
+    service = OpenAIService()
+    service.client = MagicMock()
+    reply = json.dumps({"name": {"value": SENTINEL_NAME, "evidence": f"this is {SENTINEL_NAME}"}})
+    completion = MagicMock()
+    completion.choices = [MagicMock(message=MagicMock(content=reply, refusal=None))]
+    service.client.chat.completions.create = AsyncMock(return_value=completion)
+    assert asyncio.run(service.categorize_transcription("a note about someone else", CATEGORIES)) == {}
+    assert "dropped 1" in capture.text
+    _assert_clean(capture, capsys)
+
+
 # --- search -------------------------------------------------------------------------
 
 def test_list_search_logs_no_search_term(capture, capsys):

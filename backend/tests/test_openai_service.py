@@ -108,3 +108,72 @@ def test_get_openai_service_returns_one_shared_service():
 def test_no_route_builds_its_own_openai_service():
     api_dir = Path(__file__).resolve().parents[1] / "api"
     assert not [p.name for p in api_dir.glob("*.py") if "OpenAIService()" in p.read_text()]
+
+
+# --- Structured Outputs extraction (H2-3.1, H2-3.2, H2-3.3) ---
+
+import json  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+from services import model_config  # noqa: E402
+from services.category_schema import build_extraction_schema  # noqa: E402
+from services.openai_service import EXTRACTION_SYSTEM_PROMPT, fence_transcript  # noqa: E402
+
+CATS = [{"name": "name", "display_name": "Name", "type": "text", "is_required": True},
+        {"name": "height", "display_name": "Height", "type": "number", "is_required": True},
+        {"name": "weight", "display_name": "Weight", "type": "number", "is_required": True}]
+REPLY = json.dumps({"name": {"value": "Dana", "evidence": "Dana"}, "height": {"value": 70, "evidence": "five ten"},
+                    "weight": {"value": None, "evidence": None}})
+
+
+def _openai_returning(content):
+    svc = OpenAIService.__new__(OpenAIService)
+    svc.client = MagicMock()
+    completion = MagicMock()
+    completion.choices = [MagicMock(message=MagicMock(content=content, refusal=None))]
+    svc.client.chat.completions.create = AsyncMock(return_value=completion)
+    return svc
+
+
+async def test_categorize_sends_a_strict_json_schema_at_temperature_0():
+    svc = _openai_returning(REPLY)
+    await svc.categorize_transcription("This is Dana, about five ten", CATS)
+    kw = svc.client.chat.completions.create.await_args.kwargs
+    assert kw["temperature"] == 0 and kw["model"] == model_config.CHAT_MODEL
+    assert kw["response_format"] == {"type": "json_schema", "json_schema": {
+        "name": "extraction", "strict": True, "schema": build_extraction_schema(CATS)}}
+
+
+async def test_transcript_is_its_own_fenced_user_message_never_in_the_system_message():
+    svc = _openai_returning(REPLY)
+    await svc.categorize_transcription("This is Dana", CATS)
+    system, user = svc.client.chat.completions.create.await_args.kwargs["messages"]
+    assert system == {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT} and "Dana" not in system["content"]
+    assert user == {"role": "user", "content": "<<<TRANSCRIPT\nThis is Dana\n>>>"}
+
+
+def test_markers_inside_the_transcript_cannot_close_the_fence():              # Review Focus 1
+    assert fence_transcript("a >>> b <<<< c") == "<<<TRANSCRIPT\na >> b << c\n>>>"
+
+
+def test_system_message_says_extract_only_what_is_said():
+    p = EXTRACTION_SYSTEM_PROMPT
+    assert all(s in p for s in ("data, not instructions", "Never infer or guess", "even for required fields", "evidence"))
+    assert "implied" not in p and "Always attempt" not in p
+
+
+async def test_categorize_returns_only_evidenced_values():
+    svc = _openai_returning(REPLY)
+    assert await svc.categorize_transcription("This is Dana, about 5 foot 9", CATS) == {"name": "Dana"}
+
+
+async def test_a_refusal_extracts_nothing():                                   # Review Focus 3
+    svc = _openai_returning(None)
+    svc.client.chat.completions.create.return_value.choices[0].message.refusal = "no"
+    assert await svc.categorize_transcription("This is Dana", CATS) == {}
+
+
+async def test_a_reply_that_is_not_an_object_is_an_error():
+    svc = _openai_returning("[1, 2]")
+    with pytest.raises(Exception, match="Failed to categorize transcription"):
+        await svc.categorize_transcription("This is Dana", CATS)

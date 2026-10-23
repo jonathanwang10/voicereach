@@ -66,8 +66,8 @@ def test_gpt_gets_every_category_with_its_type_required_flag_and_options():
     _, openai, _, _ = _run({"audio_url": AUDIO_URL})
     text, categories = openai.categorize_transcription.await_args.args
     assert text == "Met Ann, about 5 foot 10"
-    assert categories == [{"name": c["name"], "type": c["type"], "is_required": c["is_required"],
-                           "options": c["options"]} for c in CATEGORIES]
+    assert categories == [{"name": c["name"], "display_name": c.get("display_name"), "type": c["type"],
+                           "is_required": c["is_required"], "options": c["options"]} for c in CATEGORIES]
 
 
 def test_invalid_values_come_back_as_validation_errors():
