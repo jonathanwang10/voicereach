@@ -178,3 +178,10 @@ def test_embedding_upsert_uses_existing_columns():
     sb = FakeSupabase().on("individual_embeddings", "upsert", data=[])
     asyncio.run(svc.store_individual_embedding(sb, ROW, CATEGORIES))
     _assert_known(sb)
+
+
+def test_no_backend_code_updates_interactions():        # H2-2.6: the table is append-only
+    chains = [c for c in CHAINS if c[1] == "interactions"]
+    assert chains
+    for where, _, chain in chains:
+        assert ".update(" not in chain and ".upsert(" not in chain, where

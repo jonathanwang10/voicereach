@@ -60,8 +60,10 @@ CREATE TABLE IF NOT EXISTS individuals (
 );
 
 -- ---------------------------------------------------------------------------
--- interactions — append-only history. `changes` holds ONLY the fields that
--- changed in that visit (the whole payload on the first interaction).
+-- interactions — append-only history: a trigger refuses UPDATE (except location
+-- coarsening); DELETE is allowed so a person's history goes with them.
+-- `changes` holds ONLY the fields that changed in that visit (the whole payload
+-- on the first interaction).
 -- user_id is TEXT, not a UUID FK: the backend passes the demo user's id as text.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS interactions (
@@ -188,6 +190,29 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON individuals
 DROP TRIGGER IF EXISTS set_updated_at ON individual_embeddings;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON individual_embeddings
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- interactions are append-only (H2-2.6): history can't be edited. The one
+-- exemption is coarsen_old_locations (H2-2.11), which sets the transaction-local
+-- voicereach.coarsening = 'on' and may change only `location`. DELETE stays
+-- allowed, so deleting a person still removes their history (ON DELETE CASCADE).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION interactions_append_only() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+    IF current_setting('voicereach.coarsening', true) = 'on'
+       AND (to_jsonb(NEW) - 'location') = (to_jsonb(OLD) - 'location') THEN
+        RETURN NEW;                          -- coarsen_old_locations only (H2-2.11)
+    END IF;
+    RAISE EXCEPTION 'interactions are append-only' USING ERRCODE = '55000';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS interactions_append_only ON interactions;
+CREATE TRIGGER interactions_append_only BEFORE UPDATE ON interactions
+    FOR EACH ROW EXECUTE FUNCTION interactions_append_only();
 
 -- ---------------------------------------------------------------------------
 -- save_individual: one save (a new person, or a merge into an existing one)

@@ -85,7 +85,8 @@ is pending, Search doesn't toast a failed background refresh, so the undo toast
 stays up. If the DELETE fails, the person reappears in Search and an error toast says so. The pending
 delete lives only in memory, so **if the app is closed or killed within those
 5 seconds, the person is not deleted.** Once sent, the delete is permanent: it
-cascades to the person's interactions and embedding.
+cascades to the person's interactions and embedding. Deleting a person
+hard-deletes their history; that is the deliberate right-to-deletion choice.
 
 "Last seen", everywhere in the app, is the backend's `last_seen`: the latest
 interaction, else when the record was created. It is shown in whole days, with
@@ -111,7 +112,8 @@ recording-to-save path and the assistant path step by step.
 (its type, whether it is required, and how heavily it weighs into the urgency
 score). `individuals` holds one row per person with the current aggregated state
 in a JSONB `data` column. `interactions` is the encounter log: the app only ever
-adds to it (deleting a person deletes their interactions too), and its `changes`
+adds to it, and the database refuses any edit to an interaction (a trigger;
+deleting a person deletes their interactions too), and its `changes`
 column holds only what *changed* at each encounter (the whole payload on the
 first one), plus the transcript and location. `individual_embeddings` backs
 semantic search. Because fields live in `categories` rather than in columns,

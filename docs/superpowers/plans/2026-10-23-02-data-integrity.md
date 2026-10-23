@@ -750,20 +750,20 @@ END IF;
 RAISE EXCEPTION 'interactions are append-only' USING ERRCODE = '55000';
 ```
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `test_interactions_reject_update`: `FLAT` contains `DROP TRIGGER IF EXISTS interactions_append_only ON interactions;` before `CREATE TRIGGER interactions_append_only BEFORE UPDATE ON interactions FOR EACH ROW EXECUTE FUNCTION interactions_append_only()`. The function contains `RAISE EXCEPTION 'interactions are append-only'`, `current_setting('voicereach.coarsening', true) = 'on'` and `(to_jsonb(NEW) - 'location') = (to_jsonb(OLD) - 'location')`.
   - `test_interactions_delete_is_still_allowed`: no `BEFORE DELETE` or `BEFORE UPDATE OR DELETE` trigger on `interactions`, and `REFERENCES individuals(id) ON DELETE CASCADE` is still on `interactions.individual_id`.
   - `test_contract`, in `test_schema_contract.py`: `test_no_backend_code_updates_interactions`. No `.table("interactions")` chain in `CHAINS` contains `.update(` or `.upsert(`.
 
-- [ ] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`).
+- [x] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`).
 
-- [ ] **Step 3: Write the migration and fold it into `schema.sql`.** Change the `interactions` table comment to "append-only: a trigger refuses UPDATE (except location coarsening); DELETE is allowed so a person's history goes with them".
+- [x] **Step 3: Write the migration and fold it into `schema.sql`.** Change the `interactions` table comment to "append-only: a trigger refuses UPDATE (except location coarsening); DELETE is allowed so a person's history goes with them".
 
-- [ ] **Step 4: Docs and manual step.** README data model paragraph: "the database refuses any edit to an interaction". README "Deleting a person": "Deleting a person hard-deletes their history; that is the deliberate right-to-deletion choice." Manual-steps file, Apply migrations: `2. 20261102000002_interactions_append_only.sql. Check: update interactions set user_name = user_name where false; succeeds, and the same without "where false" fails with "interactions are append-only".`
+- [x] **Step 4: Docs and manual step.** README data model paragraph: "the database refuses any edit to an interaction". README "Deleting a person": "Deleting a person hard-deletes their history; that is the deliberate right-to-deletion choice." Manual-steps file, Apply migrations: `2. 20261102000002_interactions_append_only.sql. Check: update interactions set user_name = user_name where false; succeeds, and the same without "where false" fails with "interactions are append-only".`
 
-- [ ] **Step 5: Run the checks** (`python -m pytest -q && ruff check backend --select F,E9`). Expected: PASS.
+- [x] **Step 5: Run the checks** (`python -m pytest -q && ruff check backend --select F,E9`). Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/tests README.md docs/superpowers/plans/2026-10-23-manual-steps.md

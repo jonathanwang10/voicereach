@@ -292,3 +292,20 @@ def test_every_function_pins_its_search_path():
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
+
+
+# --- interactions are append-only (H2-2.6) ----------------------------------
+
+def test_interactions_reject_update():
+    drop = "DROP TRIGGER IF EXISTS interactions_append_only ON interactions;"
+    create = ("CREATE TRIGGER interactions_append_only BEFORE UPDATE ON interactions "
+              "FOR EACH ROW EXECUTE FUNCTION interactions_append_only()")
+    assert drop in FLAT and create in FLAT and FLAT.index(drop) < FLAT.index(create)
+    fn = _function("interactions_append_only")
+    assert "RAISE EXCEPTION 'interactions are append-only'" in fn
+    assert "current_setting('voicereach.coarsening', true) = 'on'" in fn
+    assert "(to_jsonb(NEW) - 'location') = (to_jsonb(OLD) - 'location')" in fn
+
+def test_interactions_delete_is_still_allowed():
+    assert not re.search(r"BEFORE (?:UPDATE OR )?DELETE ON interactions", FLAT)
+    assert "REFERENCES individuals(id) ON DELETE CASCADE" in _column_def("interactions", "individual_id")
