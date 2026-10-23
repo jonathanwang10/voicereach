@@ -8,7 +8,10 @@ import tempfile
 import json
 import re
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Iterator, Optional, Dict
+import mutagen
+import mutagen.mp4
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
@@ -31,6 +34,41 @@ MAX_AUDIO_DOWNLOAD_BYTES = 5 * 1024 * 1024
 
 class AudioTooLarge(ValueError):
     """The audio is over a size cap; routes answer 413."""
+
+
+@dataclass(frozen=True)
+class AudioLimits:
+    """Allowed length of one upload, with the client message for each side (H2-1.10)."""
+    min_seconds: float
+    max_seconds: float
+    too_short: str
+    too_long: str
+
+
+# A recording is 5 s to 2:00 in the app; 5 s of slack covers the encoder's padding.
+RECORDING_LIMITS = AudioLimits(5, 125, "Audio must be at least 5 seconds long", "Audio must be less than 2 minutes")
+# Assistant questions are short and have their own lower minimum.
+QUESTION_LIMITS = AudioLimits(1, 60, "Question must be at least 1 second long", "Question must be under 1 minute")
+
+
+def audio_duration_seconds(path: str) -> float:
+    """The M4A's length from its header. A file mutagen can't parse (truncated, or an
+    `ftyp` box that isn't audio) is "not in M4A format", a 400, never a 500."""
+    try:
+        return float(mutagen.mp4.MP4(path).info.length)
+    except mutagen.MutagenError:
+        raise ValueError("File is not in M4A format")
+
+
+def check_audio_duration(path: str, limits: AudioLimits) -> float:
+    """The server's own length check, so a client can't skip the app's limits (H2-1.10).
+    Raises ValueError with the client message; returns the duration."""
+    seconds = audio_duration_seconds(path)
+    if seconds < limits.min_seconds:
+        raise ValueError(limits.too_short)
+    if seconds > limits.max_seconds:
+        raise ValueError(limits.too_long)
+    return seconds
 
 
 @contextmanager
@@ -94,7 +132,7 @@ class OpenAIService:
                 raise Exception("Network timeout while downloading audio")
         return b"".join(chunks)
 
-    async def transcribe_audio(self, audio_url: str) -> str:
+    async def transcribe_audio(self, audio_url: str, limits: AudioLimits = RECORDING_LIMITS) -> str:
         """
         Transcribe audio from a Supabase Storage URL using OpenAI Whisper API.
 
@@ -118,6 +156,7 @@ class OpenAIService:
             raise ValueError("File is not in M4A format")
 
         with temp_audio_file(content) as tmp_path:
+            check_audio_duration(tmp_path, limits)
             try:
                 return await self._whisper(tmp_path)
             except Exception as e:
@@ -127,12 +166,13 @@ class OpenAIService:
                     raise ValueError("Audio must be less than 2 minutes")
                 raise
 
-    async def transcribe_audio_file(self, file_path: str) -> str:
+    async def transcribe_audio_file(self, file_path: str, limits: AudioLimits = RECORDING_LIMITS) -> str:
         """
         Transcribe audio from local file using OpenAI Whisper API
         
         Args:
             file_path: Path to local M4A audio file
+            limits: allowed length (RECORDING_LIMITS, or QUESTION_LIMITS for the assistant)
             
         Returns:
             Plain text transcription
@@ -152,7 +192,9 @@ class OpenAIService:
                 # M4A files typically have 'ftyp' at offset 4
                 if b'ftyp' not in header:
                     raise ValueError("File is not in M4A format")
-            
+
+            check_audio_duration(file_path, limits)
+
             # Send to Whisper API
             return await self._whisper(file_path)
             

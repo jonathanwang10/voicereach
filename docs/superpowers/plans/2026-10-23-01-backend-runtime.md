@@ -51,6 +51,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 - Task 1: the roadmap and phase plans were already committed on `hardening-2` (15251d2), so Task 1's commit adds only the manual-steps file (`docs: add hardening-2 manual-steps file`). Baseline: 718 passed, 5 skipped (all five are the live smoke tests in `test_live_smoke.py`), not 1 skipped; jest 40/40 suites (the first cold run timed out 4 suites, a rerun passed; not a code failure).
 - Task 4: `test_schema_contract.py`'s static scan matched `.table("t")...execute()`; a `fetch_all` builder has no `.execute()`, so the regex ran on into the next chain. The scan now also ends a chain at the `.order("id"))` that closes a builder and never crosses another `.table(` call. `fetch_last_seen` also selects `id`, so `fetch_all` can skip a shifted row. The MagicMock chains in `test_rate_limit.py` / `test_request_limits.py` became self-returning chains (they could not just add one `range` link).
 - Task 5: `check_duplicates` now imports `DuplicateDetectionService` at module top (as the task says), so `test_error_contract.py`'s patch target moved to `api.individuals.DuplicateDetectionService`.
+- Task 7: `test_request_limits.py`'s temp-file test stub `failing(path)` now takes `**kwargs`, because the assistant route passes `limits=QUESTION_LIMITS`.
 
 ## Decisions the roadmap left open
 
@@ -653,7 +654,7 @@ Roadmap item 10.
   - `def check_audio_duration(path: str, limits: AudioLimits) -> float`: `ValueError(limits.too_short)` below `min_seconds`, `ValueError(limits.too_long)` above `max_seconds`; returns the duration.
 - Produces, in `tests/helpers.py`: `def fixture_audio(name: str) -> bytes` reads `backend/tests/fixtures/<name>`.
 
-- [ ] **Step 1: Add mutagen and make the fixtures** (macOS `afconvert`, once; the files are committed and about 4 KB each)
+- [x] **Step 1: Add mutagen and make the fixtures** (macOS `afconvert`, once; the files are committed and about 4 KB each)
 
 Add `mutagen==1.47.0` to `requirements.txt` and run `python -m pip install -r requirements.txt`. Then:
 
@@ -669,7 +670,7 @@ for s in 2 6; do afconvert -f m4af -d aac -b 32000 silence_${s}s.wav audio_${s}s
 
 Expected: `python -c "import mutagen.mp4 as m; print(m.MP4('audio_2s.m4a').info.length, m.MP4('audio_6s.m4a').info.length)"` prints about `2.18 6.14`.
 
-- [ ] **Step 2: Write the failing tests** in `test_audio_limits.py`
+- [x] **Step 2: Write the failing tests** in `test_audio_limits.py`
 
 ```python
 import base64
@@ -742,20 +743,20 @@ def test_assistant_route_rejects_a_61s_question(monkeypatch):
     assert (r.status_code, r.json()) == (400, {"detail": "Question must be under 1 minute"})
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_audio_limits.py -v`
 Expected: FAIL with `ImportError: cannot import name 'QUESTION_LIMITS'`.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 - Add the names listed under **Interfaces**, and call `check_audio_duration(path, limits)` in both transcribe methods. For the URL path, call it inside the `temp_audio_file` block.
 - Switch the three older tests to the fixture bytes.
 - Update CLAUDE.md and the READMEs.
 
-- [ ] **Step 5: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 5: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add requirements.txt backend/services/openai_service.py backend/api/voice_assistant.py backend/tests CLAUDE.md README.md backend/README.md

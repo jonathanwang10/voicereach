@@ -2,11 +2,20 @@
 import asyncio
 import copy
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock
 
 from db.models import SaveIndividualResponse
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def fixture_audio(name: str) -> bytes:
+    """Bytes of a committed test recording in backend/tests/fixtures/ (real M4A/AAC)."""
+    return (FIXTURES / name).read_bytes()
 
 
 def save_response(payload: dict) -> SaveIndividualResponse:

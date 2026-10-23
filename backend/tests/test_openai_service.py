@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.openai_service import OpenAIService
+from tests.helpers import fixture_audio
 
-M4A = b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 32
+M4A = fixture_audio("audio_6s.m4a")
 PROJECT_URL = "https://proj.supabase.co"
 
 

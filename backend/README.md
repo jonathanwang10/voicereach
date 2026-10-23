@@ -96,8 +96,10 @@ prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
 same host as `SUPABASE_URL` (other hosts are a 400; the download stops at 5 MB
 and doesn't follow redirects: a 3xx fails like any other download error, with a
 500 "Transcription failed"). Loads categories, transcribes with `whisper-1`,
-extracts fields with `gpt-4o`, validates, and looks for duplicates. 413 over a
-size cap, 429 over the rate limit, 504 after 110 s. Returns:
+extracts fields with `gpt-4o`, validates, and looks for duplicates. The M4A's
+length is read with mutagen before Whisper is called: under 5 s or over 125 s is
+a 400 (`RECORDING_LIMITS`; assistant questions use 1-60 s, `QUESTION_LIMITS`).
+413 over a size cap, 429 over the rate limit, 504 after 110 s. Returns:
 
 ```json
 {

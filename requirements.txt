@@ -9,3 +9,4 @@ python-dotenv==1.2.4
 numpy==2.4.6
 scikit-learn==1.9.1
 websockets==15.0.1
+mutagen==1.47.0

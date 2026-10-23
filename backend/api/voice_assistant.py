@@ -8,7 +8,7 @@ from api.errors import internal_error
 from pydantic import BaseModel
 from typing import Dict, Any, List
 from db.client import get_supabase
-from services.openai_service import get_openai_service, temp_audio_file
+from services.openai_service import QUESTION_LIMITS, get_openai_service, temp_audio_file
 from services.context_service import get_context_service
 from services.rate_limit import rate_limit
 
@@ -48,7 +48,7 @@ async def transcribe_voice_audio(
 
         # The temp file is removed on every path, including a failed write (C-65)
         with temp_audio_file(content) as temp_file_path:
-            transcription = await get_openai_service().transcribe_audio_file(temp_file_path)
+            transcription = await get_openai_service().transcribe_audio_file(temp_file_path, limits=QUESTION_LIMITS)
 
         return {
             "transcription": transcription,

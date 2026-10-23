@@ -46,7 +46,9 @@ only after `npx expo prebuild --platform ios`.
   warning alert at 1:45, auto-stop at 2:00. Recording starts on tap; the GPS fix
   is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s) at
   stop (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
-  own fix unless the worker picked a location by hand.
+  own fix unless the worker picked a location by hand. The server re-checks the
+  length with mutagen: 400 under 5 s or over 125 s (2:00 plus 5 s slack);
+  assistant questions 1-60 s (`services/openai_service.py`, `RECORDING_LIMITS`).
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and
   `single_select` categories can have a weight or auto-trigger. Number →
   `min(value/300, 1) * weight`; select → `option_value * weight`; final score is

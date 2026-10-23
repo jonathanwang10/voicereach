@@ -198,7 +198,8 @@ def test_openai_clients_have_short_timeouts():
 def test_whisper_call_gets_a_60s_timeout(tmp_path):
     from services.openai_service import OpenAIService
     audio = tmp_path / "a.m4a"
-    audio.write_bytes(b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 32)
+    from tests.helpers import fixture_audio
+    audio.write_bytes(fixture_audio("audio_6s.m4a"))
     svc = OpenAIService()
     create = AsyncMock(return_value=" hi ")
     with patch.object(svc.whisper_client.audio.transcriptions, "create", create):

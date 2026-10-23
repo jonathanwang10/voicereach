@@ -217,7 +217,9 @@ def test_audio_url_too_large_is_413_from_the_route(monkeypatch):
 def test_audio_url_download_within_cap_is_transcribed(monkeypatch):
     from services import openai_service
     monkeypatch.setenv("SUPABASE_URL", "https://ourproject.supabase.co")
-    ok = _StreamResponse([b"\x00\x00\x00\x18ftypM4A ", b"\x00" * 100])
+    from tests.helpers import fixture_audio
+    audio = fixture_audio("audio_6s.m4a")
+    ok = _StreamResponse([audio[:100], audio[100:]])
     monkeypatch.setattr(openai_service.httpx, "AsyncClient", lambda *a, **k: _StreamClient(ok))
     svc = _svc()
     svc.whisper_client = MagicMock()
@@ -291,7 +293,7 @@ def test_temp_audio_file_is_removed_even_if_writing_fails(monkeypatch):
 def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
     seen = []
 
-    async def failing(path):
+    async def failing(path, **kwargs):
         seen.append(path)
         assert os.path.exists(path)
         raise RuntimeError("whisper down")
