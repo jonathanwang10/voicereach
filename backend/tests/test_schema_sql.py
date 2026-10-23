@@ -1,12 +1,12 @@
-"""Static checks on supabase/schema.sql (C-20, C-29, C-54, C-55, C-56).
+"""Static checks on supabase/schema.sql and supabase/seed.sql (C-20, C-29, C-54, C-55, C-56, H2-2.1).
 
 There is no database in the test run, so these read the SQL text. The seed
-check uses a small parser written for the exact INSERT shapes in schema.sql:
+check uses a small parser written for the exact INSERT shapes:
 
-- preset categories: one VALUES tuple per category, columns in the order
+- preset categories (schema.sql): one VALUES tuple per category, columns in the order
   (name, display_name, type, is_required, is_preset, priority, urgency_weight,
    auto_trigger, options), options being NULL or a '...'::jsonb literal;
-- demo individuals: ('Full Name', '{...}'::jsonb, <urgency_score>) tuples.
+- demo individuals (seed.sql): ('Full Name', '{...}'::jsonb, <urgency_score>) tuples.
 
 If either shape changes, the count assertions below fail loudly rather than the
 checks silently passing on zero rows.
@@ -24,6 +24,8 @@ SCHEMA = Path(__file__).resolve().parents[2] / "supabase" / "schema.sql"
 RAW_SQL = SCHEMA.read_text()
 # Line comments removed, so a statement mentioned in a comment never counts.
 SQL = re.sub(r"--[^\n]*", "", RAW_SQL)
+SEED_RAW = (SCHEMA.parent / "seed.sql").read_text()
+SEED_SQL = re.sub(r"--[^\n]*", "", SEED_RAW)
 
 TABLES = ("categories", "individuals", "interactions", "individual_embeddings")
 SEED_NAMES = {"Sarah Smith", "Michael Chen", "John Doe", "Maria Garcia", "Robert Johnson", "James Brown"}
@@ -49,6 +51,7 @@ def _norm(sql: str) -> str:
 
 
 FLAT = _norm(SQL)
+SEED_FLAT = _norm(SEED_SQL)
 
 
 # --- seed parsing ----------------------------------------------------------
@@ -83,7 +86,7 @@ def _seed_categories() -> list[dict]:
 
 
 def _seed_individuals() -> list[tuple[str, dict, int]]:
-    return [(m.group(1), json.loads(m.group(2)), int(m.group(3))) for m in _INDIVIDUAL_ROW.finditer(SQL)]
+    return [(m.group(1), json.loads(m.group(2)), int(m.group(3))) for m in _INDIVIDUAL_ROW.finditer(SEED_SQL)]
 
 
 def test_seed_parser_finds_every_row():
@@ -137,14 +140,14 @@ def test_functions_and_triggers_are_replaceable():
 
 
 def test_seed_individuals_are_guarded_by_name():
-    insert = FLAT[FLAT.index("INSERT INTO individuals"):]
+    insert = SEED_FLAT[SEED_FLAT.index("INSERT INTO individuals"):]
     insert = insert[:insert.index(";")]
     assert "WHERE NOT EXISTS (SELECT 1 FROM individuals" in insert
     assert "ON CONFLICT DO NOTHING" not in insert  # it had nothing unique to conflict on
 
 
 def test_seed_interactions_only_for_seeded_people_without_history():
-    insert = FLAT[FLAT.index("INSERT INTO interactions"):]
+    insert = SEED_FLAT[SEED_FLAT.index("INSERT INTO interactions"):]
     insert = insert[:insert.index(";")]
     assert "NOT EXISTS (SELECT 1 FROM interactions" in insert
     for name in SEED_NAMES:
@@ -229,3 +232,18 @@ def test_urgency_override_range_check():
 def test_header_tells_owner_to_disable_signups_and_anonymous_signins():
     header = RAW_SQL[:RAW_SQL.index("CREATE")].lower()
     assert "disable sign-ups" in header and "anonymous sign-ins" in header
+
+
+# --- demo data lives in seed.sql only (H2-2.1) ------------------------------
+
+def test_schema_sql_inserts_no_demo_people():
+    assert "INSERT INTO individuals" not in SQL and "INSERT INTO interactions" not in SQL
+    for name in SEED_NAMES:
+        assert f"'{name}'" not in SQL
+
+def test_seed_backfills_last_location_only_where_missing():
+    assert "UPDATE individuals i SET last_location = sub.location" in SEED_FLAT
+    assert "AND i.last_location IS NULL" in SEED_FLAT
+
+def test_seed_header_says_run_schema_first():
+    assert "schema.sql" in SEED_RAW[:SEED_RAW.index("WITH seed")]

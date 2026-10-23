@@ -40,7 +40,9 @@ mobile/           React Native (Expo) app, iOS only; mobile/ios/ is the committe
   services/       API + Supabase clients
   config/api.ts   Reads the backend URL and Supabase settings from mobile/.env
 supabase/
-  schema.sql      ← the database. Run this once. See Setup.
+  schema.sql      ← the database (full current schema for a fresh install). See Setup.
+  seed.sql        Optional demo people; run after schema.sql, never on production
+  migrations/     Numbered, idempotent upgrades for an existing database, in filename order
 docs/             Architecture, PRD, and feature deep-dives
 main.py           Railway entrypoint; re-exports backend.main:app
 requirements.txt  Backend dependencies (pinned); requirements-dev.txt adds test tools
@@ -145,11 +147,12 @@ You need Python 3.11, a current Node.js LTS, a Supabase project and an OpenAI AP
 ### 1. Database
 
 1. Create a new Supabase project.
-2. In the SQL Editor, run **`supabase/schema.sql`**. That single file is the
-   whole schema: tables, constraints, indexes, an `updated_at` trigger, preset
-   categories, six demo individuals with one seed interaction each, and
-   row-level security switched on with **no policies**. There is no migration
-   chain, and the file is safe to run again: it never duplicates the seed
+2. In the SQL Editor, run **`supabase/schema.sql`**. That file is the whole
+   current schema: tables, constraints, indexes, an `updated_at` trigger,
+   preset categories, and row-level security switched on with **no policies**.
+   It inserts no people. Then, optionally, run **`supabase/seed.sql`** for six
+   demo individuals with one seed interaction each (demo only, never on
+   production). `seed.sql` is safe to run again: it never duplicates the seed
    people or adds seed history to anyone who already has some. Seed people are
    matched by name, though, so running it again re-adds a demo person you
    deleted (or renamed).
@@ -171,7 +174,8 @@ Audio is sent to the backend inline (base64), so no Storage bucket is needed.
 
 #### Upgrading a database created from an older schema.sql
 
-Run the current `supabase/schema.sql` again. On an existing database it:
+Apply `supabase/migrations/*.sql` in filename order (each file is idempotent).
+Re-running the current `supabase/schema.sql` also works. On an existing database it:
 
 - drops every policy earlier versions created, leaving RLS on with none;
 - adds `NOT NULL` to the timestamp, flag, weight and score columns (the
@@ -182,8 +186,9 @@ Run the current `supabase/schema.sql` again. On an existing database it:
   (no route can reach those);
 - adds the `updated_at` trigger and swaps the old indexes for the ones the
   queries use;
-- recomputes the urgency score of a seed person only while their data is still
-  exactly the seed data, and inserts nothing that already exists.
+- inserts nothing that already exists. (Re-running `seed.sql` also recomputes
+  the urgency score of a seed person while their data is still exactly the seed
+  data.)
 
 Then rebuild everyone's embeddings (step 4 below: `POST /api/embeddings/generate-all`
 or `backend/scripts/backfill_embeddings.py`). The embedding text is now built
@@ -192,7 +197,7 @@ version still describe the old text (custom fields missing, for instance)
 until they are regenerated.
 
 Also re-score everyone's urgency: `cd backend && python scripts/rescore_urgency.py`.
-The SQL above re-scores only untouched seed rows, so every other person keeps a
+The SQL re-scores only untouched seed rows (`seed.sql`), so every other person keeps a
 score from the older maths until re-saved. The script recomputes each stored
 `urgency_score` with the current categories and writes only the rows that
 changed (the `updated_at` trigger bumps those rows); `urgency_override` is never
@@ -306,7 +311,7 @@ but Export CSV fails with "Rebuild it" until you rebuild.
 
 ### 4. Backfill embeddings (needed for semantic search)
 
-The seeded demo individuals start without embeddings, so a descriptive search
+The seeded demo individuals (`seed.sql`) start without embeddings, so a descriptive search
 ("veteran with heart disease") finds nothing among them until you run this;
 new and updated individuals get one automatically in the background. To embed
 the seed rows (or anything else that predates that, or after
@@ -657,7 +662,7 @@ These are still true:
   individual is deleted again so a retry can't duplicate them; a merge updates
   the individual first, and if the interaction then fails, the update stays
   without its history entry.
-- **Re-running `schema.sql` re-adds a deleted demo person.** Seed people are
+- **Re-running `seed.sql` re-adds a deleted demo person.** Seed people are
   matched by name (see [Database](#1-database)).
 - **iOS only.** There is no Android build setup, and `mobile/ios/` is committed
   prebuilt, so `app.json` changes need `npx expo prebuild --platform ios` (see

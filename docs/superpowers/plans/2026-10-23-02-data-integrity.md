@@ -171,7 +171,7 @@ git commit -m "test: script supabase rpc calls strictly in FakeSupabase (H2-2.2)
 **Interfaces:**
 - Produces: `supabase/seed.sql` is the only file that inserts demo people. `schema.sql` keeps the preset categories, which are required config, not demo data.
 
-- [ ] **Step 1: Write the failing tests** in `test_schema_sql.py`. Add `SEED_RAW = (ROOT/"supabase"/"seed.sql").read_text()` and `SEED_SQL` (comments stripped, as `SQL` is) plus `SEED_FLAT`. Then `_seed_individuals()` parses `SEED_SQL`, and the two guard tests (`test_seed_individuals_are_guarded_by_name`, `test_seed_interactions_only_for_seeded_people_without_history`) slice `SEED_FLAT`. Add:
+- [x] **Step 1: Write the failing tests** in `test_schema_sql.py`. Add `SEED_RAW = (ROOT/"supabase"/"seed.sql").read_text()` and `SEED_SQL` (comments stripped, as `SQL` is) plus `SEED_FLAT`. Then `_seed_individuals()` parses `SEED_SQL`, and the two guard tests (`test_seed_individuals_are_guarded_by_name`, `test_seed_interactions_only_for_seeded_people_without_history`) slice `SEED_FLAT`. Add:
 
 ```python
 def test_schema_sql_inserts_no_demo_people():
@@ -187,26 +187,26 @@ def test_seed_header_says_run_schema_first():
     assert "schema.sql" in SEED_RAW[:SEED_RAW.index("WITH seed")]
 ```
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_schema_sql.py -q`
 Expected: FAIL. `seed.sql` is missing.
 
-- [ ] **Step 3: Move** `schema.sql:238-313` verbatim into `seed.sql`, under a header saying: optional demo data; run after `schema.sql`; never on production; re-running re-adds a deleted demo person (matched by name). In `schema.sql`, rewrite the header (lines 1-8). It is the full current schema for a fresh database: no demo people; upgrades are `supabase/migrations/` in order; still safe to re-run. Update the comment in `test_schema_sql.py`'s module docstring to say where each shape lives.
+- [x] **Step 3: Move** `schema.sql:238-313` verbatim into `seed.sql`, under a header saying: optional demo data; run after `schema.sql`; never on production; re-running re-adds a deleted demo person (matched by name). In `schema.sql`, rewrite the header (lines 1-8). It is the full current schema for a fresh database: no demo people; upgrades are `supabase/migrations/` in order; still safe to re-run. Update the comment in `test_schema_sql.py`'s module docstring to say where each shape lives.
 
-- [ ] **Step 4: Update docs.**
+- [x] **Step 4: Update docs.**
   - README, Setup step 2: run `schema.sql`, then optionally `seed.sql` for the six demo people.
   - README, "Upgrading": apply `supabase/migrations/*.sql` in filename order. Re-running the current `schema.sql` also works.
   - README, Known issue: now "Re-running `seed.sql` re-adds a deleted demo person".
   - README, layout block: add `seed.sql` and `migrations/`.
   - CLAUDE.md, Commands: `# database: fresh = supabase/schema.sql then supabase/seed.sql (demo only); upgrade = supabase/migrations/ in order`.
 
-- [ ] **Step 5: Run the full checks**
+- [x] **Step 5: Run the full checks**
 
 Run: `python -m pytest -q && ruff check backend --select F,E9`
 Expected: PASS (the seed urgency tests still find 6 people).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/schema.sql supabase/seed.sql backend/tests/test_schema_sql.py README.md CLAUDE.md

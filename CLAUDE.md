@@ -26,6 +26,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001   # always port 80
 python -m pytest                                # from the repo root; runs offline
 ruff check backend --select F,E9                # the lint CI runs
 cd mobile && npx jest && npx tsc --noEmit
+# database: fresh = supabase/schema.sql then supabase/seed.sql (demo only); upgrade = supabase/migrations/ in order
 ```
 
 Backend needs `backend/.env` (see `backend/.env.example`); the app needs
