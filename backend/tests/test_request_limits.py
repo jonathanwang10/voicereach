@@ -114,7 +114,10 @@ def test_embeddings_search_rejects_out_of_range_requests(body):
 
 def test_embeddings_search_accepts_bounds():
     sb = MagicMock()
-    sb.table.return_value.select.return_value.execute.return_value.data = []
+    q = sb.table.return_value
+    for method in ("select", "order", "range", "in_"):
+        getattr(q, method).return_value = q
+    q.execute.return_value.data = []
     with patch("api.embeddings.get_supabase", return_value=sb):
         r = _client().post("/api/embeddings/search",
                            json={"query": "x" * 500, "top_k": 50, "similarity_threshold": 1})

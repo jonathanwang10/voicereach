@@ -167,6 +167,18 @@ class _Chain:
         return SimpleNamespace(data=data if data is not None else [])
 
 
+def paged(rows: list) -> Callable[["Call"], list]:
+    """`data=` for a scripted select: the slice the call's .range(a, b) asks for
+    (every row when the chain has no range), so fetch_all can page through `rows`."""
+    def page(call: "Call") -> list:
+        r = call.mod("range")
+        if r is None:
+            return copy.deepcopy(rows)
+        start, end = r[0]
+        return copy.deepcopy(rows[start:end + 1])
+    return page
+
+
 # --- FakePeopleDB: in-memory name search (duplicate detection, assistant context) ----------
 
 class FakePeopleDB:
@@ -269,7 +281,7 @@ class FakeListDB:
 
 class _ListQuery:
     def __init__(self, sb, table):
-        self.sb, self.table, self.filters = sb, table, []
+        self.sb, self.table, self.filters, self.window = sb, table, [], None
 
     def select(self, *a, **k):
         return self
@@ -296,6 +308,13 @@ class _ListQuery:
     def limit(self, *a, **k):
         return self
 
+    def range(self, start, end):
+        self.window = (start, end)
+        return self
+
+    def _page(self, rows):
+        return list(rows) if self.window is None else list(rows)[self.window[0]:self.window[1] + 1]
+
     def execute(self):
         assert_off_event_loop(f"FakeListDB: table({self.table!r}).execute()")
         self.sb.queries.append((self.table, self.filters))
@@ -308,12 +327,12 @@ class _ListQuery:
                 elif f[0] == "or":  # name.ilike.*tok*,name.ilike.*tok2*
                     needles = [p.split(".ilike.", 1)[1].strip("*").lower() for p in f[1].split(",")]
                     rows = [r for r in rows if any(n in r["name"].lower() for n in needles)]
-            return MagicMock(data=list(rows))
+            return MagicMock(data=self._page(rows))
         if self.table == "interactions":
             ids = next((f[2] for f in self.filters if f[0] == "in"), None)
             rows = [r for r in self.sb.interactions if ids is None or r["individual_id"] in ids]
             rows = sorted(rows, key=lambda r: r["created_at"], reverse=True)
-            return MagicMock(data=rows)
+            return MagicMock(data=self._page(rows))
         if self.table == "individual_embeddings":
-            return MagicMock(data=list(self.sb.embeddings))
+            return MagicMock(data=self._page(self.sb.embeddings))
         raise AssertionError(f"FakeListDB has no table {self.table!r}")

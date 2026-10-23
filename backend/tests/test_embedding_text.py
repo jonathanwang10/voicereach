@@ -154,7 +154,7 @@ class _Tables:
     def table(self, name):
         db = self
         q = MagicMock()
-        for method in ("select", "eq", "order", "in_", "limit"):
+        for method in ("select", "eq", "order", "in_", "limit", "range"):
             getattr(q, method).return_value = q
         q.execute.return_value = MagicMock(data=list(db.rows.get(name, [])))
 

@@ -25,7 +25,7 @@ class _ExportDB:
 
     def table(self, name):
         db, q = self, MagicMock()
-        for method in ("select", "order", "eq", "limit"):
+        for method in ("select", "order", "eq", "limit", "range"):
             getattr(q, method).return_value = q
 
         def in_(col, ids):
@@ -143,3 +143,16 @@ def test_embedding_upsert_conflicts_on_individual_id():
         asyncio.run(individuals.generate_embedding_background("i-1", {"name": "Ann", "data": {}}, []))
     _, kwargs = sb.table.return_value.upsert.call_args
     assert kwargs.get("on_conflict") == "individual_id"
+
+
+def test_export_includes_people_past_the_first_1000():
+    from main import app
+    from tests.helpers import FakeSupabase, paged
+    people = [{"id": f"id-{i:05d}", "name": f"P{i}", "urgency_score": 0, "urgency_override": None,
+               "data": {}, "created_at": "2026-01-01T00:00:00+00:00"} for i in range(1001)]
+    sb = (FakeSupabase().on("categories", "select", data=[])
+          .on("individuals", "select", data=paged(people)).on("interactions", "select", data=[]))
+    with patch("api.categories.get_supabase", return_value=sb):
+        r = TestClient(app).get("/api/export")
+    assert r.status_code == 200, r.text
+    assert len(r.text.strip().splitlines()) == 1 + 1001

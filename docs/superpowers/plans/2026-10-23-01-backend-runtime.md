@@ -49,6 +49,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 **Executor deviations (recorded while implementing):**
 
 - Task 1: the roadmap and phase plans were already committed on `hardening-2` (15251d2), so Task 1's commit adds only the manual-steps file (`docs: add hardening-2 manual-steps file`). Baseline: 718 passed, 5 skipped (all five are the live smoke tests in `test_live_smoke.py`), not 1 skipped; jest 40/40 suites (the first cold run timed out 4 suites, a rerun passed; not a code failure).
+- Task 4: `test_schema_contract.py`'s static scan matched `.table("t")...execute()`; a `fetch_all` builder has no `.execute()`, so the regex ran on into the next chain. The scan now also ends a chain at the `.order("id"))` that closes a builder and never crosses another `.table(` call. `fetch_last_seen` also selects `id`, so `fetch_all` can skip a shifted row. The MagicMock chains in `test_rate_limit.py` / `test_request_limits.py` became self-returning chains (they could not just add one `range` link).
 
 ## Decisions the roadmap left open
 
@@ -407,7 +408,7 @@ Roadmap item 3.
 - Produces: `backend/db/client.py: def fetch_all(build: Callable[[], Any], page_size: int = 1000) -> list[dict]`. Each caller's `build` must order by a unique key (add `.order("id")` as the last tiebreak), or pages can overlap.
 - Produces: `backend/tests/helpers.py: def paged(rows: list) -> Callable[[Call], list]`, which returns the slice the call's `.range(a, b)` asks for (every row if there is no range). Use it as `data=` for a scripted select.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `test_db_client.py`:
 
@@ -454,20 +455,20 @@ def test_export_includes_people_past_the_first_1000():
     assert len(r.text.strip().splitlines()) == 1 + 1001
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_db_client.py backend/tests/test_list_individuals.py backend/tests/test_rescore.py backend/tests/test_export_and_upsert.py -v`
 Expected: FAIL. `fetch_all` and `paged` don't exist yet, and once they do, search, rescore and export still read one page.
 
-- [ ] **Step 3: Implement `fetch_all(build, page_size=1000) -> list[dict]` and `paged(rows)`**
+- [x] **Step 3: Implement `fetch_all(build, page_size=1000) -> list[dict]` and `paged(rows)`**
 
 `fetch_all` loops `start = 0, page_size, ...`, running `build().range(start, start + page_size - 1).execute().data or []`. It appends rows whose `id` is new, or that have no `id`, and stops after a page shorter than `page_size`. Then switch every read listed under **Files** to it, inside `run_db` (or directly, in the sync `rescore_all_individuals` and `fetch_last_seen`), each with a unique `.order(...)`. Give `_ListQuery` a `range(start, end)` that slices the rows it returns.
 
-- [ ] **Step 4: Run the tests and the full checks**
+- [x] **Step 4: Run the tests and the full checks**
 
 Expected: the new tests pass. Then run the full checks; fix any hand-made MagicMock chain listed under **Files** by adding `"range"` to its chained-method tuple.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/db/client.py backend/services backend/api backend/scripts backend/tests README.md CLAUDE.md

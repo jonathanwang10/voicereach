@@ -1,5 +1,6 @@
 """GET /api/individuals: last_seen, no N+1 (C-32, C-52, R-17); fetch_last_seen; display score; search fields."""
 import asyncio
+import uuid
 from unittest.mock import MagicMock, patch
 
 
@@ -119,3 +120,9 @@ def test_duplicate_prompt_loop_does_not_shadow_the_uuid_module():
     from services import duplicate_detection_service as d
     src = inspect.getsource(d)
     assert "for i, uuid in enumerate" not in src
+
+
+async def test_search_counts_people_past_the_first_1000():
+    people = [person(1, id=str(uuid.UUID(int=i)), name=f"P{i}") for i in range(1, 1501)]
+    res = await IndividualService(FakeListDB(people, [])).search_individuals(sort_by="name", limit=5)
+    assert res.total == 1500

@@ -74,7 +74,8 @@ only after `npx expo prebuild --platform ios`.
   as a `system` message.
 - **Database access:** one service-key client from `db.client.get_supabase()`; every
   `.execute()` reached from `async` code goes through `await run_db(...)` (the test fakes
-  fail a query made on the event loop).
+  fail a query made on the event loop); whole-table reads go through `fetch_all`,
+  ordered by a unique key.
 - **Categories** are schema-as-data rows; the API names are `urgency_weight` and
   `single_select`. A category's `name` is its key (`category_key`, e.g. `hiv_status`)
   and `display_name` is the label as typed; export columns, embedding text and the

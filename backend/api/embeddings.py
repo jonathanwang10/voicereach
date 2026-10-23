@@ -7,7 +7,7 @@ from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRE
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
-from db.client import get_supabase, run_db
+from db.client import fetch_all, get_supabase, run_db
 from pydantic import BaseModel, Field
 from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
@@ -98,7 +98,8 @@ async def semantic_search_individuals(
         # A database failure here is an outage, not "no matches": let it become a 500 (C-17).
         text_results = []
         if request.query.strip():
-            people = (await run_db(lambda: supabase.table("individuals").select("*").execute())).data or []
+            people = await run_db(lambda: fetch_all(
+                lambda: supabase.table("individuals").select("*").order("id")))
             for ind in people:
                 kind = match_individual(request.query, ind)
                 if kind:
@@ -108,11 +109,11 @@ async def semantic_search_individuals(
         # exact matches only; the log names the error type, never the query.
         embedding_results = []
         try:
-            result = await run_db(lambda: supabase.table("individual_embeddings")
-                                  .select("*, individuals(*)").execute())
+            embedded = await run_db(lambda: fetch_all(
+                lambda: supabase.table("individual_embeddings").select("*, individuals(*)").order("id")))
             # Rows from another embedding model (another vector size) can't be compared
             # with the query and would make the whole comparison fail: skip them (C-34)
-            rows = [r for r in (result.data or [])
+            rows = [r for r in embedded
                     if r.get('individuals') and isinstance(r.get('embedding_data'), list)
                     and len(r['embedding_data']) == embedding_service.dimensions]
             if rows:
@@ -199,12 +200,12 @@ async def generate_embeddings_for_all_individuals(
         supabase = get_supabase()
         
         # Get all individuals
-        result = await run_db(lambda: supabase.table("individuals").select("*").execute())
-        
-        if not result.data:
+        individuals = await run_db(lambda: fetch_all(
+            lambda: supabase.table("individuals").select("*").order("id")))
+
+        if not individuals:
             return {"message": "No individuals found in database"}
-        
-        individuals = result.data
+
         categories = (await run_db(lambda: supabase.table("categories").select("*")
                                    .order("created_at").execute())).data or []
 

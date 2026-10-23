@@ -23,7 +23,7 @@ from services.urgency_calculator import calculate_urgency_score, get_display_urg
 from services.field_registry import normalize_individual_data
 from services.search_matching import MATCH_TIER, match_individual
 from services import context_service
-from db.client import run_db
+from db.client import fetch_all, run_db
 
 
 LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
@@ -37,18 +37,18 @@ def fetch_last_seen(supabase: Client, individual_ids: list) -> Dict[str, Dict[st
     Returns {id: {"last_seen": iso_str, "location": dict | None}}. People with no
     interactions are absent; the caller falls back to their `created_at`.
     `last_seen` is never `updated_at` (an urgency override or edit is not a sighting).
-    Chunking keeps the `in_` list short enough for the URL, and keeps each response
-    under PostgREST's ~1000-row cap unless the chunk averages more than ~20
-    interactions per person (then the oldest of them fall back to `created_at`).
+    Chunking keeps the `in_` list short enough for the URL; each chunk is read with
+    fetch_all, so a chunk with more than 1000 interactions is still read whole (H2-1.3).
     """
     ids = [str(i) for i in individual_ids]
     latest: Dict[str, Dict[str, Any]] = {}
     for start in range(0, len(ids), LAST_SEEN_CHUNK):
-        rows = supabase.table("interactions") \
-            .select("individual_id, created_at, location") \
-            .in_("individual_id", ids[start:start + LAST_SEEN_CHUNK]) \
-            .order("created_at", desc=True) \
-            .execute().data or []
+        chunk = ids[start:start + LAST_SEEN_CHUNK]
+        rows = fetch_all(lambda: supabase.table("interactions")
+                         .select("id, individual_id, created_at, location")
+                         .in_("individual_id", chunk)
+                         .order("created_at", desc=True)
+                         .order("id"))
         for row in rows:  # newest first, so the first row per person wins
             latest.setdefault(str(row["individual_id"]), {
                 "last_seen": row["created_at"],
@@ -64,15 +64,15 @@ def rescore_all_individuals(supabase: Client) -> int:
     OD-1 puts every weighted category in the denominator, so creating one changes
     everyone's score. Called by `create_category` for a weighted or auto-trigger
     category, and by scripts/rescore_urgency.py after an upgrade.
-    - One read of individuals and categories (PostgREST's ~1000-row cap applies,
-      as for generate-all and export), then one update per row whose score changed.
+    - One paged read of individuals (fetch_all, every row) and one of categories,
+      then one update per row whose score changed.
     - Scores the normalised data, as a save would; `data` itself is not rewritten.
     - Writes only `urgency_score`: `urgency_override` is never touched. The
       `updated_at` trigger bumps each re-scored row.
     - Clears the assistant's context cache if anything changed.
     Returns the number of rows updated.
     """
-    individuals = supabase.table("individuals").select("id, urgency_score, data").execute().data or []
+    individuals = fetch_all(lambda: supabase.table("individuals").select("id, urgency_score, data").order("id"))
     categories = supabase.table("categories").select("*").execute().data or []
     updated = 0
     for row in individuals:
@@ -362,15 +362,15 @@ class IndividualService:
 
         - A search term goes through `match_individual` (services/search_matching.py):
           the name, or any string value / list item in `data`, never keys. One
-          table read, matched in Python (demo scale; one read returns at most Supabase's
-          API row limit, 1000 by default).
+          paged read of the whole table (fetch_all), matched in Python (demo scale).
         - `last_seen`: latest interaction, else `created_at` (fetch_last_seen).
         - Sort: name matches first, then value matches; within each tier by
           `sort_by` (`urgency_score` means the display score). Then paginate.
         """
         # Database errors propagate (the route turns them into a 500). Returning
         # an empty list here made an outage look like "no one recorded yet" (C-17).
-        individuals = (await run_db(lambda: self.supabase.table("individuals").select("*").execute())).data or []
+        individuals = await run_db(lambda: fetch_all(
+            lambda: self.supabase.table("individuals").select("*").order("id")))
         term = search.strip() if search else ""
         tier: Dict[str, int] = {}
         if term:

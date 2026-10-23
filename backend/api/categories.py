@@ -9,7 +9,7 @@ import csv
 import io
 from api.auth import get_current_user
 from api.errors import internal_error
-from db.client import get_supabase
+from db.client import fetch_all, get_supabase
 from db.models import CreateCategoryRequest, CategoryResponse
 from services.field_registry import category_key, export_columns, format_field_value
 from services.individual_service import fetch_last_seen, rescore_all_individuals
@@ -70,7 +70,8 @@ def export_csv(user_id: str = Depends(get_current_user)):
         supabase = get_supabase()
 
         categories = supabase.table("categories").select("*").order("created_at").execute().data or []
-        individuals = supabase.table("individuals").select("*").order("created_at", desc=True).execute().data or []
+        individuals = fetch_all(lambda: supabase.table("individuals").select("*")
+                                .order("created_at", desc=True).order("id"))
         latest = fetch_last_seen(supabase, [i["id"] for i in individuals]) if individuals else {}
         columns = _unique_headers(export_columns(categories))
 

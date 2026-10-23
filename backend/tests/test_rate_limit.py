@@ -46,7 +46,10 @@ def _client():
 
 def _search_client():
     sb = MagicMock()
-    sb.table.return_value.select.return_value.execute.return_value.data = []
+    q = sb.table.return_value
+    for method in ("select", "order", "range", "in_"):
+        getattr(q, method).return_value = q
+    q.execute.return_value.data = []
     return sb
 
 
@@ -61,7 +64,10 @@ def test_route_returns_429_with_retry_after(monkeypatch):
 
 def test_generate_all_defaults_to_one_per_minute():
     sb = MagicMock()
-    sb.table.return_value.select.return_value.execute.return_value.data = []
+    q = sb.table.return_value
+    for method in ("select", "order", "range", "in_"):
+        getattr(q, method).return_value = q
+    q.execute.return_value.data = []
     with patch("api.embeddings.get_supabase", return_value=sb):
         first = _client().post("/api/embeddings/generate-all")
         second = _client().post("/api/embeddings/generate-all")
@@ -73,7 +79,10 @@ def test_limits_are_per_user(monkeypatch):
     from api.auth import get_current_user
     monkeypatch.setenv("RATE_LIMIT_GENERATE_ALL_PER_MIN", "1")
     sb = MagicMock()
-    sb.table.return_value.select.return_value.execute.return_value.data = []
+    q = sb.table.return_value
+    for method in ("select", "order", "range", "in_"):
+        getattr(q, method).return_value = q
+    q.execute.return_value.data = []
     with patch("api.embeddings.get_supabase", return_value=sb):
         assert _client().post("/api/embeddings/generate-all").status_code == 200
         app.dependency_overrides[get_current_user] = lambda: "someone-else"

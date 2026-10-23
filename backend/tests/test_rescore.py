@@ -7,13 +7,15 @@ for a weighted or auto-trigger category, and a re-score failure never fails the 
 """
 import importlib.util
 import logging
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from main import app
-from tests.helpers import FakeSupabase
+from services.individual_service import rescore_all_individuals
+from tests.helpers import FakeSupabase, paged
 
 VETERAN = {"name": "veteran_status", "display_name": "Veteran Status", "type": "single_select",
            "urgency_weight": 20, "auto_trigger": False,
@@ -142,3 +144,10 @@ def test_rescore_script_runs_the_service_function(monkeypatch, capsys):
     script.main()
     assert seen == [sb]
     assert "3" in capsys.readouterr().out
+
+
+def test_rescore_reads_every_page():
+    rows = [{"id": str(uuid.UUID(int=i)), "urgency_score": 0, "data": {}} for i in range(1, 1501)]
+    sb = FakeSupabase().on("individuals", "select", data=paged(rows)).on("categories", "select", data=[])
+    assert rescore_all_individuals(sb) == 0
+    assert len(sb.calls_to("individuals", "select")) == 2

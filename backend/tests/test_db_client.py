@@ -43,3 +43,25 @@ def test_no_module_builds_a_client_at_import():
     import main
     from api import voice_assistant
     assert not hasattr(main, "supabase") and not hasattr(voice_assistant, "supabase")
+
+
+from db.client import fetch_all
+from tests.helpers import FakeSupabase, paged
+
+def _rows(n): return [{"id": i} for i in range(n)]
+
+def test_fetch_all_reads_every_page_until_a_short_one():
+    sb = FakeSupabase().on("individuals", "select", data=paged(_rows(2500)))
+    assert fetch_all(lambda: sb.table("individuals").select("*").order("id")) == _rows(2500)
+    assert [c.mod("range")[0] for c in sb.calls] == [(0, 999), (1000, 1999), (2000, 2999)]
+
+def test_fetch_all_on_an_exact_multiple_stops_after_an_empty_page():
+    sb = FakeSupabase().on("individuals", "select", data=paged(_rows(2000)))
+    assert len(fetch_all(lambda: sb.table("individuals").select("*").order("id"))) == 2000
+    assert len(sb.calls) == 3
+
+def test_fetch_all_skips_a_row_already_returned():                       # Review Focus 3
+    pages = [[{"id": 1}, {"id": 2}], [{"id": 2}, {"id": 3}], []]          # row 2 shifted onto page 2
+    sb = FakeSupabase().on("individuals", "select", data=lambda call: pages.pop(0))
+    assert fetch_all(lambda: sb.table("individuals").select("*").order("id"), page_size=2) == \
+        [{"id": 1}, {"id": 2}, {"id": 3}]

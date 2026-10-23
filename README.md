@@ -193,8 +193,8 @@ The SQL above re-scores only untouched seed rows, so every other person keeps a
 score from the older maths until re-saved. The script recomputes each stored
 `urgency_score` with the current categories and writes only the rows that
 changed (the `updated_at` trigger bumps those rows); `urgency_override` is never
-touched. Like `generate-all`, it reads up to Supabase's API row limit (1000 by
-default).
+touched. It reads every row: whole-table reads page past Supabase's API row
+limit (`fetch_all` in `backend/db/client.py`).
 
 The SQL Editor may ask you to confirm because the file contains `DROP` and
 `DELETE` statements. If you only want to close direct table access, this is
@@ -504,9 +504,9 @@ text. Results are ranked in tiers: name match (`search_type: "exact"`, score 1.0
 then a data-value match (`"value"`, 0.9), then semantic matches by cosine score.
 A strong semantic hit never outranks a text match. Matching runs in Python over the
 whole table, and so does the semantic comparison (vectors are JSONB, not
-pgvector), so this is demo scale. Each of those whole-table reads is also capped
-by Supabase's API row limit ("Max rows", 1000 by default): past that, people
-silently drop out of the list, search and export.
+pgvector), so this is demo scale. Those whole-table reads page through
+Supabase's API row limit ("Max rows", 1000 by default) with `fetch_all`, so
+nobody drops out of the list, search or export past the first 1000.
 
 On the Search tab, typing runs one search per 300 ms pause, and only the newest
 response is shown. The list loads on each focus; after the first load it
@@ -632,9 +632,9 @@ These are still true:
   has to be deleted again.
 - **Search is demo-scale.** The list, text search, export and semantic search
   each read the whole table and work in Python; embeddings are stored as JSONB
-  rather than in pgvector. Those reads are capped by Supabase's API row limit
-  (1000 by default), and so are `POST /api/embeddings/generate-all` and the
-  backfill script, which embed only the first 1000 people they read. After creating a category, existing people's embeddings
+  rather than in pgvector. Those reads (and `POST /api/embeddings/generate-all`)
+  page past Supabase's API row limit; the backfill script still reads one page,
+  so it embeds only the first 1000 people (1000 by default). After creating a category, existing people's embeddings
   only pick up its label when they are next saved (or re-run
   `POST /api/embeddings/generate-all` or the backfill script).
 - **Saving is not transactional.** A save is two writes: the individual, then

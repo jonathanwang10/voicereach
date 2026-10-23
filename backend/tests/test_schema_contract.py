@@ -50,7 +50,10 @@ def test_schema_parser_sees_every_table_and_column():
 def _chains():
     for path in BACKEND_SOURCES:
         src = path.read_text()
-        for m in re.finditer(r'\.table\("(\w+)"\)(.*?)\.execute\(\)', src, re.S):
+        # A chain ends at .execute(), or at the `.order("id"))` that closes a fetch_all
+        # builder (H2-1.3), and never runs on into the next .table() call.
+        for m in re.finditer(r'\.table\("(\w+)"\)((?:(?!\.table\(").)*?)(?:\.execute\(\)|\.order\("id"\)\))',
+                             src, re.S):
             yield f"{path.name}:{src[:m.start()].count(chr(10)) + 1}", m.group(1), m.group(2)
 
 

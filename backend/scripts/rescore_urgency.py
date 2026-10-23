@@ -6,7 +6,7 @@ Run this once after upgrading (next to backfill_embeddings.py): rows saved under
 the old urgency maths keep their old score until re-saved. Only rows whose score
 changes are written; urgency_override is never touched. Creating a weighted
 category in the app re-scores everyone automatically, so this is also the repair
-if that re-score failed. Reads up to PostgREST's ~1000-row cap.
+if that re-score failed. Reads every row (fetch_all pages past PostgREST's 1000-row cap).
 
     cd backend && python scripts/rescore_urgency.py
 """
