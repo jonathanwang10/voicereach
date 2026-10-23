@@ -288,7 +288,7 @@ def test_every_function_pins_its_search_path():
     for m in re.finditer(r"CREATE OR REPLACE FUNCTION (\w+)\(", FLAT):
         assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
 
-@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
@@ -358,3 +358,33 @@ def test_pg_trgm_and_name_trigram_index():
 
 def test_client_request_id_has_no_redundant_index():
     assert not re.search(r"CREATE (?:UNIQUE )?INDEX [^;]* ON interactions ?\(client_request_id\)", FLAT)
+
+
+# --- coarsen_old_locations (H2-2.11) -------------------------------------------
+
+def test_coarsen_signature_and_guard():
+    fn = _function("coarsen_old_locations")
+    assert re.search(r"coarsen_old_locations\(p_days int DEFAULT 30\) RETURNS int", fn)
+    assert "p_days < 1" in fn and "ERRCODE = '22023'" in fn
+
+def test_coarsen_rounds_to_three_decimals_and_strips_the_house_number():
+    fn = _function("coarsen_old_locations")
+    for axis in ("latitude", "longitude"):
+        assert f"round((x.location->>'{axis}')::numeric, 3)" in fn
+    assert "regexp_replace(x.location->>'address'" in fn and "'coarsened', true" in fn
+
+def test_coarsen_skips_malformed_already_coarsened_and_newest_points():   # Review Focus 4
+    fn = _function("coarsen_old_locations")
+    assert "jsonb_typeof(x.location->'latitude') = 'number'" in fn
+    assert "jsonb_typeof(x.location->'longitude') = 'number'" in fn
+    assert "NOT (x.location ? 'coarsened')" in fn
+    assert "ORDER BY y.created_at DESC, y.id DESC LIMIT 1" in fn
+
+def test_coarsen_never_touches_last_location_and_uses_the_trigger_exemption():
+    fn = _function("coarsen_old_locations")
+    assert "public.individuals" not in fn and "last_location" not in fn
+    assert fn.index("set_config('voicereach.coarsening', 'on', true)") < fn.index("UPDATE public.interactions")
+
+def test_pg_cron_schedule_is_only_a_comment():
+    assert "-- SELECT cron.schedule('coarsen-old-locations'" in RAW_SQL
+    assert "cron.schedule" not in SQL

@@ -1167,7 +1167,7 @@ RETURN v_count;
 `individuals.last_location` is never touched. Below the function, a commented schedule (it stays a comment in both files):
 `-- SELECT cron.schedule('coarsen-old-locations', '17 3 * * *', $$SELECT public.coarsen_old_locations(30)$$);`
 
-- [ ] **Step 1: Write the failing tests** in `test_schema_sql.py`:
+- [x] **Step 1: Write the failing tests** in `test_schema_sql.py`:
 
 ```python
 def test_coarsen_signature_and_guard():
@@ -1198,18 +1198,18 @@ def test_pg_cron_schedule_is_only_a_comment():
     assert "cron.schedule" not in SQL
 ```
 
-- [ ] **Step 2: Run them and check they fail.**
+- [x] **Step 2: Run them and check they fail.**
 
-- [ ] **Step 3: Write the migration and fold it into `schema.sql`.** Add a comment block above the function saying why: about 110 m after 30 days; the newest visit and `last_location` stay exact for outreach.
+- [x] **Step 3: Write the migration and fold it into `schema.sql`.** Add a comment block above the function saying why: about 110 m after 30 days; the newest visit and `last_location` stay exact for outreach.
 
-- [ ] **Step 4: Docs and manual steps.**
+- [x] **Step 4: Docs and manual steps.**
   - README "Data leaving the system": the "Everything saved" row now says interaction locations older than 30 days are rounded to about 110 m with the house number removed, once the owner schedules `coarsen_old_locations`. The newest visit and the person's last location stay exact.
   - Manual-steps file, Apply migrations: `7. 20261102000007_coarsen_old_locations.sql. Check: select coarsen_old_locations(30); returns a count; a second run returns 0.`
   - Manual-steps file, Owner actions: `Enable pg_cron (Dashboard → Database → Extensions), then run the commented cron.schedule line from schema.sql once. Check: select jobname, schedule from cron.job; lists coarsen-old-locations.`
 
-- [ ] **Step 5: Run all checks** (`python -m pytest -q`, `ruff check backend --select F,E9`, `cd mobile && npx tsc --noEmit && npx jest`). Expected: PASS.
+- [x] **Step 5: Run all checks** (`python -m pytest -q`, `ruff check backend --select F,E9`, `cd mobile && npx tsc --noEmit && npx jest`). Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/tests/test_schema_sql.py README.md docs/superpowers/plans/2026-10-23-manual-steps.md
