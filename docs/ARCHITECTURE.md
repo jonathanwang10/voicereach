@@ -96,8 +96,10 @@ interactions (
 individual_embeddings (
     id UUID PRIMARY KEY,
     individual_id UUID NOT NULL UNIQUE REFERENCES individuals ON DELETE CASCADE,
-    embedding_data JSONB NOT NULL,   -- 3072 floats
+    embedding halfvec(3072) NOT NULL, -- pgvector, HNSW (halfvec_cosine_ops)
     embedding_text TEXT NOT NULL,    -- exactly the text that was embedded
+    model TEXT NOT NULL, text_hash TEXT NOT NULL,  -- fresh while both match
+    source_updated_at TIMESTAMPTZ NOT NULL,
     created_at, updated_at TIMESTAMPTZ NOT NULL
 )
 ```

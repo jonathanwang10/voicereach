@@ -3,7 +3,7 @@ Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
 import logging
-from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD
+from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD, get_embedding_service
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
@@ -12,15 +12,9 @@ from pydantic import BaseModel, Field
 from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
 from services.urgency_calculator import get_display_urgency_score
-from services.search_matching import MATCH_TIER, match_individual
 
-# Text matches as search results: matcher kind -> search_type and score
-TEXT_MATCH = {
-    "name": {"search_type": "exact", "similarity_score": 1.0},
-    "value": {"search_type": "value", "similarity_score": 0.9},
-}
-# Sort tier per search_type (exact = name match)
-TIER_OF = {"exact": MATCH_TIER["name"], "value": MATCH_TIER["value"], "semantic": MATCH_TIER["semantic"]}
+# search_individuals_hybrid's match_source -> the API's search_type
+SEARCH_TYPE = {"exact": "exact", "name": "name", "text": "value", "semantic": "semantic"}
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 logger = logging.getLogger(__name__)
@@ -86,76 +80,37 @@ async def semantic_search_individuals(
         "embeddings_search", "RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN", 60)),
 ):
     """
-    Hybrid search. Results are tiered: name matches ("exact", 1.0), then data-value
-    matches ("value", 0.9), then semantic matches by cosine score. Text matching uses
-    services/search_matching.match_individual (values only, never keys).
+    Hybrid search in Postgres (`search_individuals_hybrid`, H2-4.2): an exact name
+    match first, then reciprocal-rank fusion of a trigram name leg, a full-text leg
+    over data values (never keys, C-01) and a pgvector cosine leg. The query is
+    embedded here (cached; none for a query under 3 characters). If embedding fails
+    (an OpenAI outage), the search runs text-only; the log names the error type,
+    never the query. A database error is a 500, not "no matches" (C-17).
     """
+    q = request.query.strip()
+    if not q:
+        return _search_response(request, [], semantic_used=False)
     try:
-        # Get Supabase client
         supabase = get_supabase()
-        
-        # Text leg: the shared value-only matcher (C-01). A name match is "exact"
-        # (score 1.0), a match in a data value is "value" (score 0.9).
-        # A database failure here is an outage, not "no matches": let it become a 500 (C-17).
-        text_results = []
-        if request.query.strip():
-            people = await run_db(lambda: fetch_all(
-                lambda: supabase.table("individuals").select("*").order("id")))
-            for ind in people:
-                kind = match_individual(request.query, ind)
-                if kind:
-                    text_results.append(dict(ind, **TEXT_MATCH[kind]))
-
-        # Now semantic matches. Embedding failures (e.g. an OpenAI outage) degrade to
-        # exact matches only; the log names the error type, never the query.
-        embedding_results = []
         try:
-            embedded = await run_db(lambda: fetch_all(
-                lambda: supabase.table("individual_embeddings").select("*, individuals(*)").order("id")))
-            # Rows from another embedding model (another vector size) can't be compared
-            # with the query and would make the whole comparison fail: skip them (C-34)
-            rows = [r for r in embedded
-                    if r.get('individuals') and isinstance(r.get('embedding_data'), list)
-                    and len(r['embedding_data']) == embedding_service.dimensions]
-            if rows:
-                search_results = await embedding_service.semantic_search(
-                    request.query,
-                    [(r['individual_id'], r['embedding_data']) for r in rows],
-                    request.top_k,
-                    request.similarity_threshold
-                )
-                by_id = {r['individual_id']: r['individuals'] for r in rows}
-                for search_result in search_results:
-                    individual_data = by_id.get(search_result['individual_id'])
-                    if individual_data:
-                        embedding_results.append({
-                            **individual_data,
-                            "id": search_result['individual_id'],
-                            "similarity_score": search_result['similarity_score'],
-                            "search_type": "semantic"
-                        })
+            vector = await get_embedding_service().embed_query(q)
         except Exception as e:
-            logger.warning("Embedding search failed: %s", type(e).__name__)
-            embedding_results = []
-
-        # Combine and deduplicate: a text match wins over a semantic hit for the same person
-        candidates = text_results + embedding_results
-        seen_ids = set()
-        unique = []
-        for r in candidates:
-            if r['id'] not in seen_ids:
-                seen_ids.add(r['id'])
-                unique.append(r)
+            logger.warning("Query embedding failed: %s", type(e).__name__)
+            vector = None
+        params = {"p_query": q, "p_query_embedding": vector, "p_limit": request.top_k,
+                  "p_min_similarity": request.similarity_threshold}
+        rows = (await run_db(lambda: supabase.rpc("search_individuals_hybrid", params).execute())).data or []
 
         # last_seen / address come from ONE interactions query for all results
-        latest = await run_db(lambda: fetch_last_seen(supabase, [r['id'] for r in unique]))
+        latest = await run_db(lambda: fetch_last_seen(supabase, [r['id'] for r in rows]))
         abbreviate = IndividualService(supabase).abbreviate_address
-        all_results = []
-        for r in unique:
-            seen = latest.get(r['id'])
+        results = []
+        for r in rows:  # SQL order is the ranking
+            seen = latest.get(str(r['id']))
             location = (seen or {}).get("location") or r.get("last_location")
             address = (location or {}).get("address")
-            all_results.append({
+            search_type = SEARCH_TYPE[r.get("match_source") or "semantic"]
+            results.append({
                 "id": r['id'],
                 "name": r.get('name'),
                 "urgency_score": r.get('urgency_score'),
@@ -164,26 +119,28 @@ async def semantic_search_individuals(
                 "last_seen": seen["last_seen"] if seen else r.get('created_at'),
                 "abbreviated_address": abbreviate(address) if address else None,
                 "data": r.get('data') or {},
-                "search_type": r['search_type'],
-                "similarity_score": r['similarity_score'],
+                "search_type": search_type,
+                "similarity_score": 1.0 if search_type == "exact" else r.get("similarity"),
+                "score": r.get("score"),
             })
+        return _search_response(request, results, semantic_used=vector is not None)
 
-        # Tiers: name match, then value match, then semantic (by cosine score)
-        all_results.sort(key=lambda x: (TIER_OF[x['search_type']], -x['similarity_score']))
-
-        return {
-            "results": all_results,
-            "query": request.query,
-            "total_results": len(all_results),
-            "normal_results": len([r for r in all_results if r['search_type'] != 'semantic']),
-            "semantic_results": len([r for r in all_results if r['search_type'] == 'semantic']),
-            "similarity_threshold": request.similarity_threshold
-        }
-        
     except HTTPException:
         raise
     except Exception as e:
         raise internal_error("Search", e)
+
+
+def _search_response(request: SearchRequest, results: list, *, semantic_used: bool) -> dict:
+    return {
+        "results": results,
+        "query": request.query,
+        "total_results": len(results),
+        "normal_results": len([r for r in results if r['search_type'] != 'semantic']),
+        "semantic_results": len([r for r in results if r['search_type'] == 'semantic']),
+        "similarity_threshold": request.similarity_threshold,
+        "semantic_used": semantic_used,
+    }
 
 
 @router.post("/generate-all")

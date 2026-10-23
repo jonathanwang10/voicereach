@@ -1,75 +1,90 @@
-"""Semantic search ranking: cosine order, the 0.15 threshold, top_k, and the route's use of it.
-OpenAI is never called: the query embedding is a fake vector."""
-import asyncio
+"""POST /api/embeddings/search (H2-4.2): one call to search_individuals_hybrid with the query
+embedding (or none: text only), results in SQL order. OpenAI is never called."""
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from main import app
 from services.embedding_service import EmbeddingService
-from tests.helpers import FakeListDB, person
+from tests.helpers import FakeSupabase
 
-QUERY = [1.0, 0.0]
-STORED = [
-    ("orthogonal", [0.0, 1.0]),    # cosine 0.0  -> below 0.15, dropped
-    ("close", [1.0, 0.2]),         # cosine 0.98
-    ("diagonal", [1.0, 1.0]),      # cosine 0.71
-    ("opposite", [-1.0, 0.0]),     # cosine -1.0 -> dropped
-    ("same", [2.0, 0.0]),          # cosine 1.0 (length doesn't matter)
-    ("weak", [0.1, 1.0]),          # cosine 0.0995 -> dropped
-]
+VEC = [0.01] * 3072
+T = "2026-01-01T00:00:00+00:00"
 
 
-def _service():
-    svc = EmbeddingService.__new__(EmbeddingService)
-    svc.dimensions = 2
-    svc.generate_embedding = AsyncMock(return_value=QUERY)
-    return svc
+def _row(i, name, source, similarity=None, score=0.03):
+    return {"id": f"00000000-0000-0000-0000-00000000000{i}", "name": name, "data": {}, "urgency_score": 10,
+            "urgency_override": None, "last_location": None, "version": 1, "created_at": T, "updated_at": T,
+            "score": score, "match_source": source, "similarity": similarity}
 
 
-def _rank(**kwargs):
-    return asyncio.run(_service().search_similar_individuals(QUERY, STORED, **kwargs))
+ROWS = [_row(1, "Ann", "exact", score=0.033), _row(2, "Annie", "name", score=0.03), _row(3, "Bob", "text", score=0.02),
+        _row(4, "Cy", "semantic", similarity=0.42, score=0.016)]
 
 
-def test_results_are_by_cosine_similarity_highest_first_and_below_threshold_dropped():
-    results = _rank()
-    assert [r["individual_id"] for r in results] == ["same", "close", "diagonal"]
-    assert results[0]["similarity_score"] == pytest.approx(1.0)
-    assert results[2]["similarity_score"] == pytest.approx(0.7071, abs=1e-4)
+def _sb(rows=(), error=None):
+    sb = FakeSupabase().on("interactions", "select", data=[])
+    if error is not None:
+        return sb.on_rpc("search_individuals_hybrid", error=error)
+    return sb.on_rpc("search_individuals_hybrid", data=list(rows))
 
 
-def test_threshold_is_inclusive_and_adjustable():
-    assert [r["individual_id"] for r in _rank(similarity_threshold=0.9)] == ["same", "close"]
-    assert [r["individual_id"] for r in _rank(similarity_threshold=0.0)] == ["same", "close", "diagonal", "weak", "orthogonal"]
+def _post(sb, body):
+    with patch("api.embeddings.get_supabase", return_value=sb):
+        return TestClient(app, raise_server_exceptions=False).post("/api/embeddings/search", json=body)
 
 
-def test_top_k_keeps_the_best():
-    assert [r["individual_id"] for r in _rank(top_k=2)] == ["same", "close"]
+def test_search_calls_the_hybrid_rpc_with_the_query_embedding(monkeypatch):
+    monkeypatch.setattr(EmbeddingService, "embed_query", AsyncMock(return_value=VEC))
+    sb = _sb()
+    body = _post(sb, {"query": "veteran near market"}).json()
+    assert sb.rpc_params("search_individuals_hybrid") == [{"p_query": "veteran near market",
+        "p_query_embedding": VEC, "p_limit": 10, "p_min_similarity": 0.15}]
+    assert body["semantic_used"] is True
 
 
-def test_no_stored_embeddings_is_no_results():
-    assert asyncio.run(_service().search_similar_individuals(QUERY, [])) == []
+def test_embedding_failure_falls_back_to_text_only(caplog):          # Review Focus 2 (conftest: embed_query raises)
+    sb = _sb(ROWS[:1])
+    r = _post(sb, {"query": "ann"})
+    assert r.status_code == 200
+    assert sb.rpc_params("search_individuals_hybrid")[0]["p_query_embedding"] is None
+    assert r.json()["semantic_used"] is False and r.json()["results"][0]["name"] == "Ann"
+    assert "Query embedding failed: RuntimeError" in caplog.text and "ann" not in caplog.text.lower().replace("query", "")
 
 
-def test_semantic_search_embeds_the_query_once_and_ranks():
-    svc = _service()
-    results = asyncio.run(svc.semantic_search("veteran near market", STORED, top_k=1))
-    svc.generate_embedding.assert_awaited_once_with("veteran near market")
-    assert [r["individual_id"] for r in results] == ["same"]
+@pytest.mark.real_query_embedding
+def test_short_query_is_text_only_without_an_openai_call(monkeypatch):
+    generate = AsyncMock()
+    monkeypatch.setattr(EmbeddingService, "generate_embeddings", generate)
+    sb = _sb()
+    assert _post(sb, {"query": "ab"}).status_code == 200
+    assert sb.rpc_params("search_individuals_hybrid")[0]["p_query_embedding"] is None
+    generate.assert_not_awaited()
 
 
-def test_search_route_returns_semantic_hits_in_score_order():
-    import api.embeddings as emb
-    from main import app
-    ids = {name: f"00000000-0000-0000-0000-00000000000{i}" for i, (name, _) in enumerate(STORED, start=1)}
-    people = [person(i, name=name.title()) for i, (name, _) in enumerate(STORED, start=1)]
-    rows = [{"individual_id": ids[name], "embedding_data": vec, "individuals": people[i]}
-            for i, (name, vec) in enumerate(STORED)]
-    sb = FakeListDB(people, [], embeddings=rows)
-    with patch.object(emb, "get_supabase", return_value=sb), patch.object(emb, "embedding_service", _service()):
-        r = TestClient(app).post("/api/embeddings/search", json={"query": "zzz"})  # no text match
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert [x["name"] for x in body["results"]] == ["Same", "Close", "Diagonal"]
-    assert all(x["search_type"] == "semantic" for x in body["results"])
-    assert (body["semantic_results"], body["normal_results"], body["similarity_threshold"]) == (3, 0, 0.15)
+def test_blank_query_returns_nothing_without_a_database_call():
+    sb = _sb()
+    body = _post(sb, {"query": "   "}).json()
+    assert body["results"] == [] and sb.calls == []
+
+
+@pytest.mark.parametrize("q", ["50%_", "a & !b", '"quoted', "O'Brien", "diab:*", "🙂 ann"])
+def test_query_text_reaches_sql_unchanged(q):                       # Review Focus 1
+    sb = _sb()
+    assert _post(sb, {"query": f"  {q} "}).status_code == 200
+    assert sb.rpc_params("search_individuals_hybrid")[0]["p_query"] == q.strip()
+
+
+def test_results_keep_sql_order_and_map_match_source():
+    body = _post(_sb(ROWS), {"query": "ann"}).json()
+    results = body["results"]
+    assert [(r["name"], r["search_type"], r["similarity_score"]) for r in results] == [
+        ("Ann", "exact", 1.0), ("Annie", "name", None), ("Bob", "value", None), ("Cy", "semantic", 0.42)]
+    assert results[0]["score"] == ROWS[0]["score"]
+    assert (body["total_results"], body["normal_results"], body["semantic_results"]) == (4, 3, 1)
+
+
+def test_search_database_error_is_500():                             # C-17
+    r = _post(_sb(error=RuntimeError("db down")), {"query": "ann"})
+    assert (r.status_code, r.json()) == (500, {"detail": "Search failed"})

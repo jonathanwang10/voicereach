@@ -21,6 +21,7 @@ Each file is idempotent.
 9. `supabase/migrations/20261103000002_find_duplicate_candidates.sql` (Phase 3, Task 6; needs migration 6, `pg_trgm`, first). Check: `SELECT name FROM find_duplicate_candidates('Jon Smith');` returns a "John Smith" if one exists.
 10. `supabase/migrations/20261103000003_duplicate_decisions.sql` (Phase 3, Task 10).
 11. `supabase/migrations/20261104000001_pgvector_halfvec_embeddings.sql` (Phase 4, Task 1). Before it, check `select extversion from pg_extension where extname = 'vector';` and expect `0.7.0` or later. If no row comes back, the migration installs it; if it's older than 0.7.0, run `ALTER EXTENSION vector UPDATE;` first.
+12. `supabase/migrations/20261104000002_hybrid_search.sql` (Phase 4, Task 4; the generated column rewrites `individuals` once). Smoke check: `select name, match_source from search_individuals_hybrid('John Doe', null, 5);` returns John Doe first with `match_source = 'exact'`.
 
 ## Environment variables
 

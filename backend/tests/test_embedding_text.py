@@ -235,26 +235,6 @@ def test_backfill_script_uses_categories():
     assert db.upserts[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
 
 
-def test_search_skips_vectors_of_another_dimension():
-    """A leftover 1536-d row must not make the whole semantic leg return nothing."""
-    from main import app
-    import api.embeddings as emb
-    good = dict(PERSON, id="good")
-    rows = [
-        {"individual_id": "old", "embedding_data": [1.0] * 1536, "individuals": dict(PERSON, id="old")},
-        {"individual_id": "good", "embedding_data": [1.0] * 3072, "individuals": good},
-    ]
-    svc = _service([1.0] * 3072)
-    from services.embedding_service import EmbeddingService
-    svc.semantic_search = lambda *a, **k: EmbeddingService.semantic_search(svc, *a, **k)
-    svc.search_similar_individuals = lambda *a, **k: EmbeddingService.search_similar_individuals(svc, *a, **k)
-    db = _Tables({"individuals": [], "individual_embeddings": rows, "interactions": []})
-    with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
-        r = TestClient(app).post("/api/embeddings/search", json={"query": "zzzz"})
-    assert [x["id"] for x in r.json()["results"]] == ["good"]
-
-
-
 # --- halfvec storage, model, hash and source time (H2-4.1) -------------------------------
 
 from services import model_config  # noqa: E402

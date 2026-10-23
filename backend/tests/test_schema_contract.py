@@ -42,7 +42,7 @@ def test_schema_parser_sees_every_table_and_column():
     assert set(SCHEMA) == {"categories", "individuals", "interactions", "individual_embeddings", "audit_log",
                            "duplicate_decisions"}
     assert SCHEMA["individuals"] == {"id", "name", "data", "urgency_score", "urgency_override", "last_location",
-                                     "created_at", "updated_at", "version"}
+                                     "created_at", "updated_at", "version", "search_tsv"}
     assert {"changes", "audio_url", "user_name", "user_id", "location", "client_request_id"} <= SCHEMA["interactions"]
 
 

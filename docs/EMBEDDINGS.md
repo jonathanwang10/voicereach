@@ -17,15 +17,17 @@ embedding path uses.
 ## Architecture
 
 ```
-Search tab → POST /api/embeddings/search → name / data-value text match (search_matching.py)
-                                         → query embedding (OpenAI)
-                                         → cosine similarity in Python against every stored vector
-                                         → combined, de-duplicated results
+Search tab → POST /api/embeddings/search → query embedding (OpenAI, cached; none under 3 characters)
+                                         → search_individuals_hybrid (Postgres):
+                                             trigram name leg + full-text leg + pgvector cosine leg,
+                                             fused by reciprocal rank, exact name first
 ```
 
-Vectors live in the `individual_embeddings` table as a JSONB array, one row per
-individual (`UNIQUE (individual_id)`). Similarity is computed with scikit-learn,
-not in the database; pgvector would be the scalable choice.
+Vectors live in `individual_embeddings.embedding` as pgvector `halfvec(3072)`,
+one row per individual (`UNIQUE (individual_id)`), with an HNSW index
+(`halfvec_cosine_ops`). Each row also stores the embedded text, the model, a
+sha256 `text_hash` of the text, and the `individuals.updated_at` it came from
+(H2-4.1).
 
 ## Setup
 
@@ -37,7 +39,8 @@ From the repo root, in a Python 3.11 virtualenv:
 python -m pip install -r requirements.txt
 ```
 
-`numpy` and `scikit-learn` (both pinned there) handle the vector maths.
+The nearest-neighbour search runs in Postgres (pgvector 0.7.0 or later), so the
+backend needs no vector library.
 
 ### 2. Database
 
@@ -120,25 +123,27 @@ GET /api/embeddings/status
 ## How it works
 
 ### 1. Search
-`POST /api/embeddings/search` is a hybrid:
+`POST /api/embeddings/search` embeds the query (a process cache of 256 queries for
+10 minutes; no semantic leg for a query under 3 characters) and makes one call to
+the SQL function `search_individuals_hybrid` (H2-4.2). It has three legs, each
+returning at most 3 x `top_k` candidates:
 
-1. **Text match.** `match_individual` (`backend/services/search_matching.py`, the
-   same matcher the list search and duplicate detection use) is case-insensitive.
-   The name matches as a substring; a string value or list item in `data` matches
-   only where the query starts a word ("male" finds "Male", not "Female"; "diab"
-   finds "Diabetes"). It never matches field names, so "veteran" does not hit
-   everyone with a `veteran_status` key. A name match is `search_type: "exact"`
-   with a score of 1.0; a data-value match is `"value"` with 0.9.
-2. **Semantic match.** The query is embedded, compared with every stored vector,
-   and results at or above `similarity_threshold` are kept, up to `top_k`.
-3. Results are ranked in tiers (`MATCH_TIER`): name matches, then value matches,
-   then semantic matches by score. A semantic score above 0.9 still ranks below a
-   value match. A person found by both text and semantic search appears once, as
-   the text match.
+1. **Name:** an ILIKE substring match (the query is escaped, so `%` and `_` are
+   literal) or a `pg_trgm` trigram match; substring matches rank first.
+2. **Full text:** `individuals.search_tsv`, generated from the name and the string
+   values of `data` (never field names, so "veteran" doesn't hit everyone with a
+   `veteran_status` key; C-01). The query matches as whole words or as word
+   prefixes ("diab" finds Diabetes; "male" doesn't find Female).
+3. **Semantic:** the nearest stored vectors by cosine distance (HNSW), keeping
+   only similarity >= `similarity_threshold`.
 
-Both steps load the whole `individuals` / `individual_embeddings` table and work
-in Python, so search time grows linearly with the number of people: demo scale.
-Each read is also capped by Supabase's API row limit (1000 rows by default).
+The legs are fused by reciprocal rank (`score = Σ 1/(60 + rank)`), and a
+case-insensitive exact name match always comes first. Each result's
+`search_type` is `"exact"`, else the leg where it ranked best (`"name"`,
+`"value"` for full text, `"semantic"`); `similarity_score` is 1.0 for an exact
+name, else the cosine similarity when the semantic leg had the person. If
+embedding the query fails, the search runs on the name and full-text legs
+alone (`semantic_used: false`).
 
 ### 2. Text representation
 `build_embedding_text` (`backend/services/field_registry.py`) builds one line
@@ -163,9 +168,9 @@ Name: John Doe. Height: 72; Weight: 180; Age: 45; Gender: Male; Substance Abuse 
 vector with **exactly that text** as `embedding_text`. All four paths use it:
 the background task on save, `/generate`, `/generate-all` and
 `scripts/backfill_embeddings.py`, so the same person always gets the same text.
-A vector that isn't 3072 long is rejected rather than stored, and search skips
-stored vectors of another length (left by an older model) instead of failing
-the whole semantic comparison.
+A vector that isn't 3072 long is rejected rather than stored (the
+`halfvec(3072)` column couldn't take it). A row whose model and text hash match
+the text built now is left alone: no OpenAI call.
 
 Creating a category doesn't re-embed anyone: existing people pick up the new
 field's label when they are next saved, or run `/generate-all` or the backfill
@@ -182,19 +187,21 @@ async def save_individual(request, background_tasks: BackgroundTasks, user_id=De
     background_tasks.add_task(
         generate_embedding_background,
         result.individual.id,
-        {"id": result.individual.id, "name": result.individual.name, "data": result.individual.data},
+        {"id": ..., "name": ..., "data": ..., "updated_at": ...},
         categories,   # the rows the save already loaded
     )
     return result
 ```
 
-The task calls `store_individual_embedding`, which upserts:
+The task calls `store_individual_embedding`, which skips a fresh row and
+otherwise upserts:
 
 ```python
 supabase.table("individual_embeddings").upsert({
     "individual_id": individual["id"],
-    "embedding_data": embedding,
+    "embedding": embedding,          # halfvec(3072)
     "embedding_text": text,          # the exact text that was embedded
+    "model": model, "text_hash": sha256(text), "source_updated_at": individual["updated_at"],
 }, on_conflict="individual_id").execute()
 ```
 
@@ -207,12 +214,13 @@ fill gaps, and check `/status` for coverage.
 
 ## Performance and cost
 
-- Each vector is 3072 floats, stored as JSON text (tens of KB per row).
+- Each vector is 3072 half-precision floats (about 6 KB per row), indexed by HNSW.
 - `text-embedding-3-large` costs $0.13 per million tokens; a profile is roughly
   50-100 tokens, so embedding 1,000 profiles costs well under a cent.
-- Search is O(n) in the number of individuals, and a single read returns at most
-  Supabase's row limit (1000 by default). Beyond demo scale, move the vectors to
-  pgvector and let Postgres do the nearest-neighbour search.
+- Search is one SQL call: the vector leg is an HNSW nearest-neighbour scan
+  (`hnsw.ef_search = 100` for the call), and the name and full-text legs use GIN
+  indexes (trigram and `search_tsv`). A repeated query within 10 minutes reuses
+  its cached embedding.
 
 ## Monitoring
 

@@ -214,12 +214,12 @@ def test_list_search_logs_no_search_term(capture, capsys):
 
 
 def test_semantic_search_logs_no_query_or_names(capture, capsys):
-    import api.embeddings as emb
-    rows = [{"individual_id": PERSON["id"], "individuals": PERSON,
-             "embedding_data": [0.0] * emb.embedding_service.dimensions}]
-    with patch("api.embeddings.get_supabase", return_value=FakeDB({"individual_embeddings": rows})), \
-         patch.object(emb.embedding_service, "semantic_search",
-                      AsyncMock(side_effect=RuntimeError(f"bad query {SENTINEL_NAME}"))):
+    from services.embedding_service import EmbeddingService
+    from tests.helpers import FakeSupabase
+    row = {**PERSON, "version": 1, "score": 0.03, "match_source": "exact", "similarity": None}
+    sb = FakeSupabase().on_rpc("search_individuals_hybrid", data=[row]).on("interactions", "select", data=[])
+    with patch("api.embeddings.get_supabase", return_value=sb), \
+         patch.object(EmbeddingService, "embed_query", AsyncMock(side_effect=RuntimeError(f"bad query {SENTINEL_NAME}"))):
         r = _client().post("/api/embeddings/search", json={"query": SENTINEL_NAME})
     assert r.status_code == 200 and r.json()["results"]
     _assert_clean(capture, capsys)

@@ -66,7 +66,7 @@ services/
   individual_service.py         Save / merge, search, profile, interaction history
   urgency_calculator.py         Urgency score and display score
   validation_helper.py          Normalise, then check required fields
-  embedding_service.py          text-embedding-3-large and cosine similarity
+  embedding_service.py          text-embedding-3-large, the text hash and the query cache
   context_service.py            Name extraction and DB context for the assistant
 db/models.py         Pydantic request/response models
 scripts/backfill_embeddings.py  Embed every individual
@@ -245,10 +245,12 @@ header-only CSV (200).
 
 - **`POST /search`** — `{"query" (≤ 500 chars), "top_k": 10 (1-50),
   "similarity_threshold": 0.15 (0-1)}`; out of range is a 422.
-  Ranked in tiers: name match (`search_type: "exact"`, 1.0), data-value match
-  (`"value"`, 0.9), then semantic matches by cosine score. See
-  [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md). Stored vectors whose length
-  isn't 3072 (another embedding model) are skipped rather than breaking search.
+  One call to `search_individuals_hybrid` (Postgres): an exact name match first
+  (`search_type: "exact"`, 1.0), then reciprocal-rank fusion of the name
+  (`"name"`), full-text (`"value"`) and pgvector semantic (`"semantic"`, its cosine
+  similarity) legs. Results carry `score`; the response adds `semantic_used`
+  (false when the query is under 3 characters or embedding it failed). See
+  [`docs/EMBEDDINGS.md`](../docs/EMBEDDINGS.md).
 - **`POST /generate`** — `{"individual_id": "uuid"}`.
 
 All four embedding paths (the save's background task, `/generate`,
@@ -292,8 +294,9 @@ The pipeline end to end is in [`docs/VOICE_PIPELINE.md`](../docs/VOICE_PIPELINE.
 - **`categories`** — `id`, `name`, `display_name`, `type`, `options`,
   `priority`, `urgency_weight`, `auto_trigger`, `is_required`, `is_preset`,
   `is_active`, timestamps.
-- **`individual_embeddings`** — `individual_id` (unique), `embedding_data`
-  (JSONB array of 3072 floats), `embedding_text`, timestamps.
+- **`individual_embeddings`** — `individual_id` (unique), `embedding`
+  (pgvector `halfvec(3072)`, HNSW-indexed), `embedding_text`, `model`,
+  `text_hash` (sha256 of the text), `source_updated_at`, timestamps.
 
 Row-level security is on with no policies, so only the service key can touch
 these tables. A `set_updated_at` trigger maintains `updated_at` on

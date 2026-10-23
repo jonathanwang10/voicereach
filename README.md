@@ -390,7 +390,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `POST` | `/api/individuals/check-duplicates` | Duplicate candidates for manually entered data |
 | `GET` / `POST` | `/api/categories` | Read / define collected fields |
 | `GET` | `/api/export` | CSV of every individual |
-| `POST` | `/api/embeddings/search` | Hybrid search, ranked: name match (`exact`), data-value match (`value`), then semantic matches |
+| `POST` | `/api/embeddings/search` | Hybrid search in Postgres (`search_individuals_hybrid`): exact name first, then fused name/full-text/semantic rank |
 | `GET` | `/api/embeddings/status` | Embedding coverage |
 | `POST` | `/api/embeddings/generate` | Embed one individual (`{"individual_id": ...}`) |
 | `POST` | `/api/embeddings/generate-all` | Embed every individual |
@@ -547,20 +547,24 @@ lost response) returns the first save's result instead of saving twice.
 
 ### Search
 
-Every text search (the list's `search`, the text half of
-`POST /api/embeddings/search`, and duplicate-candidate lookup) uses one matcher,
-`match_individual` in `backend/services/search_matching.py`. The person's name
-matches as a case-insensitive substring ("ann" finds "Joanne"). A string value or
-list item in `data` matches only where the query starts a word, so "male" finds
-"Male" but not "Female", while "diab" finds "Diabetes". It never looks at field names, so "veteran" or "age" do not
-match everyone through `veteran_status` or `age` keys. Numbers are not matched as
-text. Results are ranked in tiers: name match (`search_type: "exact"`, score 1.0),
-then a data-value match (`"value"`, 0.9), then semantic matches by cosine score.
-A strong semantic hit never outranks a text match. Matching runs in Python over the
-whole table, and so does the semantic comparison (vectors are JSONB, not
-pgvector), so this is demo scale. Those whole-table reads page through
-Supabase's API row limit ("Max rows", 1000 by default) with `fetch_all`, so
-nobody drops out of the list, search or export past the first 1000.
+**The Search tab** (`POST /api/embeddings/search`) runs in Postgres: one call to
+`search_individuals_hybrid` fuses three legs by reciprocal rank (k = 60). The
+name leg is a substring (the query is literal text: `%` and `_` are escaped) or
+trigram match; the full-text leg searches the name and the string values of
+`data` (never field names, so "veteran" doesn't match everyone through a
+`veteran_status` key; "diab" finds Diabetes, "male" doesn't find Female); the
+semantic leg is a pgvector cosine search (HNSW) of the query's embedding. A
+case-insensitive exact name match always comes first. A query under 3
+characters gets no semantic leg, and query embeddings are cached in memory (256
+queries, 10 minutes); if embedding fails, the search runs on the other two legs.
+
+**The list** (`GET /api/individuals?search=`) and duplicate-candidate fallbacks
+use `match_individual` in `backend/services/search_matching.py`: the name as a
+case-insensitive substring ("ann" finds "Joanne"), or a string value or list item
+in `data` where the query starts a word, never field names; name matches sort
+first. It matches in Python over the whole table (demo scale), reading it in
+pages past Supabase's API row limit with `fetch_all`, so nobody drops out of the
+list or export past the first 1000.
 
 On the Search tab, typing runs one search per 300 ms pause, and only the newest
 response is shown. The list loads on each focus; after the first load it
@@ -718,11 +722,11 @@ These are still true:
   delete is kept in memory only for about 5 seconds (`DELETE_UNDO_MS`, see
   "Deleting a person" above), so the person is still there on next launch and
   has to be deleted again.
-- **Search is demo-scale.** The list, text search, export and semantic search
-  each read the whole table and work in Python; embeddings are stored as JSONB
-  rather than in pgvector. Those reads (and `POST /api/embeddings/generate-all`)
-  page past Supabase's API row limit; the backfill script still reads one page,
-  so it embeds only the first 1000 people (1000 by default). After creating a category, existing people's embeddings
+- **The list search is demo-scale.** The list (`GET /api/individuals?search=`)
+  and export read the whole table and work in Python (paged past Supabase's API
+  row limit); the Search tab's hybrid search runs in Postgres. The backfill
+  script still reads one page, so it embeds only the first 1000 people (1000 by
+  default). After creating a category, existing people's embeddings
   only pick up its label when they are next saved (or re-run
   `POST /api/embeddings/generate-all` or the backfill script).
 - **Re-running `seed.sql` re-adds a deleted demo person.** Seed people are

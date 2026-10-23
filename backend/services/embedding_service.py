@@ -6,10 +6,8 @@ import os
 import time
 from collections import OrderedDict
 from datetime import datetime, timezone
-import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
 from openai import AsyncOpenAI
-from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
 from db.client import run_db
@@ -146,79 +144,6 @@ class EmbeddingService:
             "source_updated_at": source_updated_at,
         }, on_conflict="individual_id").execute())
         return True
-
-    async def search_similar_individuals(
-        self, 
-        query_embedding: List[float], 
-        individual_embeddings: List[Tuple[str, List[float]]], 
-        top_k: int = 10,
-        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
-    ) -> List[Dict[str, Any]]:
-        """
-        Find similar individuals using cosine similarity
-        
-        Args:
-            query_embedding: Embedding of the search query
-            individual_embeddings: List of (individual_id, embedding) tuples
-            top_k: Number of top results to return
-            similarity_threshold: Minimum similarity score to include
-            
-        Returns:
-            List of similar individuals with similarity scores
-        """
-        if not individual_embeddings:
-            return []
-        
-        # Convert embeddings to numpy arrays
-        query_array = np.array(query_embedding).reshape(1, -1)
-        individual_arrays = np.array([emb for _, emb in individual_embeddings])
-        
-        # Calculate cosine similarities
-        similarities = cosine_similarity(query_array, individual_arrays).flatten()
-        
-        # Create results with individual IDs and similarity scores
-        results = []
-        for i, (individual_id, _) in enumerate(individual_embeddings):
-            similarity = float(similarities[i])
-            if similarity >= similarity_threshold:
-                results.append({
-                    'individual_id': individual_id,
-                    'similarity_score': similarity
-                })
-        
-        # Sort by similarity score (highest first) and take top_k
-        results.sort(key=lambda x: x['similarity_score'], reverse=True)
-        return results[:top_k]
-    
-    async def semantic_search(
-        self, 
-        query: str, 
-        individual_embeddings: List[Tuple[str, List[float]]], 
-        top_k: int = 10,
-        similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD
-    ) -> List[Dict[str, Any]]:
-        """
-        Perform semantic search using query text and individual embeddings
-        
-        Args:
-            query: Search query text
-            individual_embeddings: List of (individual_id, embedding) tuples
-            top_k: Number of top results to return
-            similarity_threshold: Minimum similarity score to include
-            
-        Returns:
-            List of similar individuals with similarity scores
-        """
-        # Generate embedding for the search query
-        query_embedding = await self.generate_embedding(query)
-        
-        # Search for similar individuals
-        return await self.search_similar_individuals(
-            query_embedding, 
-            individual_embeddings, 
-            top_k,
-            similarity_threshold
-        )
 
 
 _service: Optional[EmbeddingService] = None

@@ -4,7 +4,6 @@
 Python's str(dict) repr: only the name and the string values / list items count.
 """
 import asyncio
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -145,56 +144,9 @@ def test_fetch_last_seen_chunks_ids():
     assert set(out) == set(ids)
 
 
-# --- POST /api/embeddings/search (hybrid) ------------------------------------------------------
-
-def _post_search(sb, query, semantic=()):
-    from fastapi.testclient import TestClient
-    from main import app
-
-    async def fake_semantic(*a, **k):
-        return list(semantic)
-
-    with patch("api.embeddings.get_supabase", return_value=sb), \
-         patch("api.embeddings.embedding_service") as emb:
-        emb.semantic_search = MagicMock(side_effect=fake_semantic)
-        emb.dimensions = 1  # the fake stored vectors below are 1-d
-        r = TestClient(app, raise_server_exceptions=False).post("/api/embeddings/search", json={"query": query})
-    assert r.status_code == 200, r.text
-    return r.json()["results"]
-
-
-def test_embeddings_search_does_not_return_everyone_for_a_key_word():
-    sb = FakeListDB([person(1, data=KEYS_ONLY), person(2, data=KEYS_ONLY)], [])
-    for q in ("veteran", "age", "none"):
-        assert _post_search(sb, q) == [], q
-
-
-def test_embeddings_search_tiers_name_then_value_then_semantic():
-    id3 = "00000000-0000-0000-0000-000000000003"
-    people = [person(1, name="Bob", data={"notes": "army veteran"}),
-              person(2, name="Veteran Joe"),
-              person(3, name="Carl")]
-    # Carl is a strong semantic hit (0.97 > 0.9), yet must rank below the value match
-    embeddings_rows = [{"individual_id": id3, "embedding_data": [0.1], "individuals": people[2]}]
-
-    sb = FakeListDB(people, [], embeddings=embeddings_rows)
-    results = _post_search(sb, "veteran", semantic=[{"individual_id": id3, "similarity_score": 0.97}])
-    assert [(r["name"], r["search_type"], r["similarity_score"]) for r in results] == [
-        ("Veteran Joe", "exact", 1.0),
-        ("Bob", "value", 0.9),
-        ("Carl", "semantic", 0.97),
-    ]
+# POST /api/embeddings/search moved into SQL (search_individuals_hybrid, H2-4.2): its
+# ranking and the values-never-keys rule are pinned in test_schema_sql.py and test_embeddings.py.
 
 
 # Duplicate detection step 3 (values matched at a word start, never keys) now lives in the
 # find_duplicate_candidates SQL function: see test_schema_sql.py (H2-3.5).
-
-
-def test_person_found_by_text_and_semantic_appears_once_as_text():
-    id1 = ID1
-    people = [person(1, name="Bob", data={"notes": "army veteran"}), person(2, name="Carl")]
-    embeddings_rows = [{"individual_id": id1, "embedding_data": [0.1], "individuals": people[0]}]
-
-    sb = FakeListDB(people, [], embeddings=embeddings_rows)
-    results = _post_search(sb, "veteran", semantic=[{"individual_id": id1, "similarity_score": 0.99}])
-    assert [(r["id"], r["search_type"], r["similarity_score"]) for r in results] == [(id1, "value", 0.9)]

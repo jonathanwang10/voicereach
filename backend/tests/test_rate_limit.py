@@ -45,12 +45,8 @@ def _client():
 
 
 def _search_client():
-    sb = MagicMock()
-    q = sb.table.return_value
-    for method in ("select", "order", "range", "in_"):
-        getattr(q, method).return_value = q
-    q.execute.return_value.data = []
-    return sb
+    from tests.helpers import FakeSupabase
+    return FakeSupabase().on_rpc("search_individuals_hybrid", data=[])
 
 
 def test_route_returns_429_with_retry_after(monkeypatch):

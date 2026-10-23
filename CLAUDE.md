@@ -97,6 +97,9 @@ only after `npx expo prebuild --platform ios`.
   The proxy forwards only the client events in `services/realtime_guard.py`; database
   text goes to the model only as a delimited `user` item (`build_context_item`), never
   as a `system` message.
+- **Search** (`search_individuals_hybrid`): reciprocal rank fusion (k = 60) of trigram
+  name, full-text (values, never keys) and pgvector cosine legs; an exact name match is
+  always first; no semantic leg under 3 characters.
 - **Database access:** one service-key client from `db.client.get_supabase()`; every
   `.execute()` reached from `async` code goes through `await run_db(...)` (the test fakes
   fail a query made on the event loop); whole-table reads go through `fetch_all`,

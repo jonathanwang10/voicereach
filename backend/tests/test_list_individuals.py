@@ -1,7 +1,7 @@
 """GET /api/individuals: last_seen, no N+1 (C-32, C-52, R-17); fetch_last_seen; display score; search fields."""
 import asyncio
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 from services.individual_service import IndividualService, fetch_last_seen
@@ -88,21 +88,19 @@ def test_embeddings_search_results_carry_last_seen_and_display_score():
     from fastapi.testclient import TestClient
     from main import app
 
-    people = [person(1, name="Sam", urgency_score=30, urgency_override=90)]
-    sb = FakeListDB(people, [{"individual_id": ID1, "created_at": "2026-08-01T00:00:00+00:00", "location": None}])
-    with patch("api.embeddings.get_supabase", return_value=sb), \
-         patch("api.embeddings.embedding_service") as emb:
-        emb.semantic_search = MagicMock(side_effect=lambda *a, **k: _none())
+    from tests.helpers import FakeSupabase
+    row = {**person(1, name="Sam", urgency_score=30, urgency_override=90), "version": 1,
+           "score": 0.03, "match_source": "exact", "similarity": None}
+    sb = (FakeSupabase().on_rpc("search_individuals_hybrid", data=[row])
+          .on("interactions", "select", data=[{"id": "x", "individual_id": ID1,
+                                               "created_at": "2026-08-01T00:00:00+00:00", "location": None}]))
+    with patch("api.embeddings.get_supabase", return_value=sb):
         r = TestClient(app, raise_server_exceptions=False).post("/api/embeddings/search", json={"query": "sam"})
     assert r.status_code == 200, r.text
     row = r.json()["results"][0]
     assert row["last_seen"] == "2026-08-01T00:00:00+00:00"
     assert row["display_score"] == 90
-    assert sb.count("interactions") == 1
-
-
-async def _none():
-    return []
+    assert len(sb.calls_to("interactions")) == 1
 
 
 def test_one_default_similarity_threshold():
@@ -110,9 +108,6 @@ def test_one_default_similarity_threshold():
     from api.embeddings import SearchRequest
     assert es.DEFAULT_SIMILARITY_THRESHOLD == 0.15
     assert SearchRequest(query="x").similarity_threshold == es.DEFAULT_SIMILARITY_THRESHOLD
-    import inspect
-    for fn in (es.EmbeddingService.search_similar_individuals, es.EmbeddingService.semantic_search):
-        assert inspect.signature(fn).parameters["similarity_threshold"].default == es.DEFAULT_SIMILARITY_THRESHOLD
 
 
 def test_duplicate_prompt_loop_does_not_shadow_the_uuid_module():

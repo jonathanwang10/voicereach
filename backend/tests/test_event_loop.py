@@ -37,7 +37,7 @@ async def test_a_slow_database_call_does_not_stall_other_requests():
 # An on-loop execute() would be an AssertionError, which the route turns into a 500 "... failed".
 OFF_LOOP_ROUTES = [
     ("post", "/api/embeddings/search", {"query": "x"}, "api.embeddings.get_supabase",
-     [("individuals", "select", []), ("individual_embeddings", "select", [])], 200),
+     [("search_individuals_hybrid", "rpc", [])], 200),
     ("post", "/api/embeddings/generate", {"individual_id": ID}, "api.embeddings.get_supabase",
      [("individuals", "select", [])], 404),
     ("post", "/api/embeddings/generate-all", None, "api.embeddings.get_supabase", [("individuals", "select", [])], 200),

@@ -24,6 +24,7 @@ SECRET = 'relation "individuals" violates constraint fk_secret_42 for Jane Doe'
 def _broken_supabase():
     sb = MagicMock()
     sb.table.side_effect = RuntimeError(SECRET)
+    sb.rpc.side_effect = RuntimeError(SECRET)
     return sb
 
 

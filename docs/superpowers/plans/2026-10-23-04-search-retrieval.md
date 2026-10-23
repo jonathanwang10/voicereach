@@ -60,6 +60,7 @@ Checked on 2026-10-23 against the pgvector README, `CHANGELOG.md`, `sql/vector.s
 **Executor deviations (recorded while implementing):**
 
 - Task 1: Phase 1's `test_embeddings_use_embedding_model` fake reply now carries `index` and a 3072-float vector (the dimension check moved into `generate_embeddings`). The background-task test patches `api.individuals.get_embedding_service`, and a new test checks the save passes `updated_at` to it.
+- Task 4: `test_error_contract.py`'s broken-database fake now breaks `rpc()` as well as `table()`. `test_search_matching.py`'s `test_person_found_by_text_and_semantic_appears_once_as_text` was deleted with the other route tests (it drove the deleted Python merge). In `schema.sql` the `search_tsv` column is also added in the upgrade section (as the migration does), so re-running `schema.sql` on an older database adds it.
 
 ## Review Focus
 
@@ -366,7 +367,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `individuals.search_tsv` and its GIN index.
   - `POST /api/embeddings/search` result rows: `{id, name, urgency_score, urgency_override, display_score, last_seen, abbreviated_address, data, search_type, similarity_score, score}`. Here `search_type` maps `match_source` as exact→`"exact"`, name→`"name"`, text→`"value"`, semantic→`"semantic"`; `similarity_score` is `1.0` for exact, else the row's `similarity` (may be `None`). The top level is `{results, query, total_results, normal_results, semantic_results, similarity_threshold, semantic_used}`, where `normal_results` counts `search_type != "semantic"`.
 
-- [ ] **Step 1: Write the failing route tests** (`test_embeddings.py`; patch `api.embeddings.get_supabase` with a `FakeSupabase`; interactions select scripted to `[]` unless stated)
+- [x] **Step 1: Write the failing route tests** (`test_embeddings.py`; patch `api.embeddings.get_supabase` with a `FakeSupabase`; interactions select scripted to `[]` unless stated)
 
 ```python
 VEC = [0.01] * 3072
@@ -448,12 +449,12 @@ def test_search_tsv_indexes_name_and_string_values_never_keys():
 
 In `test_schema_contract.py`, `test_schema_parser_sees_every_table_and_column` adds `"search_tsv"` (and Phase 2's `"version"`) to the `individuals` set.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_embeddings.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL (no rpc call, no function in `schema.sql`).
 
-- [ ] **Step 3: Write the migration** (the same text goes into `schema.sql`, with the column inside `CREATE TABLE individuals`. Write its first line as `search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(name, ''))`, so `_column_def` sees `GENERATED ALWAYS AS`, and start the continuation line with `||`, so the contract parser doesn't read it as a column)
+- [x] **Step 3: Write the migration** (the same text goes into `schema.sql`, with the column inside `CREATE TABLE individuals`. Write its first line as `search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple'::regconfig, coalesce(name, ''))`, so `_column_def` sees `GENERATED ALWAYS AS`, and start the continuation line with `||`, so the contract parser doesn't read it as a column)
 
 ```sql
 -- H2-4.2: full-text over the name and data VALUES (never keys, C-01), always current
@@ -538,7 +539,7 @@ How the function behaves (put this as its header comment):
 - **Ties:** `score` desc, then `updated_at` desc, then `id`. `match_source` is `'exact'`, else the leg where the person ranked best (a tie goes to name, then text, then semantic). `similarity` is the cosine similarity when the vector leg had the person, else NULL.
 - **No embedding:** a NULL embedding (the text-only fallback) empties the vector leg, and the other two fuse alone. A blank query returns no rows.
 
-- [ ] **Step 4: Rewrite the route**
+- [x] **Step 4: Rewrite the route**
 
 For a blank `query.strip()`, return the empty response with no database call. Otherwise:
 1. `vec = await get_embedding_service().embed_query(q)` inside `try`; any exception logs `"Query embedding failed: %s", type(e).__name__` and sets `vec = None`.
@@ -548,7 +549,7 @@ For a blank `query.strip()`, return the empty response with no database call. Ot
 
 `SearchRequest` is unchanged. Delete the Python cosine methods and imports.
 
-- [ ] **Step 5: Docs**
+- [x] **Step 5: Docs**
 
 README's Search section describes the three legs, RRF k = 60, exact name first, values never keys, no semantic leg under 3 characters, and the query cache. It drops "vectors are JSONB, not pgvector" and the demo-scale wording for search; the list search (`GET /api/individuals`) is unchanged, so its own demo-scale note stays. The endpoints row reads "Hybrid search in Postgres (`search_individuals_hybrid`): exact name first, then fused name/full-text/semantic rank". EMBEDDINGS.md rewrites Architecture, How it works § 1 and Performance to match, and drops the numpy/scikit-learn setup line. CLAUDE.md gains under "Rules the code enforces":
 
@@ -556,13 +557,13 @@ README's Search section describes the three legs, RRF k = 60, exact name first, 
 
 `backend/README.md:279` and the `docs/ARCHITECTURE.md` table snippet list the new `individual_embeddings` columns.
 
-- [ ] **Step 6: Append to manual steps**
+- [x] **Step 6: Append to manual steps**
 
 Under **Apply migrations**: `20261104000002_hybrid_search.sql` (it adds a generated column, which rewrites `individuals` once). Add a smoke check after it: `select name, match_source from search_individuals_hybrid('John Doe', null, 5);` should return John Doe first with `match_source = 'exact'`.
 
-- [ ] **Step 7: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 7: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add supabase backend requirements.txt README.md docs/EMBEDDINGS.md docs/ARCHITECTURE.md CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md

@@ -465,3 +465,47 @@ def test_halfvec_migration_casts_json_text_and_drops_jsonb():
     assert "DROP COLUMN embedding_data" in m
     assert "encode(sha256(convert_to(embedding_text, 'UTF8')), 'hex')" in m
     assert "USING hnsw (embedding halfvec_cosine_ops)" in m
+
+
+# --- hybrid search (H2-4.2) ------------------------------------------------------------
+
+def _function_sql(text: str, name: str) -> str:
+    """Normalised CREATE OR REPLACE FUNCTION <name>(...) ... $$; block."""
+    start = text.index(f"CREATE OR REPLACE FUNCTION {name}(")
+    body = text.index("$$", start)
+    return _norm(text[start:text.index("$$;", body + 2) + 3])
+
+PHASE4_FUNCTIONS = {"search_individuals_hybrid": "20261104000002_hybrid_search.sql"}  # Tasks 5 and 7 add theirs
+
+@pytest.mark.parametrize("name,migration", PHASE4_FUNCTIONS.items())
+def test_phase4_functions_match_their_migrations(name, migration):
+    assert _function_sql(SQL, name) == _function_sql(re.sub(r"--[^\n]*", "", (MIGRATIONS / migration).read_text()), name)
+
+@pytest.mark.parametrize("name", PHASE4_FUNCTIONS)
+def test_phase4_functions_are_backend_only(name):
+    assert re.search(rf"REVOKE EXECUTE ON FUNCTION {name}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
+    assert re.search(rf"GRANT EXECUTE ON FUNCTION {name}\([^)]*\) TO service_role;", FLAT)
+
+def test_hybrid_search_signature_and_settings():
+    fn = _function_sql(SQL, "search_individuals_hybrid")
+    assert ("search_individuals_hybrid( p_query text, p_query_embedding halfvec(3072), "
+            "p_limit int DEFAULT 20, p_min_similarity double precision DEFAULT 0.15 )") in fn
+    assert "SET search_path = public, extensions" in fn and "SET hnsw.ef_search = 100" in fn
+
+def test_hybrid_search_fuses_with_rrf_k60_and_pins_exact_names_first():
+    fn = _function_sql(SQL, "search_individuals_hybrid")
+    assert "sum(1.0 / (60 + rnk))" in fn
+    assert "ORDER BY (i.name ILIKE p.esc) DESC, f.score DESC, i.updated_at DESC, i.id" in fn
+
+def test_hybrid_search_legs():
+    fn = _function_sql(SQL, "search_individuals_hybrid")
+    assert "websearch_to_tsquery('simple', q)" in fn and "|| ':*'" in fn and "'[^[:alnum:]]+'" in fn
+    assert "similarity(i.name, p.q)" in fn and "i.name % p.q" in fn
+    assert r"replace(replace(replace(q, '\', '\\'), '%', '\%'), '_', '\_')" in fn
+    # the HNSW index can serve only ORDER BY <distance> LIMIT, with no second key
+    assert "ORDER BY e.embedding <=> p_query_embedding LIMIT" in fn
+
+def test_search_tsv_indexes_name_and_string_values_never_keys():
+    col = _column_def("individuals", "search_tsv")
+    assert "GENERATED ALWAYS AS" in col and """'["string"]'::jsonb""" in FLAT
+    assert re.search(r"CREATE INDEX IF NOT EXISTS \w+ ON individuals USING gin \(search_tsv\)", FLAT)
