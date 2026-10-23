@@ -52,6 +52,7 @@
 
 - Task 6: `ManualEntryForm.test.tsx`'s exact request-shape test now also expects `idempotency_key`. MergeUI only passes a third `onMerge` argument when it knows the version, so the existing two-argument `toHaveBeenCalledWith` tests stay unchanged. The conflict test proves the reload by a changed existing-only value (`medical_conditions: "Asthma"`) instead of `age: 50`; same intent.
 - Task 7: the plan's route assertion expected only `medical_conditions` in `_removed`, but that test's fixture (EXISTING) also has `veteran_status: "No"`, which the merge omits too; by the task's own rule both are removals, so the test expects both. Three older tests that pinned "a dropped field leaves no trace" (`test_get_changed_fields_never_records_empty_new_values`, `test_merge_updates_the_target_and_records_only_what_changed`, and the wholesale-replace test) now expect the removal.
+- Task 9: `test_audit_routes_use_phase_1s_device_dependency` moved to Task 10. It asserts that `api.individuals` and `api.categories` import `get_device_id`, which only Task 10 wires up; importing it unused in Task 9 would fail ruff F401.
 
 ## File Structure
 
@@ -808,7 +809,7 @@ git commit -m "feat(db): interactions are append-only; delete stays allowed (H2-
     - It is sync. Async routes call it as `await run_db(lambda: record_audit(...))`.
     - `detail` must never hold names or field values (see Task 10's table).
 
-- [ ] **Step 1: Write the failing tests** in `test_audit.py`:
+- [x] **Step 1: Write the failing tests** in `test_audit.py`:
 
 ```python
 def test_record_audit_inserts_one_row():
@@ -840,15 +841,15 @@ def test_audit_routes_use_phase_1s_device_dependency():
 
 In `test_schema_sql.py`, add `test_audit_log_is_append_only` (both triggers, each with its `DROP TRIGGER IF EXISTS` first, and the function's `RAISE`) and `test_audit_log_has_no_foreign_key` (`REFERENCES` is absent from its body). `test_rls_enabled` covers `audit_log` through `TABLES`.
 
-- [ ] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_audit.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`).
+- [x] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_audit.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`).
 
-- [ ] **Step 3: Implement** the migration, `schema.sql` fold and `audit.py`. `test_the_source_scan_finds_the_queries` needs `audit_log` among the source tables; `record_audit`'s `.table("audit_log").insert(...).execute()` provides it.
+- [x] **Step 3: Implement** the migration, `schema.sql` fold and `audit.py`. `test_the_source_scan_finds_the_queries` needs `audit_log` among the source tables; `record_audit`'s `.table("audit_log").insert(...).execute()` provides it.
 
-- [ ] **Step 4: Docs and manual step.** README "Data leaving the system": add a row saying `audit_log` keeps who (user id, device id) did what to which record id, when. No names or field values, and it is kept after a person is deleted. Manual-steps file: `3. 20261102000003_audit_log.sql. Check: delete from audit_log; fails with "audit_log is append-only".`
+- [x] **Step 4: Docs and manual step.** README "Data leaving the system": add a row saying `audit_log` keeps who (user id, device id) did what to which record id, when. No names or field values, and it is kept after a person is deleted. Manual-steps file: `3. 20261102000003_audit_log.sql. Check: delete from audit_log; fails with "audit_log is append-only".`
 
-- [ ] **Step 5: Run the checks.** Expected: PASS.
+- [x] **Step 5: Run the checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/ README.md docs/superpowers/plans/2026-10-23-manual-steps.md

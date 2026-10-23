@@ -27,7 +27,7 @@ SQL = re.sub(r"--[^\n]*", "", RAW_SQL)
 SEED_RAW = (SCHEMA.parent / "seed.sql").read_text()
 SEED_SQL = re.sub(r"--[^\n]*", "", SEED_RAW)
 
-TABLES = ("categories", "individuals", "interactions", "individual_embeddings")
+TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log")
 SEED_NAMES = {"Sarah Smith", "Michael Chen", "John Doe", "Maria Garcia", "Robert Johnson", "James Brown"}
 
 # Every policy name any earlier version of the schema (or the old migration chain) created.
@@ -128,7 +128,7 @@ def test_old_policies_are_dropped(policy, table):
 # --- safe to re-run (R-12 / C-54) ------------------------------------------
 
 def test_tables_and_indexes_are_guarded():
-    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 4
+    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 5
     assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX", SQL)) == len(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS", SQL))
 
 
@@ -309,3 +309,18 @@ def test_interactions_reject_update():
 def test_interactions_delete_is_still_allowed():
     assert not re.search(r"BEFORE (?:UPDATE OR )?DELETE ON interactions", FLAT)
     assert "REFERENCES individuals(id) ON DELETE CASCADE" in _column_def("interactions", "individual_id")
+
+
+# --- audit_log (H2-2.7) -------------------------------------------------------
+
+def test_audit_log_is_append_only():
+    for trigger, timing in [("audit_log_append_only", "BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW"),
+                            ("audit_log_no_truncate", "BEFORE TRUNCATE ON audit_log FOR EACH STATEMENT")]:
+        drop = f"DROP TRIGGER IF EXISTS {trigger} ON audit_log;"
+        create = f"CREATE TRIGGER {trigger} {timing} EXECUTE FUNCTION audit_log_append_only()"
+        assert drop in FLAT and create in FLAT and FLAT.index(drop) < FLAT.index(create)
+    assert "RAISE EXCEPTION 'audit_log is append-only'" in _function("audit_log_append_only")
+
+def test_audit_log_has_no_foreign_key():
+    body = SQL[SQL.index("CREATE TABLE IF NOT EXISTS audit_log ("):]
+    assert "REFERENCES" not in body[:body.index(");")]

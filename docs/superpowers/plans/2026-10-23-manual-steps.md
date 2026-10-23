@@ -12,6 +12,7 @@ Each file is idempotent.
 
 1. `supabase/migrations/20261102000001_save_individual.sql` (Phase 2, Task 3): run in the SQL Editor. Check: `select version, count(*) from individuals group by 1;` returns version 1 for every row.
 2. `supabase/migrations/20261102000002_interactions_append_only.sql` (Phase 2, Task 8). Check: `update interactions set user_name = user_name where false;` succeeds, and the same without `where false` fails with "interactions are append-only".
+3. `supabase/migrations/20261102000003_audit_log.sql` (Phase 2, Task 9). Check: `delete from audit_log;` fails with "audit_log is append-only".
 
 ## Environment variables
 
