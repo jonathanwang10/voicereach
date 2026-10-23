@@ -1103,20 +1103,20 @@ git commit -m "perf: re-score in batches of 500 through rescore_batch, after the
   - Phase 3's `find_duplicate_candidates` and Phase 4's search functions pin `SET search_path = public, extensions`, so `similarity(...)` and `%` resolve to the `extensions` copies.
   - The `client_request_id` lookup is served by `interactions_client_request_id_key` from Task 3; there is no second index.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `test_pg_trgm_and_name_trigram_index`: both statements are in `FLAT`, and the extension comes before the index.
   - `test_client_request_id_has_no_redundant_index`: no `CREATE INDEX ... ON interactions ?\(client_request_id\)`.
   - `test_unused_indexes_dropped` keeps `idx_individuals_name` (the old b-tree); its comment changes to "replaced by the trigram index".
 
-- [ ] **Step 2: Run them and check they fail.**
+- [x] **Step 2: Run them and check they fail.**
 
-- [ ] **Step 3: Write the migration and fold it into `schema.sql`.** Update the index comment block: `idx_individuals_name_trgm` serves `ILIKE`/`%`/`similarity()` name lookups (duplicate candidates, Phase 3/4 search).
+- [x] **Step 3: Write the migration and fold it into `schema.sql`.** Update the index comment block: `idx_individuals_name_trgm` serves `ILIKE`/`%`/`similarity()` name lookups (duplicate candidates, Phase 3/4 search).
 
-- [ ] **Step 4: Manual steps.** Apply migrations: `6. 20261102000006_name_trigram_index.sql.` Owner actions: `Check select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm'; returns extensions. If it says public (installed earlier), run ALTER EXTENSION pg_trgm SET SCHEMA extensions; then re-run migration 6.`
+- [x] **Step 4: Manual steps.** Apply migrations: `6. 20261102000006_name_trigram_index.sql.` Owner actions: `Check select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm'; returns extensions. If it says public (installed earlier), run ALTER EXTENSION pg_trgm SET SCHEMA extensions; then re-run migration 6.`
 
-- [ ] **Step 5: Run the checks.** Expected: PASS.
+- [x] **Step 5: Run the checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/tests/test_schema_sql.py docs/superpowers/plans/2026-10-23-manual-steps.md

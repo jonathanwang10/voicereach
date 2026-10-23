@@ -15,6 +15,7 @@ Each file is idempotent.
 3. `supabase/migrations/20261102000003_audit_log.sql` (Phase 2, Task 9). Check: `delete from audit_log;` fails with "audit_log is append-only".
 4. `supabase/migrations/20261102000004_number_scale_max.sql` (Phase 2, Task 11). Check: `select number_scale_max from categories;` is null for every existing row (scores unchanged).
 5. `supabase/migrations/20261102000005_rescore_batch.sql` (Phase 2, Task 13). Then: `cd backend && python scripts/rescore_urgency.py`.
+6. `supabase/migrations/20261102000006_name_trigram_index.sql` (Phase 2, Task 14). Before it, see Owner actions item 5 (pg_trgm's schema).
 
 ## Environment variables
 
@@ -48,3 +49,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
    service-role keys) are revoked.
 3. Run `eas init` for the mobile project (Phase 8 adds `mobile/eas.json`).
 4. Choose the App Store bundle id (Phase 8 leaves a placeholder).
+5. (Phase 2, Task 14) Check `select extnamespace::regnamespace from pg_extension where extname = 'pg_trgm';` returns `extensions`. If it says `public` (installed earlier), run `ALTER EXTENSION pg_trgm SET SCHEMA extensions;` then re-run migration 6.

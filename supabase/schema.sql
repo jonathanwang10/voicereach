@@ -22,6 +22,11 @@
 --      accepts ANY user of this project unless ALLOWED_USER_EMAILS is set.
 -- ============================================================================
 
+-- pg_trgm for trigram name matching (H2-2.10). In the `extensions` schema, as
+-- Supabase expects; functions that use similarity() / % pin
+-- `SET search_path = public, extensions`.
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+
 -- ---------------------------------------------------------------------------
 -- categories — the schema-as-data table. Rows here define the app's fields.
 -- ---------------------------------------------------------------------------
@@ -358,17 +363,21 @@ GRANT EXECUTE ON FUNCTION rescore_batch(jsonb) TO service_role;
 -- Indexes. Only the ones a query actually uses:
 --   - interactions(individual_id, created_at DESC): history and "latest
 --     interaction per person" (last seen); also serves individual_id lookups
--- individual_embeddings(individual_id) is already indexed by its UNIQUE.
+--   - individuals GIN (name gin_trgm_ops): ILIKE / % / similarity() name lookups
+--     (duplicate candidates, search) (H2-2.10)
+-- individual_embeddings(individual_id) is already indexed by its UNIQUE, and
+-- interactions(client_request_id) by its UNIQUE (interactions_client_request_id_key).
 -- ---------------------------------------------------------------------------
 DROP INDEX IF EXISTS idx_individuals_data;          -- GIN on data: no query used it
 DROP INDEX IF EXISTS idx_individuals_urgency;       -- urgency sorting happens in Python
 DROP INDEX IF EXISTS idx_embeddings_individual;     -- duplicate of the UNIQUE index
 DROP INDEX IF EXISTS idx_interactions_individual;   -- prefix of the composite below
 DROP INDEX IF EXISTS idx_interactions_created;      -- superseded by the composite below
-DROP INDEX IF EXISTS idx_individuals_name;          -- names are sorted and matched in Python;
-                                                    -- a plain b-tree can't serve ILIKE
+DROP INDEX IF EXISTS idx_individuals_name;          -- the old b-tree, which can't serve ILIKE:
+                                                    -- replaced by the trigram index below
 
 CREATE INDEX IF NOT EXISTS idx_interactions_latest    ON interactions(individual_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_individuals_name_trgm ON individuals USING gin (name extensions.gin_trgm_ops);
 
 -- ---------------------------------------------------------------------------
 -- Preset categories.

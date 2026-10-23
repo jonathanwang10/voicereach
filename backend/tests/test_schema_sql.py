@@ -179,7 +179,7 @@ def test_latest_interaction_index():
     "idx_embeddings_individual",   # duplicate of the UNIQUE (individual_id) index
     "idx_interactions_individual", # leading column of the composite index
     "idx_interactions_created",    # every interactions query filters by individual_id first
-    "idx_individuals_name",        # names are sorted and matched in Python; a b-tree can't serve ILIKE
+    "idx_individuals_name",        # the old b-tree: replaced by the trigram index (H2-2.10)
 ])
 def test_unused_indexes_dropped(index):
     assert f"DROP INDEX IF EXISTS {index};" in FLAT
@@ -347,3 +347,14 @@ def test_rescore_batch_function():
     set_clause = fn[fn.index("SET urgency_score"):fn.index(" FROM jsonb_to_recordset")]
     assert "version" not in set_clause                  # only save_individual changes version
     assert "urgency_override" not in fn
+
+
+# --- pg_trgm and the name trigram index (H2-2.10) ------------------------------
+
+def test_pg_trgm_and_name_trigram_index():
+    ext = "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;"
+    idx = "CREATE INDEX IF NOT EXISTS idx_individuals_name_trgm ON individuals USING gin (name extensions.gin_trgm_ops);"
+    assert ext in FLAT and idx in FLAT and FLAT.index(ext) < FLAT.index(idx)
+
+def test_client_request_id_has_no_redundant_index():
+    assert not re.search(r"CREATE (?:UNIQUE )?INDEX [^;]* ON interactions ?\(client_request_id\)", FLAT)
