@@ -250,7 +250,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Consumes: `categories.is_sensitive` (Phase 3).
 - Produces: `build_embedding_text(individual, categories)` leaves out the value of every category with a truthy `is_sensitive`. A sensitive key is also left out of the "uncategorised keys" loop (add it to `used`). If Phase 3 didn't add a helper, add `def sensitive_keys(categories: list) -> set[str]` (the `name` of each category with a truthy `is_sensitive`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 SENSITIVE = [dict(c, is_sensitive=True) if c["name"] in ("hiv_status", "medical_conditions") else c
@@ -267,18 +267,18 @@ def test_marking_a_category_sensitive_changes_the_hash():
            embedding_text_hash(build_embedding_text(PERSON, SENSITIVE))
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_embedding_text.py -q -k sensitive`
 Expected: FAIL ("HIV status" is still in the text).
 
-- [ ] **Step 3: Implement it in `build_embedding_text`**
+- [x] **Step 3: Implement it in `build_embedding_text`**
 
 Update its docstring. In docs: the README embeddings row says sensitive fields are never sent for embedding; EMBEDDINGS.md says the same; CLAUDE.md's Categories rule adds "`is_sensitive` fields never enter embedding text".
 
-- [ ] **Step 4: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 4: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/field_registry.py backend/tests/test_embedding_text.py README.md docs/EMBEDDINGS.md CLAUDE.md

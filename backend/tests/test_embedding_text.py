@@ -331,3 +331,21 @@ def test_generate_embeddings_rejects_a_wrong_dimension_vector():
     svc = _real_service([0.1] * 1536)
     with pytest.raises(ValueError):
         asyncio.run(svc.generate_embeddings(["t0"]))
+
+
+# --- sensitive fields stay out of the embedding text (H2-4.6) ---------------------------
+
+SENSITIVE = [dict(c, is_sensitive=True) if c["name"] in ("hiv_status", "medical_conditions") else c
+             for c in CATEGORIES]
+
+
+def test_embedding_text_leaves_out_sensitive_fields():
+    text = build_embedding_text(PERSON, SENSITIVE)
+    assert "HIV status" not in text and "Negative" not in text
+    assert "Diabetes" not in text and "Medical Conditions" not in text
+    assert "Housing Priority: High" in text          # non-sensitive fields stay
+
+
+def test_marking_a_category_sensitive_changes_the_hash():
+    assert embedding_text_hash(build_embedding_text(PERSON, CATEGORIES)) != \
+           embedding_text_hash(build_embedding_text(PERSON, SENSITIVE))

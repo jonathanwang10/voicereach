@@ -313,11 +313,13 @@ def build_embedding_text(individual: dict, categories: list) -> str:
     no category follow (sorted), labelled from the key. The category order is
     _ordered_categories, so every caller gets the same text for the same person.
     Urgency is never included (it is not something a search describes, and it
-    changes on every override).
+    changes on every override). Nor is any is_sensitive field (H2-4.6): health and
+    similar values never go to the embeddings API, and flipping a category to
+    sensitive changes the text, so its hash marks the stored vector stale.
     """
     data = individual.get("data") or {}
     parts: List[str] = []
-    used = {"name"}
+    used = {"name"} | sensitive_keys(categories)
     for category in _ordered_categories(categories):
         key = category["name"]
         if key in used:

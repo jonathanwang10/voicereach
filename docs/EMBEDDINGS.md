@@ -144,11 +144,16 @@ Each read is also capped by Supabase's API row limit (1000 rows by default).
 `build_embedding_text` (`backend/services/field_registry.py`) builds one line
 per profile: the name, then each non-empty `data` value labelled with the
 category's `display_name` (else its key title-cased); data keys that match no
-category follow, labelled from the key. The category order is fixed whatever
+category follow, labelled from the key. A category flagged `is_sensitive` (health
+and similar information) is never included (H2-4.6): its value doesn't go to the
+embeddings API, and flagging a category changes the text, so the stored vector is
+stale until the next refresh. The category order is fixed whatever
 order a caller fetched them in (name, required, other presets, then the rest,
 each by `created_at` then key), so every path builds the same text. Lists are joined
 with ", " and a location is its address. For example, the seeded John Doe with a
-custom "HIV status" category added:
+custom "HIV status" category added (before Phase 3 flagged Substance Abuse
+History and Medical Conditions as sensitive; today, those two fields and a
+sensitive HIV status are left out):
 
 ```
 Name: John Doe. Height: 72; Weight: 180; Age: 45; Gender: Male; Substance Abuse History: Moderate; Housing Priority: High; Medical Conditions: Diabetes; Veteran Status: No; HIV status: Negative

@@ -106,7 +106,7 @@ only after `npx expo prebuild --platform ios`.
   and `display_name` is the label as typed; export columns, embedding text and the
   assistant's fields all come from the categories (`services/field_registry.py`).
   `is_sensitive` is set on create (toggle, or a key matching `SENSITIVE_KEY_PATTERN`);
-  there is no edit route.
+  there is no edit route. `is_sensitive` fields never enter embedding text.
 
 ## App structure
 
