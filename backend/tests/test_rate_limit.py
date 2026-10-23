@@ -100,6 +100,9 @@ PAID_ROUTES = [
      {"json": {"individual_id": "11111111-1111-1111-1111-111111111111"}}),
     ("RATE_LIMIT_GENERATE_ALL_PER_MIN", "post", "/api/embeddings/generate-all", {}),
     ("RATE_LIMIT_DUPLICATE_CHECK_PER_MIN", "post", "/api/individuals/check-duplicates", {"json": {"name": ""}}),
+    ("RATE_LIMIT_SAVE_PER_MIN", "post", "/api/individuals", {"json": {"data": {"name": "Ann", "height": 70, "weight": 150}}}),
+    ("RATE_LIMIT_CATEGORY_CREATE_PER_MIN", "post", "/api/categories", {"json": {"name": "Shoes", "type": "text"}}),
+    ("RATE_LIMIT_DELETE_PER_MIN", "delete", "/api/individuals/11111111-1111-1111-1111-111111111111", {}),
 ]
 
 
@@ -108,7 +111,8 @@ def test_every_paid_route_is_rate_limited(env_var, method, path, kwargs, monkeyp
     monkeypatch.setenv(env_var, "1")
     with patch("api.embeddings.get_supabase", side_effect=RuntimeError("no db")), \
          patch("api.individuals.get_supabase", side_effect=RuntimeError("no db")), \
-         patch("api.transcription.get_supabase", side_effect=RuntimeError("no db")):
+         patch("api.transcription.get_supabase", side_effect=RuntimeError("no db")), \
+         patch("api.categories.get_supabase", side_effect=RuntimeError("no db")):
         first = getattr(_client(), method)(path, **kwargs)
         second = getattr(_client(), method)(path, **kwargs)
     # the first call gets through to the route (which then fails on the missing database,
@@ -123,3 +127,32 @@ def test_rate_limit_runs_after_auth():
     app.dependency_overrides.pop(get_current_user, None)
     r = _client().post("/api/embeddings/generate-all")
     assert r.status_code == 401
+
+
+# --- per-device keys and per-process totals (H2-1.7) ---------------------------------------
+
+from api.device import clean_device_id  # noqa: E402
+
+UUID_ID = "3f2b8c1e-0d4a-4c1e-9a7b-2b1f0c9d8e7a"
+
+@pytest.mark.parametrize("raw,expected", [(None, None), ("", None), ("short", None), ("x" * 65, None),
+                                          ("bad id!!", None), (UUID_ID, UUID_ID), (f"  {UUID_ID} ", UUID_ID)])
+def test_clean_device_id(raw, expected):
+    assert clean_device_id(raw) == expected
+
+def test_limit_key_and_total_env_var():
+    assert rl.limit_key("u1", None) == "u1" and rl.limit_key("u1", UUID_ID) == f"u1:{UUID_ID}"
+    assert rl.total_env_var("RATE_LIMIT_SAVE_PER_MIN") == "RATE_LIMIT_SAVE_TOTAL_PER_MIN"
+
+def test_each_device_has_its_own_budget_under_one_process_total(monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_SAVE_PER_MIN", "1"); monkeypatch.setenv("RATE_LIMIT_SAVE_TOTAL_PER_MIN", "2")
+    body = {"json": {"data": {"name": "Ann", "height": 70, "weight": 150}}}
+    with patch("api.individuals.get_supabase", side_effect=RuntimeError("no db")):
+        codes = [_client().post("/api/individuals", headers={"X-Device-Id": d}, **body).status_code
+                 for d in ("device-aaaa", "device-aaaa", "device-bbbb", "device-cccc")]
+    assert codes == [500, 429, 500, 429]
+
+def test_total_defaults_to_five_times_the_per_device_limit(monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_X_PER_MIN", "1")
+    allowed = [rl.check_keyed_limit("x", "u", f"device-{i:04d}", "RATE_LIMIT_X_PER_MIN", 9) is None for i in range(6)]
+    assert allowed == [True] * 5 + [False]

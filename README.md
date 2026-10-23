@@ -406,9 +406,14 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | Realtime client frame | 1 MB; only the allowed event types (below) | error event, frame dropped |
 | Realtime session | `REALTIME_MAX_SESSION_SECONDS` (600) | close 1008 |
 
-Requests per minute per account (a fixed 60 s window; a 429 carries
-`Retry-After`). Every phone on the shared demo account shares one budget. Set the
-env var to a positive integer to change one:
+Requests per minute (a fixed 60 s window; a 429 carries `Retry-After`). Each
+window is keyed on the user id plus the phone's `X-Device-Id` header when it sends
+one, so one phone can't use up the shared demo account's budget; without the header
+the key is the user id. Every bucket also has a per-process total across all keys:
+`RATE_LIMIT_<NAME>_TOTAL_PER_MIN` (for example `RATE_LIMIT_SAVE_TOTAL_PER_MIN`),
+default 5 times the per-device limit. The windows live in memory, which is
+deliberate while the backend runs as one process (several processes would each
+allow the full limit). Set the env var to a positive integer to change one:
 
 | Env var | Default | Route |
 |---|---|---|
@@ -419,6 +424,9 @@ env var to a positive integer to change one:
 | `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |
 | `RATE_LIMIT_DUPLICATE_CHECK_PER_MIN` | 30 | `POST /api/individuals/check-duplicates` |
 | `RATE_LIMIT_WS_CONNECT_PER_MIN` | 10 | `WS /api/voice-assistant/realtime/ws` (close 1008) |
+| `RATE_LIMIT_SAVE_PER_MIN` | 30 | `POST /api/individuals` (save and merge; each starts an embedding call) |
+| `RATE_LIMIT_CATEGORY_CREATE_PER_MIN` | 10 | `POST /api/categories` (a weighted category re-scores everyone) |
+| `RATE_LIMIT_DELETE_PER_MIN` | 30 | `DELETE /api/individuals/{id}` |
 
 The realtime proxy is not an open relay: the server sets the session (instructions,
 voice, tools) once, and a client may send only `input_audio_buffer.append` /
@@ -675,7 +683,8 @@ Listed explicitly so nobody mistakes them for finished work:
 - **One shared demo account, auto-logged-in.** The credentials are hardcoded in
   `mobile/services/supabase.ts`, there is no email verification, and every
   interaction is recorded as "Demo User" (`get_current_user_name` in
-  `backend/api/individuals.py`). Every phone shares the account's rate limits.
+  `backend/api/individuals.py`). Rate limits tell phones apart only by the
+  `X-Device-Id` header the app sends.
   Sign Out (Profile tab) ends the session on the device, but the next launch
   signs in again automatically, so it is not a lock on a shared or lost phone.
 - **No offline support.** The app requires connectivity throughout.

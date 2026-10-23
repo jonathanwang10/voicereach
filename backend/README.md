@@ -35,7 +35,7 @@ Environment variables (`backend/.env`):
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
 | `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset, or set but empty = any user of the project |
 | `CORS_ALLOW_ORIGINS` | Optional comma-separated browser origins (unset = none); the app doesn't need it |
-| `RATE_LIMIT_*_PER_MIN` | Optional per-account limits on the paid endpoints (see [Limits](#limits)) |
+| `RATE_LIMIT_*_PER_MIN` | Optional per-user-and-device limits on the paid or heavy endpoints; `RATE_LIMIT_*_TOTAL_PER_MIN` caps each bucket per process (default 5x). See the root README's Limits |
 | `LOG_LEVEL` | Optional backend log level (default `INFO`) |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |

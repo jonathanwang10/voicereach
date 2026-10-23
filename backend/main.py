@@ -15,7 +15,8 @@ from services.context_service import get_context_service
 from starlette.concurrency import run_in_threadpool
 from db.client import get_supabase
 from api.auth import verify_token
-from services.rate_limit import check_rate_limit, limit_from_env
+from api.device import clean_device_id
+from services.rate_limit import check_keyed_limit
 from services.realtime_guard import build_context_item, error_event, sanitize_client_event
 
 # Load environment variables
@@ -271,8 +272,8 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         if auth_outage:
             close_code, close_reason = 1011, "Auth service unavailable"
             return
-        if not check_rate_limit("ws_connect", user_id,
-                                limit_from_env("RATE_LIMIT_WS_CONNECT_PER_MIN", 10)):
+        device_id = clean_device_id(websocket.headers.get("x-device-id"))
+        if check_keyed_limit("ws_connect", user_id, device_id, "RATE_LIMIT_WS_CONNECT_PER_MIN", 10) is not None:
             close_code, close_reason = 1008, "Too many connections. Try again in a minute."
             return
 

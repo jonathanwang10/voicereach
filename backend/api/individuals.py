@@ -68,7 +68,8 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
 async def save_individual(
     request: SaveIndividualRequest,
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user),
+    # Each save starts a paid embedding call (H2-1.7)
+    user_id: str = Depends(rate_limit("save", "RATE_LIMIT_SAVE_PER_MIN", 30)),
     user_name: str = Depends(get_current_user_name)
 ):
     """
@@ -291,7 +292,7 @@ async def update_urgency_override(
 @router.delete("/{individual_id}", response_model=DeleteIndividualResponse)
 async def delete_individual(
     individual_id: UUID,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(rate_limit("delete", "RATE_LIMIT_DELETE_PER_MIN", 30))
 ):
     """
     Delete an individual. FK cascades remove their interactions and embeddings;

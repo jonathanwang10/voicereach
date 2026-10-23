@@ -297,10 +297,12 @@ def ws_env(monkeypatch):
     return upstream
 
 
-def _connect():
+def _connect(device_id=None):
     from main import app
-    return TestClient(app).websocket_connect(
-        "/api/voice-assistant/realtime/ws", headers={"Authorization": "Bearer t"})
+    headers = {"Authorization": "Bearer t"}
+    if device_id:
+        headers["X-Device-Id"] = device_id
+    return TestClient(app).websocket_connect("/api/voice-assistant/realtime/ws", headers=headers)
 
 
 def test_ws_drops_session_update_and_reports_it(ws_env):
@@ -448,3 +450,26 @@ def test_ws_session_uses_realtime_model(ws_env, monkeypatch):
         ws.send_text(json.dumps({"type": "response.cancel"}))
     assert _FakeSecretClient.session["session"]["model"] == "rt-x"
     assert urls == ["wss://api.openai.com/v1/realtime?model=rt-x"]
+
+
+def test_ws_connect_limit_is_per_device(ws_env, monkeypatch):
+    import time
+    import main
+    from starlette.websockets import WebSocketDisconnect
+    monkeypatch.setenv("RATE_LIMIT_WS_CONNECT_PER_MIN", "1")
+    upstreams = []
+    monkeypatch.setattr(main.websockets, "connect", lambda *a, **k: upstreams.append(_FakeUpstream()) or upstreams[-1])
+    with _connect("device-aaaa") as ws:
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+    with _connect("device-aaaa") as ws:
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_text()
+    assert exc.value.code == 1008
+    with _connect("device-bbbb") as ws:                 # another phone still gets in
+        ws.send_text(json.dumps({"type": "response.cancel"}))
+        for _ in range(200):
+            if len(upstreams) == 2 and len(upstreams[1].sent) >= 2:
+                break
+            time.sleep(0.01)
+    assert len(upstreams) == 2
+    assert json.loads(upstreams[1].sent[-1]) == {"type": "response.cancel"}

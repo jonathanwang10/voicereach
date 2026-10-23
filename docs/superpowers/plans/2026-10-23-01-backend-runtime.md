@@ -54,6 +54,7 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 - Task 7: `test_request_limits.py`'s temp-file test stub `failing(path)` now takes `**kwargs`, because the assistant route passes `limits=QUESTION_LIMITS`.
 - Task 9: two more older tests pinned the old behaviour and were updated with it: `test_delete_individual.py` (a merge into a missing person now raises `IndividualNotFound`) and `test_individuals_routes.py` (the 422 detail now lists `weight` with commas).
 - Task 11: `docs/ARCHITECTURE.md` also said `GET /` was public; fixed in the same commit.
+- Task 12: `test_ws_connect_limit_is_per_device` gives each connection its own `_FakeUpstream` (the shared `ws_env` upstream stays closed after the first session, so the third connection could not forward its cancel). `api/device.py` and the keyed limit were written just before the tests; the route-level tests were still seen failing first.
 
 ## Decisions the roadmap left open
 
@@ -1047,7 +1048,7 @@ Roadmap item 7 (limits and `X-Device-Id`).
   - `def check_keyed_limit(bucket: str, user_id: str, device_id: str | None, env_var: str, default_per_minute: int) -> int | None`: None when allowed, else the Retry-After seconds. It checks the key's window first, then the bucket's per-process window under the key `"__process__"`, with total = `limit_from_env(total_env_var(env_var), per_key * DEFAULT_TOTAL_MULTIPLIER)`.
   - `rate_limit(bucket, env_var, default_per_minute)` keeps its signature. Its dependency also takes `device_id: str | None = Depends(get_device_id)` and uses `check_keyed_limit`.
 
-- [ ] **Step 1: Write the failing tests** in `test_rate_limit.py`
+- [x] **Step 1: Write the failing tests** in `test_rate_limit.py`
 
 ```python
 from api.device import clean_device_id
@@ -1101,16 +1102,16 @@ def test_ws_connect_limit_is_per_device(ws_env, monkeypatch):
         # poll ws_env.sent (as test_ws_drops_session_update_and_reports_it does) for the cancel
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_rate_limit.py backend/tests/test_realtime_guard.py -k "device or limit or paid" -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'api.device'`. Once that exists, the three new routes are still not limited.
 
-- [ ] **Step 3: Implement** the names listed under **Interfaces**. Then switch the save, delete and category-create routes and the ws check, and update the docs listed under **Files**.
+- [x] **Step 3: Implement** the names listed under **Interfaces**. Then switch the save, delete and category-create routes and the ws check, and update the docs listed under **Files**.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass, including `test_limits_are_per_user` and `test_rate_limit_runs_after_auth`.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass, including `test_limits_are_per_user` and `test_rate_limit_runs_after_auth`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/api backend/services/rate_limit.py backend/main.py backend/tests backend/.env.example README.md backend/README.md CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md

@@ -68,9 +68,11 @@ only after `npx expo prebuild --platform ios`.
   needs `Authorization: Bearer <Supabase access token>` (`backend/api/auth.py`).
   The app auto-signs in as demo@sfgov.org. An optional `ALLOWED_USER_EMAILS`
   allowlist gives other users a 403. Don't add unauthenticated routes.
-- **Paid endpoints and the realtime proxy:** routes that call OpenAI in the
-  request take `Depends(rate_limit(...))` (`backend/services/rate_limit.py`) instead of
-  `get_current_user`, and large bodies are capped in `BODY_LIMITS` (`backend/main.py`).
+- **Paid or heavy endpoints and the realtime proxy:** routes that call OpenAI in the
+  request, plus save, category create and delete, take `Depends(rate_limit(...))`
+  (`backend/services/rate_limit.py`) instead of `get_current_user`; limits key on the
+  user id plus `X-Device-Id` (`api/device.py`), with a per-process total per bucket.
+  Large bodies are capped in `BODY_LIMITS` (`backend/main.py`).
   The proxy forwards only the client events in `services/realtime_guard.py`; database
   text goes to the model only as a delimited `user` item (`build_context_item`), never
   as a `system` message.

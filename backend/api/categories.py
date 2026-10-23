@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 import csv
 import io
 from api.auth import get_current_user
+from services.rate_limit import rate_limit
 from api.errors import internal_error
 from db.client import fetch_all, get_supabase
 from db.models import CreateCategoryRequest, CategoryResponse
@@ -147,7 +148,8 @@ def _is_unique_violation(exc: Exception) -> bool:
 @router.post("/api/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 def create_category(
     request: CreateCategoryRequest,
-    user_id: str = Depends(get_current_user)
+    # A weighted category re-scores everyone (H2-1.7)
+    user_id: str = Depends(rate_limit("category_create", "RATE_LIMIT_CATEGORY_CREATE_PER_MIN", 10))
 ):
     """
     Create a new custom category.
