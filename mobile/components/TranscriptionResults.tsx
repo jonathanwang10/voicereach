@@ -28,6 +28,8 @@ import {
   sortCategories,
 } from '../utils/categoryDisplay';
 import { MergeUI } from './MergeUI';
+import { newRequestId } from '../utils/requestId';
+import { isVersionConflict } from '../utils/saveConflict';
 import { CategoryLoadError } from './CategoryLoadError';
 
 interface TranscriptionResultsProps {
@@ -116,12 +118,18 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   // Stable across renders so MergeUI's initial selection is computed from one object
   const mergeNewData = useMemo(() => toFields(categorizedData), [categorizedData, categories]);
 
-  const save = (fields: Record<string, any>, mergeWithId?: string) =>
+  // One Idempotency-Key for this review: every save attempt (new, merge, Create New)
+  // sends it, so a retry after a lost response can't save the person twice (H2-2.4)
+  const idempotencyKey = useRef(newRequestId()).current;
+
+  const save = (fields: Record<string, any>, mergeWithId?: string, expectedVersion?: number) =>
     api.saveIndividual({
       data: toFields(fields),
       merge_with_id: mergeWithId ?? null,
       location: location ?? null,
       transcription: result.transcription,
+      expected_version: expectedVersion ?? null,
+      idempotency_key: idempotencyKey,
     });
 
   const handleSave = async () => {
@@ -199,9 +207,9 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     }
   };
 
-  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string) => {
+  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string, expectedVersion?: number) => {
     try {
-      await save(mergedData, mergeWithId);
+      await save(mergedData, mergeWithId, expectedVersion);
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -211,6 +219,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       setSelectedMatch(null);
       onSave(mergedData);
     } catch (error: any) {
+      // MergeUI shows a version conflict and reloads the person (H2-2.3)
+      if (isVersionConflict(error)) throw error;
       showApiError(error, 'Save failed');
     }
   };

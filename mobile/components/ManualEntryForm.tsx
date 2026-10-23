@@ -21,6 +21,8 @@ import {
   sortCategories,
 } from '../utils/categoryDisplay';
 import { MergeUI } from './MergeUI';
+import { newRequestId } from '../utils/requestId';
+import { isVersionConflict } from '../utils/saveConflict';
 import { CategoryLoadError } from './CategoryLoadError';
 
 interface ManualEntryFormProps {
@@ -76,7 +78,13 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
 
   // After a successful save the form starts over, so the same person can't be
   // saved twice by tapping Save again (C-13)
+  // The form stays mounted between people: the Idempotency-Key is kept for retries of
+  // this person's save and renewed after each successful save, or the server would
+  // replay the previous person's result for the next one (H2-2.4)
+  const idempotencyKey = useRef(newRequestId());
+
   const resetForm = () => {
+    idempotencyKey.current = newRequestId();
     setFormData(emptyForm(categories));
     setErrors({});
     setSaveError(null);
@@ -163,7 +171,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       }
 
       // No meaningful match, save as new
-      await api.saveIndividual({ data: fields, location: currentLocation() });
+      await api.saveIndividual({ data: fields, location: currentLocation(), idempotency_key: idempotencyKey.current });
       Toast.show({
         type: 'success',
         text1: 'Success',
@@ -179,12 +187,14 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
     }
   };
 
-  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string) => {
+  const handleMerge = async (mergedData: Record<string, any>, mergeWithId: string, expectedVersion?: number) => {
     try {
       await api.saveIndividual({
         data: coerceFieldData(mergedData, categories),
         merge_with_id: mergeWithId,
         location: currentLocation(),
+        expected_version: expectedVersion ?? null,
+        idempotency_key: idempotencyKey.current,
       });
       Toast.show({
         type: 'success',
@@ -194,13 +204,17 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
       resetForm();
       onSave(mergedData);
     } catch (error: any) {
+      // MergeUI shows a version conflict and reloads the person (H2-2.3)
+      if (isVersionConflict(error)) throw error;
       showApiError(error, 'Save failed');
     }
   };
 
   const handleCreateNew = async (data: Record<string, any>) => {
     try {
-      await api.saveIndividual({ data: coerceFieldData(data, categories), location: currentLocation() });
+      await api.saveIndividual({
+        data: coerceFieldData(data, categories), location: currentLocation(), idempotency_key: idempotencyKey.current,
+      });
       Toast.show({
         type: 'success',
         text1: 'Success',

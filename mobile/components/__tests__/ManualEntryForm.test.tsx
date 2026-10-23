@@ -73,6 +73,7 @@ it('sends numbers as numbers, bare feet as inches, a matched label and a multi-s
   expect(req).toEqual({
     data: { name: 'Ann', height: 72, weight: 180, gender: 'Male', medical_conditions: ['Diabetes', 'Mental Health'] },
     location,
+    idempotency_key: expect.any(String),   // H2-2.4
   });
   // The duplicate check gets the same typed fields, without GPS
   expect((api.checkDuplicates as jest.Mock).mock.calls[0][0]).toEqual(req.data);
@@ -241,4 +242,38 @@ it('labels fields by display_name and makes additional_information multiline', a
   expect(screen.getByText('Additional Information')).toBeTruthy();
   expect(screen.getByPlaceholderText('Enter hiv status')).toBeTruthy();
   expect(screen.getByPlaceholderText(/other relevant information/).props.multiline).toBe(true);
+});
+
+// --- H2-2.4: one Idempotency-Key per person, renewed after each successful save ---------
+
+const keysSent = () => (api.saveIndividual as jest.Mock).mock.calls.map(c => c[0].idempotency_key);
+
+it('uses a new Idempotency key after a successful save', async () => {
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Save'));
+  fillRequired(screen);
+  fireEvent.press(screen.getByText('Save'));
+  await waitFor(() => expect(screen.queryByDisplayValue('Ann')).toBeNull());
+  fillRequired(screen, '5');
+  fireEvent.press(screen.getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalledTimes(2));
+  const [first, second] = keysSent();
+  expect(first).toEqual(expect.any(String));
+  expect(second).toEqual(expect.any(String));
+  expect(second).not.toBe(first);
+});
+
+it('reuses the key when a failed save is retried', async () => {
+  (api.saveIndividual as jest.Mock).mockRejectedValueOnce(outage);
+  const onSave = jest.fn();
+  const screen = render(<ManualEntryForm onSave={onSave} onCancel={jest.fn()} />);
+  await waitFor(() => screen.getByText('Save'));
+  fillRequired(screen);
+  fireEvent.press(screen.getByText('Save'));
+  await screen.findByText('Server error. Please try again.');
+  fireEvent.press(screen.getByText('Save'));
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  const [first, second] = keysSent();
+  expect(first).toEqual(expect.any(String));
+  expect(second).toBe(first);
 });

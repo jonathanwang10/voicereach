@@ -48,6 +48,10 @@
 | D9 | Item 9: upsert **or** `rescore_batch` | `rescore_batch(p_rows jsonb)` with a per-row `version` guard | An upsert of `{id, urgency_score}` fails `individuals.name NOT NULL` on its INSERT path. The guard stops a re-score overwriting a save that landed after the read. |
 | D10 | (not stated) | `SaveIndividualResponse` gains `replayed: bool = False` | The route must not audit or re-embed a replayed save. |
 
+**Executor deviations (recorded while implementing):**
+
+- Task 6: `ManualEntryForm.test.tsx`'s exact request-shape test now also expects `idempotency_key`. MergeUI only passes a third `onMerge` argument when it knows the version, so the existing two-argument `toHaveBeenCalledWith` tests stay unchanged. The conflict test proves the reload by a changed existing-only value (`medical_conditions: "Asthma"`) instead of `age: 50`; same intent.
+
 ## File Structure
 
 | File | Responsibility | Tasks |
@@ -611,7 +615,7 @@ git commit -m "feat(mobile): send Idempotency-Key and expected_version on save, 
     - `TranscriptionResults` makes one key per mount (`useRef(newRequestId())`) and sends it on every save of that review: new, merge and Create New.
     - `ManualEntryForm` keeps its key in a ref and renews it in `resetForm()`, so after every successful save (Review Focus 1). A failed save keeps the key for the retry.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 `MergeUI.test.tsx` (`conflict` is `Object.assign(new Error(MSG), { status: 409, detail: MSG, kind: 'http' })`):
 - `it('passes the loaded version to onMerge')`: the profile resolves `{ data: mockExistingData, version: 3 }`. After Merge, `expect(onMerge).toHaveBeenCalledWith(expect.any(Object), mockPotentialMatch.id, 3)`.
@@ -631,19 +635,19 @@ git commit -m "feat(mobile): send Idempotency-Key and expected_version on save, 
 - `it('uses a new Idempotency key after a successful save')`: save person A, fill in and save person B. The two calls' `idempotency_key` differ.
 - `it('reuses the key when a failed save is retried')`.
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `cd mobile && npx jest components/__tests__/MergeUI.test.tsx components/__tests__/TranscriptionResults.test.tsx components/__tests__/ManualEntryForm.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** the Interfaces block. The parents' `save(...)` helpers pass `expected_version` and `idempotency_key` to `api.saveIndividual`. The existing test "a failed merge save shows one error toast (the parent catches; MergeUI adds none)" must still pass unchanged.
+- [x] **Step 3: Implement** the Interfaces block. The parents' `save(...)` helpers pass `expected_version` and `idempotency_key` to `api.saveIndividual`. The existing test "a failed merge save shows one error toast (the parent catches; MergeUI adds none)" must still pass unchanged.
 
-- [ ] **Step 4: Run the full checks**
+- [x] **Step 4: Run the full checks**
 
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mobile/components

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { api } from '../services/api';
 import { showApiError } from '../utils/errorHandler';
+import { isVersionConflict } from '../utils/saveConflict';
 import { FieldCategory, fieldLabel, formatFieldValue, isEmptyValue } from '../utils/fieldValues';
 import { confidenceColor } from '../utils/duplicateMatches';
 
@@ -15,9 +16,12 @@ interface MergeUIProps {
   newData: Record<string, any>;
   potentialMatch: PotentialMatch;
   existingData?: Record<string, any>; // Will be fetched from backend
+  existingVersion?: number; // the version of existingData, when it is passed in
   // Field data only; the merge target id is passed separately (never mixed into the data).
+  // expectedVersion is the version of the person as loaded (H2-2.3). A rejection that
+  // is a version conflict (409) is MergeUI's to handle: it shows it and reloads.
   // While a returned promise is pending, every button is disabled (C-13).
-  onMerge: (mergedData: Record<string, any>, mergeWithId: string) => void | Promise<void>;
+  onMerge: (mergedData: Record<string, any>, mergeWithId: string, expectedVersion?: number) => void | Promise<void>;
   onCreateNew: (data: Record<string, any>) => void | Promise<void>;
   onCancel: () => void;
   // The categories, for field labels (display_name); a key without one is title-cased.
@@ -39,6 +43,7 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   newData,
   potentialMatch,
   existingData = {},
+  existingVersion,
   onMerge,
   onCreateNew,
   onCancel,
@@ -51,27 +56,33 @@ export const MergeUI: React.FC<MergeUIProps> = ({
   // The matched person's data, tagged with the id it belongs to. Until it is loaded
   // for the current match, the screen shows a spinner and nothing can be merged, so
   // the field selection is always built from the loaded person (C-64).
-  const [existing, setExisting] = useState<{ forId: string | null; data: Record<string, any> }>(() =>
-    hasProvidedData ? { forId: potentialMatch.id, data: existingData } : { forId: null, data: {} });
+  // `version` is what the merge sends back as expected_version (H2-2.3).
+  type Loaded = { forId: string | null; data: Record<string, any>; version?: number };
+  const [existing, setExisting] = useState<Loaded>(() =>
+    hasProvidedData ? { forId: potentialMatch.id, data: existingData, version: existingVersion }
+      : { forId: null, data: {} });
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Bumped after a version conflict: the person is fetched again, even when the
+  // parent passed existingData (that copy is now known to be stale)
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!isValidUUID) return;
-    if (hasProvidedData) {
-      setExisting({ forId: potentialMatch.id, data: existingData });
+    if (hasProvidedData && reloadKey === 0) {
+      setExisting({ forId: potentialMatch.id, data: existingData, version: existingVersion });
       return;
     }
     let cancelled = false;
     setLoadError(null);
     api.getIndividualProfile(potentialMatch.id)
       .then(profile => {
-        if (!cancelled) setExisting({ forId: potentialMatch.id, data: profile?.data || {} });
+        if (!cancelled) setExisting({ forId: potentialMatch.id, data: profile?.data || {}, version: profile?.version });
       })
       .catch(() => {
         if (!cancelled) setLoadError('Failed to load existing individual data');
       });
     return () => { cancelled = true; };
-  }, [potentialMatch.id]); // existingData is not a dependency: a new {} each render would loop
+  }, [potentialMatch.id, reloadKey]); // existingData is not a dependency: a new {} each render would loop
 
   const isLoaded = existing.forId === potentialMatch.id;
   const fetchedExistingData = isLoaded ? existing.data : {};
@@ -103,9 +114,16 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     try {
       await action();
     } catch (e) {
-      // Both parents catch and report their own failures; this only stops a
-      // rejecting handler from becoming an unhandled rejection, and says so once
+      // Both parents catch and report their own failures, except a version conflict,
+      // which they re-throw for this screen. Either way it is shown once, here.
       showApiError(e, 'Save failed');
+      if (isVersionConflict(e)) {
+        // Someone else saved this person: drop the stale copy and the worker's
+        // choices, and load the current person (and its version) again (H2-2.3)
+        setExisting({ forId: null, data: {} });
+        setChoices({ forId: potentialMatch.id, fields: {} });
+        setReloadKey(k => k + 1);
+      }
     } finally {
       submittingRef.current = false;
       setIsSubmitting(false);
@@ -126,7 +144,10 @@ export const MergeUI: React.FC<MergeUIProps> = ({
       return;
     }
 
-    submit(() => onMerge(mergedData, potentialMatch.id));
+    const version = existing.version;
+    submit(() => (version === undefined
+      ? onMerge(mergedData, potentialMatch.id)
+      : onMerge(mergedData, potentialMatch.id, version)));
   };
 
   const handleCreateNew = () => {

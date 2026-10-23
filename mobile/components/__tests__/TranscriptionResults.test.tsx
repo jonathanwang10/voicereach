@@ -495,3 +495,55 @@ it('the Missing Required Fields alert names fields by label', async () => {
   expect(api.saveIndividual).not.toHaveBeenCalled();
 });
 
+
+// --- Idempotency-Key and the merge version (H2-2.3, H2-2.4) ---
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CONFLICT_MSG = 'This person was changed by someone else. Reload and try again.';
+const conflict = Object.assign(new Error(CONFLICT_MSG), { status: 409, detail: CONFLICT_MSG, kind: 'http' });
+
+it('sends one Idempotency key for every save attempt in a review', async () => {
+  (api.saveIndividual as jest.Mock).mockRejectedValueOnce(outage);
+  const onSave = jest.fn();
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult()} onSave={onSave} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalledTimes(1));
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(onSave).toHaveBeenCalled());
+  const keys = (api.saveIndividual as jest.Mock).mock.calls.map(c => c[0].idempotency_key);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toMatch(UUID_RE);
+  expect(keys[1]).toBe(keys[0]);
+});
+
+it('passes expected_version from the loaded match to the merge save', async () => {
+  (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce({ data: { name: 'John' }, version: 5 });
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: [serverJohn] })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  fireEvent.press(await findByText('Merge'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalled());
+  expect(api.saveIndividual).toHaveBeenCalledWith(
+    expect.objectContaining({ merge_with_id: MATCH_ID, expected_version: 5 }));
+});
+
+it('leaves a 409 on merge to MergeUI: one toast, and the person is re-fetched', async () => {
+  (api.saveIndividual as jest.Mock).mockRejectedValueOnce(conflict);
+  (api.getIndividualProfile as jest.Mock)
+    .mockResolvedValueOnce({ data: { name: 'John' }, version: 1 })
+    .mockResolvedValueOnce({ data: { name: 'John' }, version: 2 });
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ potential_matches: [serverJohn] })} onSave={jest.fn()} onCancel={jest.fn()} />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  fireEvent.press(await findByText('Merge'));
+  await waitFor(() => expect(api.getIndividualProfile).toHaveBeenCalledTimes(2));
+  expect(Toast.show).toHaveBeenCalledTimes(1);
+  expect(Toast.show).toHaveBeenCalledWith(expect.objectContaining({ text2: CONFLICT_MSG }));
+});
