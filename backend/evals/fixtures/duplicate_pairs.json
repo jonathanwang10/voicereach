@@ -1,0 +1,1083 @@
+{
+  "synthetic": true,
+  "pairs": [
+    {
+      "id": "dup-001",
+      "same_person": true,
+      "kind": "identical",
+      "new": {
+        "name": "Dorian Kessler",
+        "age": 44,
+        "height": 70,
+        "weight": 175
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "name": "Dorian Kessler",
+        "data": {
+          "name": "Dorian Kessler",
+          "age": 44,
+          "height": 70,
+          "weight": 178,
+          "medical_conditions": [
+            "Diabetes"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-002",
+      "same_person": true,
+      "kind": "identical",
+      "new": {
+        "name": "Halima Brooks",
+        "height": 64,
+        "weight": 130,
+        "gender": "Female"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "name": "Halima Brooks",
+        "data": {
+          "name": "Halima Brooks",
+          "height": 64,
+          "weight": 128,
+          "gender": "Female",
+          "hiv_status": "Positive"
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-003",
+      "same_person": true,
+      "kind": "identical",
+      "new": {
+        "name": "Ezra Collingwood",
+        "age": 61,
+        "height": 68
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "name": "Ezra Collingwood",
+        "data": {
+          "name": "Ezra Collingwood",
+          "age": 60,
+          "height": 68,
+          "weight": 160
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-004",
+      "same_person": true,
+      "kind": "identical",
+      "new": {
+        "name": "Marisol Quintero",
+        "height": 62,
+        "weight": 140
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "name": "Marisol Quintero",
+        "data": {
+          "name": "Marisol Quintero",
+          "height": 62,
+          "weight": 145,
+          "substance_abuse_history": [
+            "Severe"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-005",
+      "same_person": true,
+      "kind": "identical",
+      "new": {
+        "name": "Tobin Ashgrove",
+        "age": 35,
+        "weight": 190
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "name": "Tobin Ashgrove",
+        "data": {
+          "name": "Tobin Ashgrove",
+          "age": 36,
+          "height": 73,
+          "weight": 188
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-006",
+      "same_person": true,
+      "kind": "nickname",
+      "new": {
+        "name": "Bob Ferrante",
+        "age": 52,
+        "height": 69,
+        "weight": 200
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "name": "Robert Ferrante",
+        "data": {
+          "name": "Robert Ferrante",
+          "age": 52,
+          "height": 69,
+          "weight": 205,
+          "medical_conditions": [
+            "Heart Disease"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-007",
+      "same_person": true,
+      "kind": "nickname",
+      "new": {
+        "name": "Liz Harrowgate",
+        "height": 65,
+        "weight": 135,
+        "gender": "Female"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "name": "Elizabeth Harrowgate",
+        "data": {
+          "name": "Elizabeth Harrowgate",
+          "height": 65,
+          "weight": 132,
+          "gender": "Female"
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-008",
+      "same_person": true,
+      "kind": "nickname",
+      "new": {
+        "name": "Bill Okonjo",
+        "age": 47,
+        "height": 71
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000008",
+        "name": "William Okonjo",
+        "data": {
+          "name": "William Okonjo",
+          "age": 47,
+          "height": 71,
+          "weight": 170,
+          "hiv_status": "Negative"
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-009",
+      "same_person": true,
+      "kind": "nickname",
+      "new": {
+        "name": "Peggy Lindell",
+        "age": 70,
+        "height": 61
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "name": "Margaret Lindell",
+        "data": {
+          "name": "Margaret Lindell",
+          "age": 69,
+          "height": 61,
+          "weight": 118
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-010",
+      "same_person": true,
+      "kind": "nickname",
+      "new": {
+        "name": "Jimmy Castellanos",
+        "height": 67,
+        "weight": 155
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000010",
+        "name": "James Castellanos",
+        "data": {
+          "name": "James Castellanos",
+          "height": 67,
+          "weight": 152,
+          "substance_abuse_history": [
+            "Mild"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-011",
+      "same_person": true,
+      "kind": "spelling",
+      "new": {
+        "name": "Jon Wexley",
+        "age": 39,
+        "height": 72,
+        "weight": 180
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000011",
+        "name": "John Wexley",
+        "data": {
+          "name": "John Wexley",
+          "age": 39,
+          "height": 72,
+          "weight": 182
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-012",
+      "same_person": true,
+      "kind": "spelling",
+      "new": {
+        "name": "Ann Smyth",
+        "height": 63,
+        "weight": 125
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000012",
+        "name": "Ann Smith",
+        "data": {
+          "name": "Ann Smith",
+          "height": 63,
+          "weight": 127,
+          "medical_conditions": [
+            "Chronic Pain"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-013",
+      "same_person": true,
+      "kind": "spelling",
+      "new": {
+        "name": "Katrin Delacroix",
+        "age": 28,
+        "height": 66
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000013",
+        "name": "Catrin Delacroix",
+        "data": {
+          "name": "Catrin Delacroix",
+          "age": 28,
+          "height": 66,
+          "weight": 140
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-014",
+      "same_person": true,
+      "kind": "spelling",
+      "new": {
+        "name": "Stephon Mbeki",
+        "height": 74,
+        "weight": 210
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000014",
+        "name": "Stefan Mbeki",
+        "data": {
+          "name": "Stefan Mbeki",
+          "height": 74,
+          "weight": 214
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-015",
+      "same_person": true,
+      "kind": "spelling",
+      "new": {
+        "name": "Gwendolyn Roarke",
+        "age": 55,
+        "weight": 160
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000015",
+        "name": "Gwendolin Rourke",
+        "data": {
+          "name": "Gwendolin Rourke",
+          "age": 55,
+          "height": 64,
+          "weight": 158
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-016",
+      "same_person": true,
+      "kind": "first_only",
+      "new": {
+        "name": "Ignacio",
+        "age": 42,
+        "height": 69,
+        "weight": 170
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000016",
+        "name": "Ignacio Barrera",
+        "data": {
+          "name": "Ignacio Barrera",
+          "age": 42,
+          "height": 69,
+          "weight": 172
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-017",
+      "same_person": true,
+      "kind": "first_only",
+      "new": {
+        "name": "Thandiwe",
+        "height": 66,
+        "weight": 140,
+        "gender": "Female"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000017",
+        "name": "Thandiwe Mokoena",
+        "data": {
+          "name": "Thandiwe Mokoena",
+          "height": 66,
+          "weight": 138,
+          "gender": "Female",
+          "hiv_status": "Positive"
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-018",
+      "same_person": true,
+      "kind": "first_only",
+      "new": {
+        "name": "Augustin",
+        "age": 58,
+        "height": 70
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000018",
+        "name": "Augustin Pelletier",
+        "data": {
+          "name": "Augustin Pelletier",
+          "age": 58,
+          "height": 70,
+          "weight": 165
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-019",
+      "same_person": true,
+      "kind": "first_only",
+      "new": {
+        "name": "Rosalind",
+        "age": 33,
+        "height": 63
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000019",
+        "name": "Rosalind Achterberg",
+        "data": {
+          "name": "Rosalind Achterberg",
+          "age": 33,
+          "height": 63,
+          "weight": 120,
+          "medical_conditions": [
+            "Diabetes"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-020",
+      "same_person": true,
+      "kind": "first_only",
+      "new": {
+        "name": "Cormac",
+        "height": 71,
+        "weight": 185
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000020",
+        "name": "Cormac Delaney",
+        "data": {
+          "name": "Cormac Delaney",
+          "height": 71,
+          "weight": 183
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-021",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Dorian Mayhew",
+        "age": 23,
+        "height": 66,
+        "weight": 140
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000021",
+        "name": "Dorian Kettleby",
+        "data": {
+          "name": "Dorian Kettleby",
+          "age": 61,
+          "height": 72,
+          "weight": 210,
+          "medical_conditions": [
+            "Heart Disease"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-022",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Halima Osei",
+        "height": 70,
+        "weight": 180
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000022",
+        "name": "Halima Brookfield",
+        "data": {
+          "name": "Halima Brookfield",
+          "height": 61,
+          "weight": 115
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-023",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Ezra Pinkerton",
+        "age": 19,
+        "height": 73
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000023",
+        "name": "Ezra Wolcott",
+        "data": {
+          "name": "Ezra Wolcott",
+          "age": 66,
+          "height": 65,
+          "substance_abuse_history": [
+            "Severe"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-024",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Marisol Achebe",
+        "height": 60,
+        "weight": 110
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000024",
+        "name": "Marisol Vandermeer",
+        "data": {
+          "name": "Marisol Vandermeer",
+          "height": 68,
+          "weight": 170
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-025",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Tobin Hartwell",
+        "age": 30,
+        "weight": 160
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000025",
+        "name": "Tobin Garroway",
+        "data": {
+          "name": "Tobin Garroway",
+          "age": 31,
+          "height": 70,
+          "weight": 162
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-026",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Ignacio Ferraro",
+        "age": 70,
+        "height": 64
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000026",
+        "name": "Ignacio Barrientos",
+        "data": {
+          "name": "Ignacio Barrientos",
+          "age": 25,
+          "height": 75,
+          "hiv_status": "Negative"
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-027",
+      "same_person": false,
+      "kind": "same_first",
+      "new": {
+        "name": "Rosalind Petrov",
+        "height": 67,
+        "weight": 150
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000027",
+        "name": "Rosalind Acheson",
+        "data": {
+          "name": "Rosalind Acheson",
+          "height": 67,
+          "weight": 152
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-028",
+      "same_person": false,
+      "kind": "far_apart",
+      "new": {
+        "name": "Leon Varga",
+        "age": 22,
+        "height": 74
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000028",
+        "name": "Leon Varga",
+        "data": {
+          "name": "Leon Varga",
+          "age": 67,
+          "height": 63,
+          "weight": 130
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-029",
+      "same_person": false,
+      "kind": "far_apart",
+      "new": {
+        "name": "Ada Szabo",
+        "age": 71,
+        "height": 60
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000029",
+        "name": "Ada Szabo",
+        "data": {
+          "name": "Ada Szabo",
+          "age": 24,
+          "height": 69,
+          "medical_conditions": [
+            "Chronic Pain"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-030",
+      "same_person": false,
+      "kind": "far_apart",
+      "new": {
+        "name": "Milo Brandt",
+        "height": 76,
+        "weight": 230
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000030",
+        "name": "Milo Brandt",
+        "data": {
+          "name": "Milo Brandt",
+          "height": 62,
+          "weight": 115
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-031",
+      "same_person": false,
+      "kind": "far_apart",
+      "new": {
+        "name": "Iris Navarro",
+        "age": 18,
+        "height": 65
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000031",
+        "name": "Iris Navarro",
+        "data": {
+          "name": "Iris Navarro",
+          "age": 74,
+          "height": 65,
+          "weight": 125,
+          "substance_abuse_history": [
+            "Mild"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-032",
+      "same_person": false,
+      "kind": "far_apart",
+      "new": {
+        "name": "Ravi Chandran",
+        "age": 29,
+        "height": 70,
+        "weight": 160
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000032",
+        "name": "Ravi Chandran",
+        "data": {
+          "name": "Ravi Chandran",
+          "age": 80,
+          "height": 70,
+          "weight": 150
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-033",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Petra Holloway",
+        "height": 65,
+        "weight": 140,
+        "gender": "Female"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000033",
+        "name": "Yvonne Castellano",
+        "data": {
+          "name": "Yvonne Castellano",
+          "height": 65,
+          "weight": 141,
+          "gender": "Female"
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-034",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Gus Okafor",
+        "age": 45,
+        "height": 70,
+        "weight": 180
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000034",
+        "name": "Lionel Featherstone",
+        "data": {
+          "name": "Lionel Featherstone",
+          "age": 45,
+          "height": 70,
+          "weight": 181,
+          "hiv_status": "Positive"
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-035",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Ines Varga",
+        "height": 62,
+        "weight": 120
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000035",
+        "name": "Beatrix Holm",
+        "data": {
+          "name": "Beatrix Holm",
+          "height": 62,
+          "weight": 121
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-036",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Otis Mercer",
+        "age": 50,
+        "weight": 200
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000036",
+        "name": "Kwame Asante",
+        "data": {
+          "name": "Kwame Asante",
+          "age": 50,
+          "height": 71,
+          "weight": 199,
+          "medical_conditions": [
+            "Diabetes"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-037",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Freya Lund",
+        "height": 68,
+        "weight": 150
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000037",
+        "name": "Consuelo Ibarra",
+        "data": {
+          "name": "Consuelo Ibarra",
+          "height": 68,
+          "weight": 150
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-038",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Hugo Brennan",
+        "age": 38,
+        "height": 72
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000038",
+        "name": "Dmitri Volkov",
+        "data": {
+          "name": "Dmitri Volkov",
+          "age": 38,
+          "height": 72,
+          "weight": 185
+        },
+        "last_location": {
+          "latitude": 37.7793,
+          "longitude": -122.4193,
+          "address": "Civic Center Plaza, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-039",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Nell Prewitt",
+        "height": 64,
+        "weight": 130
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000039",
+        "name": "Aiyana Redcloud",
+        "data": {
+          "name": "Aiyana Redcloud",
+          "height": 64,
+          "weight": 131,
+          "substance_abuse_history": [
+            "Severe"
+          ]
+        },
+        "last_location": {
+          "latitude": 37.7651,
+          "longitude": -122.4195,
+          "address": "2100 Mission St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-040",
+      "same_person": false,
+      "kind": "unrelated",
+      "new": {
+        "name": "Cyrus Lamb",
+        "age": 60,
+        "height": 69,
+        "weight": 170
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000040",
+        "name": "Emeka Obi",
+        "data": {
+          "name": "Emeka Obi",
+          "age": 60,
+          "height": 69,
+          "weight": 170
+        },
+        "last_location": {
+          "latitude": 37.7835,
+          "longitude": -122.4116,
+          "address": "Turk St & Taylor St, San Francisco, CA"
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,24 @@
 {
+  "duplicates": {
+    "at_50": {
+      "precision": 0.8696,
+      "recall": 1.0
+    },
+    "at_60": {
+      "precision": 0.8636,
+      "recall": 0.95
+    },
+    "at_70": {
+      "precision": 0.9444,
+      "recall": 0.85
+    },
+    "at_80": {
+      "precision": 1.0,
+      "recall": 0.7
+    },
+    "pairs": 40,
+    "sensitive_leaks": 0
+  },
   "extraction": {
     "cases": 30,
     "dropped_values": 4,

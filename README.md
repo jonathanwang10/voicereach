@@ -650,6 +650,12 @@ It writes nothing and calls no OpenAI endpoint.
   precision and recall, micro precision/recall, how many values the evidence rule
   dropped, and the hallucination rate (values the transcript doesn't state) before
   and after that rule.
+- `eval_duplicates.py`: 40 labelled pairs (20 the same person: identical names,
+  nicknames, spellings, first name only; 20 not). It reports precision (of the pairs
+  scored at or above the threshold, how many really are the same person) and recall
+  (of the same-person pairs, how many reach it) at confidence 50, 60, 70 and 80. The
+  production cut-off is 60. It also counts prompts that carried a sensitive value,
+  which must be 0.
 
 Offline (the default) replays cached model replies in `backend/evals/fixtures/`
 through the real parsing and normalising code, so it is deterministic and costs
@@ -662,6 +668,7 @@ python -m evals.eval_extraction                     # offline, against the basel
 EVAL_LIVE=1 python -m evals.eval_extraction --live  # ask the model (OPENAI_API_KEY; tolerance 0.05)
 EVAL_LIVE=1 python -m evals.eval_extraction --live --record   # cache real replies
 python -m evals.eval_extraction --update-baseline   # store the offline metrics as the baseline
+python -m evals.eval_duplicates                     # the same flags
 ```
 
 The first cached replies are hand-written (`"source": "hand-written"`); record
