@@ -3,6 +3,8 @@ Embedding service for semantic search using OpenAI's text-embedding-3-large mode
 """
 import hashlib
 import os
+import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
@@ -19,6 +21,24 @@ load_dotenv()
 
 # Cosine-similarity cut-off for semantic search; the one value every caller defaults to.
 DEFAULT_SIMILARITY_THRESHOLD = 0.15
+
+# Query embeddings (H2-4.5): one process cache keyed on the normalised query, and no
+# semantic leg for a query under SEMANTIC_MIN_CHARS (a fragment embeds to noise). The
+# cache holds query text in memory only and is never logged.
+QUERY_CACHE_SIZE = 256
+QUERY_CACHE_TTL_S = 600
+SEMANTIC_MIN_CHARS = 3
+_now = time.monotonic
+_query_cache: "OrderedDict[str, Tuple[float, List[float]]]" = OrderedDict()
+
+
+def normalize_query(query: str) -> str:
+    """Casefolded, whitespace runs collapsed to one space, stripped."""
+    return " ".join(str(query or "").casefold().split())
+
+
+def clear_query_cache() -> None:
+    _query_cache.clear()
 
 
 def embedding_text_hash(text: str) -> str:
@@ -55,6 +75,24 @@ class EmbeddingService:
     async def generate_embedding(self, text: str) -> List[float]:
         """The 3072-float embedding of one text."""
         return (await self.generate_embeddings([text]))[0]
+
+    async def embed_query(self, query: str) -> Optional[List[float]]:
+        """The search query's vector, or None for a query too short for a semantic leg.
+        Cached per normalised query (LRU, QUERY_CACHE_SIZE entries, QUERY_CACHE_TTL_S);
+        a failure raises and is never cached."""
+        q = normalize_query(query)
+        if len(q) < SEMANTIC_MIN_CHARS:
+            return None
+        hit = _query_cache.get(q)
+        if hit is not None and _now() - hit[0] <= QUERY_CACHE_TTL_S:
+            _query_cache.move_to_end(q)
+            return hit[1]
+        vector = (await self.generate_embeddings([q]))[0]
+        _query_cache[q] = (_now(), vector)
+        _query_cache.move_to_end(q)
+        while len(_query_cache) > QUERY_CACHE_SIZE:
+            _query_cache.popitem(last=False)
+        return vector
     
     async def generate_individual_embedding(
         self, individual: Dict[str, Any], categories: List[Dict[str, Any]]

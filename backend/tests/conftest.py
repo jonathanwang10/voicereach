@@ -41,6 +41,21 @@ def _no_background_embeddings(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_query_embeddings(request, monkeypatch):
+    """Search would embed the query through OpenAI; never let tests do that. By default
+    every search is text-only (the query embedding "fails"), unless a test is marked
+    real_query_embedding (and mocks OpenAI itself)."""
+    if request.node.get_closest_marker("real_query_embedding"):
+        return
+    from services.embedding_service import EmbeddingService
+
+    async def _disabled(self, query):
+        raise RuntimeError("query embedding disabled in tests")
+
+    monkeypatch.setattr(EmbeddingService, "embed_query", _disabled)
+
+
+@pytest.fixture(autouse=True)
 def _reset_process_state():
     """Reset every piece of process-global state before AND after each test.
 
@@ -68,6 +83,7 @@ def _reset_process_state():
         db_client._client = None
         openai_service._service = None
         embedding_service._service = None
+        embedding_service.clear_query_cache()
 
     overrides = dict(app.dependency_overrides)
     reset()

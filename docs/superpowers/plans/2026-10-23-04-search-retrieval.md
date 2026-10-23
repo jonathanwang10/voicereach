@@ -304,7 +304,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `def clear_query_cache() -> None`.
 - The cache holds query text in memory only; it is never logged.
 
-- [ ] **Step 1: Write the failing tests** (marked `@pytest.mark.real_query_embedding`; `svc.generate_embeddings = AsyncMock(side_effect=lambda texts: [[0.1] * 3072 for _ in texts])`)
+- [x] **Step 1: Write the failing tests** (marked `@pytest.mark.real_query_embedding`; `svc.generate_embeddings = AsyncMock(side_effect=lambda texts: [[0.1] * 3072 for _ in texts])`)
 
 ```python
 def test_same_normalised_query_embeds_once():
@@ -326,18 +326,18 @@ def test_failures_are_not_cached():
     # first generate_embeddings raises RuntimeError, second returns -> two awaits, second returns the vector
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_query_embedding_cache.py -q`
 Expected: FAIL (`embed_query` and the marker don't exist).
 
-- [ ] **Step 3: Implement the interfaces above; register the marker; update conftest**
+- [x] **Step 3: Implement the interfaces above; register the marker; update conftest**
 
 `pytest.ini` gets the marker `real_query_embedding: run the real EmbeddingService.embed_query (OpenAI must be mocked)`. In `conftest.py`, `_reset_process_state.reset()` also calls `clear_query_cache()`. A new autouse fixture `_no_query_embeddings` patches `EmbeddingService.embed_query` to raise `RuntimeError("query embedding disabled in tests")` unless the test is marked `real_query_embedding`. So no test can reach OpenAI, and by default every search is text-only.
 
-- [ ] **Step 4: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 4: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/services/embedding_service.py backend/tests/conftest.py backend/tests/test_query_embedding_cache.py pytest.ini
