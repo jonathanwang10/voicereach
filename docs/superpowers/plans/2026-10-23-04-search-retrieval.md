@@ -61,6 +61,7 @@ Checked on 2026-10-23 against the pgvector README, `CHANGELOG.md`, `sql/vector.s
 
 - Task 1: Phase 1's `test_embeddings_use_embedding_model` fake reply now carries `index` and a 3072-float vector (the dimension check moved into `generate_embeddings`). The background-task test patches `api.individuals.get_embedding_service`, and a new test checks the save passes `updated_at` to it.
 - Task 4: `test_error_contract.py`'s broken-database fake now breaks `rpc()` as well as `table()`. `test_search_matching.py`'s `test_person_found_by_text_and_semantic_appears_once_as_text` was deleted with the other route tests (it drove the deleted Python merge). In `schema.sql` the `search_tsv` column is also added in the upgrade section (as the migration does), so re-running `schema.sql` on an older database adds it.
+- Task 6: the plan's character-cap example (three 90,000-char visits giving batches [2, 1]) contradicts its own 20,000-char clip, so the test uses 11 visits of 25,000 chars (clipped to 20,000) and expects [10, 1]. `backfill_embeddings.py` now uses `db.client.get_supabase` (after `load_dotenv`) instead of its own `create_client`. The old `test_generate_all_route_uses_categories` / `test_backfill_script_uses_categories` were replaced by `test_embedding_refresh.py`.
 
 ## Review Focus
 
@@ -709,7 +710,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - `backfill_embeddings.py` exposes `async def main(argv: list[str] | None = None) -> int`: `argparse` with `--stale` ("only rows that are missing, from another model, or whose text changed"); without it, every person and visit is re-embedded. It prints the four counts and at most 5 errors (ids and error types only, never names), and returns 1 if there were errors, else 0. `if __name__ == "__main__": sys.exit(asyncio.run(main()))`.
 - `POST /api/embeddings/generate-all` runs `refresh_embeddings(supabase, stale_only=True)` and returns `{"success": True, "message": f"Generated embeddings for {n} individuals", "generated_count": n, "fresh_count", "interactions_embedded", "errors"}`. Its rate limit is unchanged.
 
-- [ ] **Step 1: Write the failing tests** (`svc.generate_embeddings = AsyncMock(side_effect=lambda texts: [[0.0] * 3072 for _ in texts])`; `FakeSupabase` selects scripted per table)
+- [x] **Step 1: Write the failing tests** (`svc.generate_embeddings = AsyncMock(side_effect=lambda texts: [[0.0] * 3072 for _ in texts])`; `FakeSupabase` selects scripted per table)
 
 ```python
 def test_stale_only_embeds_missing_changed_and_other_model_rows():
@@ -747,14 +748,14 @@ def test_generate_all_uses_the_stale_refresh():
     # -> 200, generated_count 2, fresh_count 1, called with stale_only=True
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_embedding_refresh.py -q`
 Expected: FAIL (`No module named services.embedding_refresh`).
 
-- [ ] **Step 3: Implement `embedding_refresh.py`, the script and the route as specified above**
+- [x] **Step 3: Implement `embedding_refresh.py`, the script and the route as specified above**
 
-- [ ] **Step 4: Docs and manual steps**
+- [x] **Step 4: Docs and manual steps**
 
 README Setup § 4 and EMBEDDINGS.md:
 - `cd backend && python scripts/backfill_embeddings.py --stale` embeds only what's missing or changed (the usual run);
@@ -764,9 +765,9 @@ README Setup § 4 and EMBEDDINGS.md:
 
 Replace the "first 1000 people" limitation line (the reads are paginated now). In the manual-steps file's **Apply migrations** section, after the Phase 4 migrations, add: "Then run `cd backend && python scripts/backfill_embeddings.py --stale` once. It embeds every visit transcript, plus each person whose text changed now that sensitive fields are left out."
 
-- [ ] **Step 5: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 5: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend README.md docs/EMBEDDINGS.md docs/superpowers/plans/2026-10-23-manual-steps.md

@@ -330,12 +330,18 @@ The seeded demo individuals (`seed.sql`) start without embeddings, so a descript
 ("veteran with heart disease") finds nothing among them until you run this;
 new and updated individuals get one automatically in the background. To embed
 the seed rows (or anything else that predates that, or after
-[upgrading](#upgrading-a-database-created-from-an-older-schemasql)), either call
-`POST /api/embeddings/generate-all` or run:
+[upgrading](#upgrading-a-database-created-from-an-older-schemasql)), run:
 
 ```bash
-cd backend && python scripts/backfill_embeddings.py
+cd backend && python scripts/backfill_embeddings.py --stale   # only what's missing or changed
+cd backend && python scripts/backfill_embeddings.py           # re-embed everyone
 ```
+
+`--stale` embeds people and visit transcripts that have no vector, one from
+another model, or whose text changed; `POST /api/embeddings/generate-all` is the
+in-app equivalent of `--stale`. After flipping a category's sensitive flag or
+editing a category label, run `--stale`; until then the old vector and text stay.
+Embeddings go out in batches of up to 100 texts.
 
 ### Auth
 
@@ -393,7 +399,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `POST` | `/api/embeddings/search` | Hybrid search in Postgres (`search_individuals_hybrid`): exact name first, then fused name/full-text/semantic rank |
 | `GET` | `/api/embeddings/status` | Embedding coverage |
 | `POST` | `/api/embeddings/generate` | Embed one individual (`{"individual_id": ...}`) |
-| `POST` | `/api/embeddings/generate-all` | Embed every individual |
+| `POST` | `/api/embeddings/generate-all` | Embed every stale person and visit (as `backfill_embeddings.py --stale`) |
 | `WS` | `/api/voice-assistant/realtime/ws` | Realtime assistant proxy (defined in `main.py`) |
 | `POST` | `/api/voice-assistant/transcribe` | Whisper-only transcription of an assistant question (multipart `audio`) |
 | `POST` | `/api/voice-assistant/context` | DB context for the names in a message |
@@ -725,11 +731,10 @@ These are still true:
   has to be deleted again.
 - **The list search is demo-scale.** The list (`GET /api/individuals?search=`)
   and export read the whole table and work in Python (paged past Supabase's API
-  row limit); the Search tab's hybrid search runs in Postgres. The backfill
-  script still reads one page, so it embeds only the first 1000 people (1000 by
-  default). After creating a category, existing people's embeddings
-  only pick up its label when they are next saved (or re-run
-  `POST /api/embeddings/generate-all` or the backfill script).
+  row limit); the Search tab's hybrid search runs in Postgres. After creating or
+  editing a category, existing people's embeddings only pick up the change when
+  they are next saved, or when `backfill_embeddings.py --stale` (or
+  `POST /api/embeddings/generate-all`) runs.
 - **Re-running `seed.sql` re-adds a deleted demo person.** Seed people are
   matched by name (see [Database](#1-database)).
 - **iOS only.** There is no Android build setup, and `mobile/ios/` is committed

@@ -3,11 +3,12 @@ Embedding API endpoints for semantic search and embedding management
 """
 from fastapi import APIRouter, Depends, HTTPException
 import logging
+from services.embedding_refresh import refresh_embeddings
 from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRESHOLD, get_embedding_service
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
-from db.client import fetch_all, get_supabase, run_db
+from db.client import get_supabase, run_db
 from pydantic import BaseModel, Field
 from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
@@ -149,44 +150,20 @@ async def generate_embeddings_for_all_individuals(
         "embeddings_generate_all", "RATE_LIMIT_GENERATE_ALL_PER_MIN", 1)),
 ):
     """
-    Generate embeddings for all individuals in the database (one OpenAI call per
-    person, so 1 call per user per minute by default; the backfill script is the
-    usual way to do this)
+    Embed every stale person and visit (missing, another model, or changed text):
+    the same code path as `backfill_embeddings.py --stale` (H2-4.4). One call per
+    user per minute by default.
     """
     try:
-        # Get Supabase client
-        supabase = get_supabase()
-        
-        # Get all individuals
-        individuals = await run_db(lambda: fetch_all(
-            lambda: supabase.table("individuals").select("*").order("id")))
-
-        if not individuals:
-            return {"message": "No individuals found in database"}
-
-        categories = (await run_db(lambda: supabase.table("categories").select("*")
-                                   .order("created_at").execute())).data or []
-
-        generated_count = 0
-        errors = []
-        
-        for individual in individuals:
-            try:
-                await embedding_service.store_individual_embedding(supabase, individual, categories)
-                generated_count += 1
-                
-            except Exception as e:
-                # Id and error type only: no names, no upstream error text (R-13)
-                errors.append(f"{individual.get('id')}: {type(e).__name__}")
-                continue
-        
+        report = await refresh_embeddings(get_supabase(), stale_only=True)
         return {
             "success": True,
-            "message": f"Generated embeddings for {generated_count} individuals",
-            "generated_count": generated_count,
-            "errors": errors
+            "message": f"Generated embeddings for {report.individuals_embedded} individuals",
+            "generated_count": report.individuals_embedded,
+            "fresh_count": report.individuals_fresh,
+            "interactions_embedded": report.interactions_embedded,
+            "errors": report.errors,
         }
-        
     except HTTPException:
         raise
     except Exception as e:

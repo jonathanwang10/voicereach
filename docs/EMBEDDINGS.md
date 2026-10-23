@@ -53,15 +53,19 @@ table. Run it once in the Supabase SQL Editor (see the README's Setup section).
 
 ### 4. Generate initial embeddings
 
-The seeded demo individuals have no embeddings. Generate them with either:
+The seeded demo individuals have no embeddings. Generate them with:
 
 ```bash
-cd backend && python scripts/backfill_embeddings.py
+cd backend && python scripts/backfill_embeddings.py --stale   # the usual run
 ```
 
-or, with the backend running, `POST /api/embeddings/generate-all` (below). Both
-re-embed every individual, one OpenAI call each. Run one again after upgrading
-from an older version, so every stored text matches `build_embedding_text`.
+`--stale` embeds people and visit transcripts that have no vector, one from
+another model, or whose text changed (a label edit or an `is_sensitive` flip
+changes the text, so its hash). Without `--stale` it re-embeds everyone. With
+the backend running, `POST /api/embeddings/generate-all` is the in-app
+equivalent of `--stale`. Both read every row in pages and embed in batches of up
+to 100 texts (or 200,000 characters), one OpenAI call and one upsert per batch;
+a failed batch is reported by id and error type and the run carries on.
 
 ### 5. Start the backend
 
@@ -173,8 +177,8 @@ A vector that isn't 3072 long is rejected rather than stored (the
 the text built now is left alone: no OpenAI call.
 
 Creating a category doesn't re-embed anyone: existing people pick up the new
-field's label when they are next saved, or run `/generate-all` or the backfill
-script.
+field's label when they are next saved, or run `backfill_embeddings.py --stale`
+(or `/generate-all`). Until then the old vector and text stay.
 
 ### 2b. Visit chunks
 Each visit's transcript is embedded too (H2-4.3): `interaction_embeddings` holds
@@ -252,7 +256,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   allows one call a minute).
 - **A new person never shows up in semantic results:** look in the backend log
   for "Background embedding failed for <id>", then call `/generate` for that
-  id. Text matches still work without a vector.
+  id, or run `backfill_embeddings.py --stale`. Text matches still work without a vector.
 - **Too many weak matches:** raise `similarity_threshold` in the request.
 
 ## Privacy

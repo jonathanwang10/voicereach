@@ -211,28 +211,8 @@ def test_generate_route_uses_categories():
     assert r.json()["embedding_dimensions"] == 3072
 
 
-def test_generate_all_route_uses_categories():
-    from main import app
-    import api.embeddings as emb
-    svc = _service([0.0] * 3072)
-    db = _Tables({"individuals": [PERSON, dict(PERSON, id="i-2", name="Bo")], "categories": CATEGORIES})
-    with patch.object(emb, "get_supabase", return_value=db), patch.object(emb, "embedding_service", svc):
-        r = TestClient(app).post("/api/embeddings/generate-all")
-    assert r.json()["generated_count"] == 2
-    assert all(u["embedding_text"].startswith("Name: ") and "HIV status" in u["embedding_text"]
-               for u in db.upserts)
-
-
-def test_backfill_script_uses_categories():
-    from scripts import backfill_embeddings as bf
-    svc = _service([0.0] * 3072)
-    db = _Tables({"individuals": [PERSON], "categories": CATEGORIES})
-    with patch.object(bf, "get_supabase_client", return_value=db), \
-         patch.object(bf, "EmbeddingService", return_value=svc), \
-         patch.object(bf, "load_dotenv"), patch.dict("os.environ", {"OPENAI_API_KEY": "x"}), \
-         patch("asyncio.sleep", new=AsyncMock()):
-        asyncio.run(bf.setup_embeddings())
-    assert db.upserts[0]["embedding_text"] == build_embedding_text(PERSON, CATEGORIES)
+# generate-all and the backfill script share services/embedding_refresh.py, whose text is
+# build_embedding_text with the categories: see test_embedding_refresh.py (H2-4.4).
 
 
 # --- halfvec storage, model, hash and source time (H2-4.1) -------------------------------
