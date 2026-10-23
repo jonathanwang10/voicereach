@@ -41,3 +41,8 @@ def test_an_unknown_action_is_not_written(caplog):
 def test_audit_actions_match_the_schema_check():
     check = re.search(r"action TEXT NOT NULL CHECK \(action IN \(([^)]*)\)\)", FLAT_SCHEMA).group(1)
     assert set(re.findall(r"'(\w+)'", check)) == AUDIT_ACTIONS
+
+
+def test_audit_routes_use_phase_1s_device_dependency():
+    from api import device, individuals, categories
+    assert individuals.get_device_id is device.get_device_id and categories.get_device_id is device.get_device_id

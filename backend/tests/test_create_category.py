@@ -198,3 +198,16 @@ def test_a_category_named_removed_is_reserved():          # H2-2.5
     r, db = _post({"name": "_removed", "type": "text"})
     assert r.status_code == 422 and "That name is reserved" in r.text
     assert not db.inserted
+
+
+def test_create_category_is_audited_with_user_and_device():     # H2-2.7
+    from tests.helpers import FakeSupabase
+    sb = (FakeSupabase().on("categories", "select", data=[]).on("categories", "insert", data=lambda c: [c.payload])
+          .on("audit_log", "insert", data=lambda c: [c.payload]))
+    with patch("api.categories.get_supabase", return_value=sb):
+        r = TestClient(app).post("/api/categories", json={"name": "Shoe size", "type": "text"},
+                                 headers={"X-Device-Id": "device-1234"})
+    assert r.status_code == 201, r.text
+    assert sb.payloads("audit_log", "insert") == [{"user_id": "test-user-123", "device_id": "device-1234",
+        "action": "create_category", "entity_type": "category", "entity_id": r.json()["id"],
+        "detail": {"name": "shoe_size"}}]

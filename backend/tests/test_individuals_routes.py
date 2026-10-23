@@ -56,8 +56,9 @@ def _call(sb, method, path, **kwargs):
 
 
 def _writes(sb):
-    """Every write, a save_individual call included (as ("save_individual", "rpc"))."""
-    return [(c.table, c.verb) for c in sb.calls if c.verb != "select"]
+    """Every data write, a save_individual call included (as ("save_individual", "rpc")).
+    Audit rows are left out: the audit section below checks them."""
+    return [(c.table, c.verb) for c in sb.calls if c.verb != "select" and c.table != "audit_log"]
 
 
 def _save_params(sb):
@@ -451,3 +452,95 @@ def test_override_out_of_range_is_422_without_touching_the_database(value):
     r, _ = _override(sb, value)
     assert r.status_code == 422
     assert sb.calls == []
+
+
+# --- the audit log (H2-2.7) ----------------------------------------------------------------
+
+DEVICE = {"X-Device-Id": "device-1234"}
+
+
+def _audited(sb):
+    return sb.on("audit_log", "insert", data=lambda c: [c.payload])
+
+
+def _audit_row(action, entity_id, detail=None):
+    return {"user_id": "test-user-123", "device_id": "device-1234", "action": action,
+            "entity_type": "individual", "entity_id": entity_id, "detail": detail or {}}
+
+
+def test_view_profile_is_audited_with_user_and_device():
+    sb = _audited(_db())
+    assert _call(sb, "GET", f"/api/individuals/{ID}", headers=DEVICE).status_code == 200
+    assert sb.payloads("audit_log", "insert") == [_audit_row("view_profile", ID)]
+
+
+def test_delete_individual_is_audited_with_user_and_device():
+    sb = _audited(FakeSupabase().on("individuals", "delete", data=[{"id": ID}]))
+    assert _call(sb, "DELETE", f"/api/individuals/{ID}", headers=DEVICE).status_code == 200
+    assert sb.payloads("audit_log", "insert") == [_audit_row("delete_individual", ID)]
+
+
+def test_override_urgency_is_audited_with_user_and_device():
+    sb = _audited(FakeSupabase().on("individuals", "update", data=lambda call: [
+        {"id": ID, "urgency_score": 45, **call.payload}]))
+    r = _call(sb, "PUT", f"/api/individuals/{ID}/urgency-override", json={"urgency_override": 70}, headers=DEVICE)
+    assert r.status_code == 200
+    assert sb.payloads("audit_log", "insert") == [_audit_row("override_urgency", ID, {"urgency_override": 70})]
+
+
+def test_merge_individual_is_audited_with_user_and_device():
+    sb = _audited(_db())
+    r = _call(sb, "POST", "/api/individuals", headers=DEVICE,
+              json={"data": {"name": "Ann Lee", "height": 70, "weight": 150}, "merge_with_id": ID})
+    assert r.status_code == 200, r.text
+    assert sb.payloads("audit_log", "insert") == [_audit_row("merge_individual", ID, {"interaction_id": INTERACTION_ID})]
+
+
+def test_create_individual_is_audited_with_user_and_device():
+    sb = _audited(_db(existing=None))
+    r = _call(sb, "POST", "/api/individuals", headers=DEVICE, json={"data": {"name": "Bo", "height": 70, "weight": 150}})
+    assert r.status_code == 200, r.text
+    assert sb.payloads("audit_log", "insert") == [_audit_row("create_individual", ID, {"interaction_id": INTERACTION_ID})]
+
+
+def test_a_404_profile_is_not_audited():
+    sb = _audited(_db(existing=None))
+    assert _call(sb, "GET", f"/api/individuals/{ID}").status_code == 404
+    assert sb.payloads("audit_log", "insert") == []
+
+
+def test_a_404_delete_is_not_audited():
+    sb = _audited(FakeSupabase().on("individuals", "delete", data=[]))
+    assert _call(sb, "DELETE", f"/api/individuals/{ID}").status_code == 404
+    assert sb.payloads("audit_log", "insert") == []
+
+
+def test_a_409_merge_is_not_audited():
+    sb = _audited(_db_rpc_error(pg_error("P0409")))
+    assert _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150}).status_code == 409
+    assert sb.payloads("audit_log", "insert") == []
+
+
+def test_a_replayed_save_is_not_audited():
+    sb = _audited(_db(existing=None))
+    sb.rules = [x for x in sb.rules if x.verb != "rpc"]
+    sb.on_rpc("save_individual", data=_replay())
+    r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}},
+              headers={"Idempotency-Key": KEY})
+    assert r.status_code == 200 and r.json()["replayed"] is True
+    assert sb.payloads("audit_log", "insert") == []
+
+
+def test_an_audit_failure_never_fails_the_request():
+    sb = _db().on("audit_log", "insert", error=RuntimeError("audit down"))
+    assert _call(sb, "GET", f"/api/individuals/{ID}").status_code == 200
+
+
+def test_audit_detail_never_carries_names_or_field_values():
+    import json
+    sb = _audited(_db(existing=None))
+    _call(sb, "POST", "/api/individuals", json={"data": {"name": "Ann Lee", "height": 70, "weight": 150}})
+    sb2 = _audited(_db())
+    _merge(sb2, {"name": "Ann Lee", "height": 71, "weight": 150})
+    rows = sb.payloads("audit_log", "insert") + sb2.payloads("audit_log", "insert")
+    assert len(rows) == 2 and "Ann" not in json.dumps(rows)

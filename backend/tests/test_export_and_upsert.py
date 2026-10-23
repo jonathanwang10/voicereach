@@ -156,3 +156,17 @@ def test_export_includes_people_past_the_first_1000():
         r = TestClient(app).get("/api/export")
     assert r.status_code == 200, r.text
     assert len(r.text.strip().splitlines()) == 1 + 1001
+
+
+def test_export_csv_is_audited_with_user_and_device():          # H2-2.7
+    from main import app
+    from tests.helpers import FakeSupabase, paged
+    people = [{"id": f"id-{i}", "name": f"P{i}", "urgency_score": 0, "urgency_override": None,
+               "data": {}, "created_at": "2026-01-01T00:00:00+00:00"} for i in range(3)]
+    sb = (FakeSupabase().on("categories", "select", data=[]).on("individuals", "select", data=paged(people))
+          .on("interactions", "select", data=[]).on("audit_log", "insert", data=lambda c: [c.payload]))
+    with patch("api.categories.get_supabase", return_value=sb):
+        r = TestClient(app).get("/api/export", headers={"X-Device-Id": "device-1234"})
+    assert r.status_code == 200
+    assert sb.payloads("audit_log", "insert") == [{"user_id": "test-user-123", "device_id": "device-1234",
+        "action": "export_csv", "entity_type": "export", "entity_id": None, "detail": {"rows": 3}}]

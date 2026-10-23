@@ -4,10 +4,12 @@ Minimal implementation for Task 2.0 prerequisite
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import csv
 import io
 from api.auth import get_current_user
+from api.device import get_device_id
+from services.audit import record_audit
 from services.rate_limit import rate_limit
 from api.errors import internal_error
 from db.client import fetch_all, get_supabase
@@ -54,7 +56,7 @@ def _unique_headers(columns):
 
 
 @router.get("/api/export")
-def export_csv(user_id: str = Depends(get_current_user)):
+def export_csv(user_id: str = Depends(get_current_user), device_id: Optional[str] = Depends(get_device_id)):
     """
     Export every individual as CSV.
 
@@ -88,6 +90,8 @@ def export_csv(user_id: str = Depends(get_current_user)):
             row.append(seen["last_seen"] if seen else individual.get("created_at") or "")
             writer.writerow(row)
 
+        record_audit(supabase, user_id=user_id, device_id=device_id, action="export_csv",
+                     entity_type="export", entity_id=None, detail={"rows": len(individuals)})
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode('utf-8')),
             media_type="text/csv",
@@ -149,7 +153,8 @@ def _is_unique_violation(exc: Exception) -> bool:
 def create_category(
     request: CreateCategoryRequest,
     # A weighted category re-scores everyone (H2-1.7)
-    user_id: str = Depends(rate_limit("category_create", "RATE_LIMIT_CATEGORY_CREATE_PER_MIN", 10))
+    user_id: str = Depends(rate_limit("category_create", "RATE_LIMIT_CATEGORY_CREATE_PER_MIN", 10)),
+    device_id: Optional[str] = Depends(get_device_id),
 ):
     """
     Create a new custom category.
@@ -214,6 +219,8 @@ def create_category(
             )
 
         created = result.data[0]
+        record_audit(supabase, user_id=user_id, device_id=device_id, action="create_category",
+                     entity_type="category", entity_id=str(created["id"]), detail={"name": created["name"]})
 
         # OD-1: a weighted category joins everyone's denominator, so re-score all
         # stored scores now. The category exists either way, so a failure here is

@@ -99,7 +99,7 @@ def _recording_db():
     sb.on("categories", "select", data=CATEGORIES)
     sb.on("individuals", "select", data=[ROW])
     sb.on("interactions", "select", data=[])
-    for table in ("individuals", "interactions", "categories", "individual_embeddings"):
+    for table in ("individuals", "interactions", "categories", "individual_embeddings", "audit_log"):
         for verb in ("insert", "update", "upsert"):
             sb.on(table, verb, data=lambda call: [{**ROW, "id": ID, "user_name": "Demo User", **call.payload}])
     sb.on("individuals", "delete", data=[ROW])
@@ -129,7 +129,7 @@ def test_individual_writes_use_existing_columns():
         assert client.put(f"/api/individuals/{ID}/urgency-override", json={"urgency_override": 5}).status_code == 200
     # A save is one save_individual call; the only direct table write is the override
     assert {(c.table, c.verb) for c in sb.calls if c.verb != "select"} == {
-        ("individuals", "update"), ("save_individual", "rpc")}
+        ("individuals", "update"), ("save_individual", "rpc"), ("audit_log", "insert")}
     _assert_known(sb)
     for call in sb.calls_to("save_individual", "rpc"):
         assert set(call.payload["p_interaction"]) <= SCHEMA["interactions"]

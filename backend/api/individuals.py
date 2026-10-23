@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from uuid import UUID
 from typing import Any, Dict, Optional
 from api.auth import get_current_user
+from api.device import get_device_id
 from api.errors import internal_error
 from db.client import get_supabase, run_db
 from db.models import (
@@ -26,6 +27,7 @@ from services.individual_service import (IndividualNotFound, IndividualService, 
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
 from services.context_service import invalidate_context_cache
+from services.audit import record_audit
 from services.rate_limit import rate_limit
 
 
@@ -73,6 +75,7 @@ async def save_individual(
     user_id: str = Depends(rate_limit("save", "RATE_LIMIT_SAVE_PER_MIN", 30)),
     user_name: str = Depends(get_current_user_name),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    device_id: Optional[str] = Depends(get_device_id),
 ):
     """
     Save a new individual or merge into an existing one (one save_individual
@@ -135,6 +138,12 @@ async def save_individual(
         invalidate_context_cache()
 
         if not result.replayed:
+            # Ids only: never the name or fields (H2-2.7)
+            await run_db(lambda: record_audit(
+                supabase, user_id=user_id, device_id=device_id,
+                action="merge_individual" if request.merge_with_id else "create_individual",
+                entity_type="individual", entity_id=str(result.individual.id),
+                detail={"interaction_id": str(result.interaction.id)}))
             background_tasks.add_task(
                 generate_embedding_background,
                 result.individual.id,
@@ -218,7 +227,8 @@ async def search_individuals(
 @router.get("/{individual_id}", response_model=IndividualDetailResponse)
 async def get_individual(
     individual_id: UUID,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    device_id: Optional[str] = Depends(get_device_id),
 ):
     """
     Get individual details with recent interactions.
@@ -244,9 +254,11 @@ async def get_individual(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Individual not found: {individual_id}"
             )
-        
+
+        await run_db(lambda: record_audit(supabase, user_id=user_id, device_id=device_id, action="view_profile",
+                                          entity_type="individual", entity_id=str(individual_id)))
         return result
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -258,7 +270,8 @@ async def get_individual(
 async def update_urgency_override(
     individual_id: UUID,
     request: UrgencyOverrideRequest,
-    user_id: str = Depends(get_current_user)
+    user_id: str = Depends(get_current_user),
+    device_id: Optional[str] = Depends(get_device_id),
 ):
     """
     Update manual urgency score override.
@@ -270,7 +283,8 @@ async def update_urgency_override(
     - 404 if individual not found
     """
     try:
-        service = IndividualService(get_supabase())
+        supabase = get_supabase()
+        service = IndividualService(supabase)
 
         try:
             result = await service.update_urgency_override(
@@ -283,6 +297,10 @@ async def update_urgency_override(
             )
 
         invalidate_context_cache()
+        await run_db(lambda: record_audit(
+            supabase, user_id=user_id, device_id=device_id, action="override_urgency",
+            entity_type="individual", entity_id=str(individual_id),
+            detail={"urgency_override": request.urgency_override}))
         return result
 
     except HTTPException:
@@ -295,7 +313,8 @@ async def update_urgency_override(
 @router.delete("/{individual_id}", response_model=DeleteIndividualResponse)
 async def delete_individual(
     individual_id: UUID,
-    user_id: str = Depends(rate_limit("delete", "RATE_LIMIT_DELETE_PER_MIN", 30))
+    user_id: str = Depends(rate_limit("delete", "RATE_LIMIT_DELETE_PER_MIN", 30)),
+    device_id: Optional[str] = Depends(get_device_id),
 ):
     """
     Delete an individual. FK cascades remove their interactions and embeddings;
@@ -303,7 +322,8 @@ async def delete_individual(
     404 if there is no such individual.
     """
     try:
-        service = IndividualService(get_supabase())
+        supabase = get_supabase()
+        service = IndividualService(supabase)
 
         if not await service.delete_individual(individual_id):
             raise HTTPException(
@@ -312,6 +332,8 @@ async def delete_individual(
             )
 
         invalidate_context_cache()
+        await run_db(lambda: record_audit(supabase, user_id=user_id, device_id=device_id, action="delete_individual",
+                                          entity_type="individual", entity_id=str(individual_id)))
         return DeleteIndividualResponse(id=individual_id, deleted=True)
 
     except HTTPException:

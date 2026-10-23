@@ -53,6 +53,7 @@
 - Task 6: `ManualEntryForm.test.tsx`'s exact request-shape test now also expects `idempotency_key`. MergeUI only passes a third `onMerge` argument when it knows the version, so the existing two-argument `toHaveBeenCalledWith` tests stay unchanged. The conflict test proves the reload by a changed existing-only value (`medical_conditions: "Asthma"`) instead of `age: 50`; same intent.
 - Task 7: the plan's route assertion expected only `medical_conditions` in `_removed`, but that test's fixture (EXISTING) also has `veteran_status: "No"`, which the merge omits too; by the task's own rule both are removals, so the test expects both. Three older tests that pinned "a dropped field leaves no trace" (`test_get_changed_fields_never_records_empty_new_values`, `test_merge_updates_the_target_and_records_only_what_changed`, and the wholesale-replace test) now expect the removal.
 - Task 9: `test_audit_routes_use_phase_1s_device_dependency` moved to Task 10. It asserts that `api.individuals` and `api.categories` import `get_device_id`, which only Task 10 wires up; importing it unused in Task 9 would fail ruff F401.
+- Task 10: the individuals-route audit tests live in `test_individuals_routes.py` (its `_db`/FakeSupabase covers delete too; `test_delete_individual.py`'s route tests mock the service). `_writes()` there leaves `audit_log` rows out so the save tests keep asserting "one rpc, no table writes"; `test_schema_contract.py`'s recording DB scripts `audit_log` and expects its insert.
 
 ## File Structure
 
@@ -880,21 +881,21 @@ git commit -m "feat(db): append-only audit_log table and record_audit (H2-2.7)" 
 
 Every route takes `device_id: Optional[str] = Depends(get_device_id)`, imported with `from api.device import get_device_id` (Phase 1). `record_audit` swallows the strict fake's `AssertionError` by design, so a test that doesn't script `audit_log` still passes. **Every test below scripts `on("audit_log", "insert", data=lambda c: [c.payload])` and asserts the payload.**
 
-- [ ] **Step 1: Write the failing tests**, one per row of the table: `test_<action>_is_audited_with_user_and_device`. Each sends `headers={"X-Device-Id": "device-1234"}` and asserts `sb.payloads("audit_log", "insert") == [{"user_id": "test-user-123", "device_id": "device-1234", "action": ..., "entity_type": ..., "entity_id": ..., "detail": ...}]`. Plus:
+- [x] **Step 1: Write the failing tests**, one per row of the table: `test_<action>_is_audited_with_user_and_device`. Each sends `headers={"X-Device-Id": "device-1234"}` and asserts `sb.payloads("audit_log", "insert") == [{"user_id": "test-user-123", "device_id": "device-1234", "action": ..., "entity_type": ..., "entity_id": ..., "detail": ...}]`. Plus:
   - `test_a_404_profile_is_not_audited`, `test_a_404_delete_is_not_audited`, `test_a_409_merge_is_not_audited`, `test_a_replayed_save_is_not_audited` (each with `audit_log` scripted, asserting `payloads == []`);
   - `test_an_audit_failure_never_fails_the_request`: `on("audit_log", "insert", error=RuntimeError())`, and the profile is still 200;
   - `test_audit_detail_never_carries_names_or_field_values`: after a create and a merge of "Ann Lee", `"Ann"` doesn't appear in `json.dumps(sb.payloads("audit_log", "insert"))`.
 
-- [ ] **Step 2: Run them and check they fail**
+- [x] **Step 2: Run them and check they fail**
 
 Run: `python -m pytest backend/tests/test_individuals_routes.py backend/tests/test_delete_individual.py backend/tests/test_export_and_upsert.py backend/tests/test_create_category.py -q`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** the calls (`await run_db(lambda: record_audit(...))` in async routes).
+- [x] **Step 3: Implement** the calls (`await run_db(lambda: record_audit(...))` in async routes).
 
-- [ ] **Step 4: Run the full checks**, including `backend/tests/test_no_pii_logs.py`. Expected: PASS.
+- [x] **Step 4: Run the full checks**, including `backend/tests/test_no_pii_logs.py`. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/
