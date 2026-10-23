@@ -572,8 +572,10 @@ first. It matches in Python over the whole table (demo scale), reading it in
 pages past Supabase's API row limit with `fetch_all`, so nobody drops out of the
 list or export past the first 1000.
 
-On the Search tab, typing runs one search per 300 ms pause, and only the newest
-response is shown. The list loads on each focus; after the first load it
+On the Search tab, typing runs one search per pause: 600 ms for 3+ characters
+(the semantic leg), 300 ms for shorter queries (text only), and only the newest
+response is shown. Each result shows its match: "Exact" (the whole name),
+"Name" (part of a name), "Details" (a field value) or a percentage (semantic). The list loads on each focus; after the first load it
 refreshes in the background, keeping the last good list if the refresh fails.
 
 ## Data leaving the system

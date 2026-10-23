@@ -1104,7 +1104,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Consumes: the `POST /api/embeddings/search` response from Task 4 (`search_type` `"exact" | "name" | "value" | "semantic"`; `similarity_score` may be `null`).
 - Produces: `SearchResult.search_type?: 'exact' | 'name' | 'value' | 'semantic'`. In the screen, constants `TEXT_DEBOUNCE_MS = 300`, `SEMANTIC_DEBOUNCE_MS = 600`, `SEMANTIC_MIN_CHARS = 3`, and `debounceFor(query: string): number`, which returns 600 when the trimmed query, with whitespace collapsed, has 3 or more characters, else 300. If Phase 6 has already moved this screen to TanStack Query, apply the same rule to the debounced query value it uses.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```tsx
 it('waits for a 600 ms pause before searching three or more characters', async () => {
@@ -1130,21 +1130,21 @@ it('shows Name, Details and percentage badges by match type', async () => {
 
 Remove the existing `renders the match badge for a 0 similarity score` test; the third test above covers it.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd mobile && npx jest screens/__tests__/ModernSearchScreen.test.tsx`
 Expected: FAIL (the call comes at 300 ms; there is no "Name" badge).
 
-- [ ] **Step 3: Implement it**
+- [x] **Step 3: Implement it**
 
 The search effect uses `setTimeout(() => performSearch(query), debounceFor(query))`. The badge renders when `item.search_type != null`. Its label is "Exact" for exact, "Name" for name, "Details" for value, else `` `${Math.round((item.similarity_score ?? 0) * 100)}%` ``; the icon is `bulb-outline` only for semantic. Keep the sequencing, the fallback to `api.searchIndividuals`, and `api.ts` as they are. Docs: README and EMBEDDINGS.md say "one search per pause: 600 ms for 3+ characters (the semantic leg), 300 ms for shorter queries (text only)" and list the four badges.
 
-- [ ] **Step 4: Run the tests, then the global checks**
+- [x] **Step 4: Run the tests, then the global checks**
 
 Run: `cd mobile && npx tsc --noEmit && npx jest`, then the backend checks.
 Expected: PASS. The existing sequencing tests still pass because `waitFor`'s 1000 ms timeout covers the 600 ms debounce.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mobile/screens/ModernSearchScreen.tsx mobile/types/index.ts mobile/screens/__tests__/ModernSearchScreen.test.tsx README.md docs/EMBEDDINGS.md

@@ -26,7 +26,13 @@ import { hasPendingDeletes, isPendingDelete, subscribePendingDeletes } from '../
 // The backend's display score: the override if set, else the calculated score
 const scoreOf = (r: SearchResult): number => r.display_score ?? r.urgency_override ?? r.urgency_score ?? 0;
 
-const SEARCH_DEBOUNCE_MS = 300;
+// One search per pause in typing. A query of SEMANTIC_MIN_CHARS or more gets a semantic
+// leg (an embeddings call) on the server, so it waits for a longer pause (H2-4.5).
+export const TEXT_DEBOUNCE_MS = 300;
+export const SEMANTIC_DEBOUNCE_MS = 600;
+export const SEMANTIC_MIN_CHARS = 3;
+export const debounceFor = (query: string): number =>
+  query.trim().split(/\s+/).join(' ').length >= SEMANTIC_MIN_CHARS ? SEMANTIC_DEBOUNCE_MS : TEXT_DEBOUNCE_MS;
 const HIGHLIGHT_MS = 2500;
 // Rows fade in one after another; cap the stagger so row 100 does not wait 5 s (C-60)
 const MAX_FADE_DELAY_MS = 500;
@@ -162,7 +168,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
       return;
     }
     setIsSearching(true); // never show the previous query's results under the new text
-    const timeoutId = setTimeout(() => performSearch(query), SEARCH_DEBOUNCE_MS);
+    const timeoutId = setTimeout(() => performSearch(query), debounceFor(query));
     return () => clearTimeout(timeoutId);
   }, [searchQuery]);
 
@@ -229,7 +235,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
         <View style={styles.resultHeader}>
           <View style={styles.nameContainer}>
             <Text style={styles.resultName}>{item.name}</Text>
-            {item.similarity_score != null && (
+            {item.search_type != null && (
               <Badge
                 variant={item.search_type === 'semantic' ? 'secondary' : 'primary'}
                 size="small"
@@ -242,8 +248,9 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
                 />
                 <Text style={styles.matchText}>
                   {item.search_type === 'exact' ? 'Exact'
+                    : item.search_type === 'name' ? 'Name'
                     : item.search_type === 'value' ? 'Details'
-                    : `${Math.round(item.similarity_score * 100)}%`}
+                    : `${Math.round((item.similarity_score ?? 0) * 100)}%`}
                 </Text>
               </Badge>
             )}

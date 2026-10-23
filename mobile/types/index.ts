@@ -21,8 +21,8 @@ export interface SearchResult {
   last_seen_days: number; // whole days since last_seen (floor; 0 = today)
   last_interaction_date: string; // compat alias of last_seen
   abbreviated_address?: string;
-  similarity_score?: number; // Optional field for embedding search results
-  search_type?: 'exact' | 'value' | 'semantic'; // Type of search match
+  similarity_score?: number | null; // cosine similarity; null for a name or text match
+  search_type?: 'exact' | 'name' | 'value' | 'semantic'; // Type of search match (H2-4.2)
 }
 
 export interface Interaction {

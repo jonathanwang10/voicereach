@@ -254,18 +254,43 @@ it('scrolls to a row whose pending delete was undone', async () => {
 });
 
 // A similarity score of 0 must not render a bare `0` (it crashes React Native).
-it('renders the match badge for a 0 similarity score', async () => {
+// H2-4.5: the semantic leg (3+ characters) waits for a longer pause
+it('waits for a 600 ms pause before searching three or more characters', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('Ann Lee'));
+  fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
+  await act(async () => { await new Promise(r => setTimeout(r, 450)); });
+  expect(api.semanticSearchIndividuals).not.toHaveBeenCalled();
+  await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledWith('ann'));
+});
+
+it('searches a one- or two-character query after 300 ms', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByText('Ann Lee'));
+  fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'an');
+  await act(async () => { await new Promise(r => setTimeout(r, 150)); });
+  expect(api.semanticSearchIndividuals).not.toHaveBeenCalled();
+  await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledWith('an'), { timeout: 1000 });
+});
+
+it('shows Name, Details and percentage badges by match type', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
   (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([
-    { ...ann, similarity_score: 0, search_type: 'semantic' },
-    { ...ann, id: 'b2', name: 'Bob Day', similarity_score: 0.9, search_type: 'value' },
+    { ...ann, search_type: 'name', similarity_score: null },
+    { ...ann, id: 'b2', name: 'Bob Day', search_type: 'value', similarity_score: null },
+    { ...ann, id: 'c3', name: 'Cy Moe', search_type: 'semantic', similarity_score: 0 },
   ]);
   const { getByText, getByPlaceholderText } = render(
     <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'zz');
   await waitFor(() => getByText('0%'));
-  expect(getByText('Details')).toBeTruthy(); // a value match is not shown as "90%"
+  expect(getByText('Name')).toBeTruthy();
+  expect(getByText('Details')).toBeTruthy(); // a value match is not shown as a percentage
 });
 
 // Fix round 1: keep the scroll target while a spinner replaces the list; retry a failed scroll once.

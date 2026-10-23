@@ -117,10 +117,12 @@ GET /api/embeddings/status
 3. With an empty query, the screen lists everyone via `api.searchIndividuals('')`
    (`GET /api/individuals`, most recently seen first, up to 100).
 4. Results carry `similarity_score` and `search_type`. The screen shows "Exact"
-   for a name match, "Details" for a data-value match and the match percentage for
-   a semantic match, plus `last_seen` and `display_score`. `last_seen` uses the
+   for an exact name, "Name" for a partial or fuzzy name match, "Details" for a
+   data-value (full-text) match and the match percentage for a semantic match,
+   plus `last_seen` and `display_score`. `last_seen` uses the
    same rule as the list (latest interaction, else `created_at`).
-5. Typing runs one search per 300 ms pause. Each search takes a sequence number,
+5. Typing runs one search per pause: 600 ms for 3+ characters (the semantic
+   leg), 300 ms for shorter queries (text only). Each search takes a sequence number,
    and a response that is no longer the newest is dropped, so a slow result for
    "v" never replaces the one for "veteran".
 
