@@ -46,26 +46,35 @@ def get_current_user_name(user_id: str = Depends(get_current_user)) -> str:
 
 
 async def generate_embedding_background(individual_id: str, individual_data: dict,
-                                        categories: Optional[list] = None):
+                                        categories: Optional[list] = None,
+                                        interaction: Optional[dict] = None):
     """
     Background task: embed one saved individual (field_registry.build_embedding_text,
-    the same text every embedding path uses) and store the vector with that text.
+    the same text every embedding path uses) and, when the visit had a transcript,
+    that visit (H2-4.3). The two are separate, so one failing doesn't skip the other.
 
     Args:
         individual_id: ID of the individual
-        individual_data: {"id", "name", "data"} of the saved individual
+        individual_data: {"id", "name", "data", "updated_at"} of the saved individual
         categories: the category rows the save already fetched (fetched here if None)
+        interaction: {"id", "individual_id", "transcription"} of the visit, or None
     """
+    service = get_embedding_service()
+    supabase = None
     try:
         supabase = get_supabase()
         if categories is None:
             categories = (await run_db(lambda: supabase.table("categories").select("*")
                                        .order("created_at").execute())).data or []
-        await get_embedding_service().store_individual_embedding(
-            supabase, {**individual_data, "id": str(individual_id)}, categories)
+        await service.store_individual_embedding(supabase, {**individual_data, "id": str(individual_id)}, categories)
     except Exception as e:
         # Id and error type only: no names, no upstream error text
         logger.warning("Background embedding failed for %s: %s", individual_id, type(e).__name__)
+    if interaction:
+        try:
+            await service.store_interaction_embedding(supabase or get_supabase(), interaction)
+        except Exception as e:
+            logger.warning("Background visit embedding failed for %s: %s", interaction.get("id"), type(e).__name__)
 
 
 @router.post("", response_model=SaveIndividualResponse)
@@ -164,6 +173,9 @@ async def save_individual(
                     "updated_at": result.individual.updated_at.isoformat(),   # source_updated_at (H2-4.1)
                 },
                 categories,
+                interaction=({"id": str(result.interaction.id), "individual_id": str(result.individual.id),
+                              "transcription": request.transcription}
+                             if request.transcription and request.transcription.strip() else None),
             )
 
         return result

@@ -23,6 +23,9 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.15
 # Query embeddings (H2-4.5): one process cache keyed on the normalised query, and no
 # semantic leg for a query under SEMANTIC_MIN_CHARS (a fragment embeds to noise). The
 # cache holds query text in memory only and is never logged.
+# A visit's transcript is embedded up to this many characters (H2-4.3)
+MAX_CHUNK_CHARS = 20000
+
 QUERY_CACHE_SIZE = 256
 QUERY_CACHE_TTL_S = 600
 SEMANTIC_MIN_CHARS = 3
@@ -143,6 +146,31 @@ class EmbeddingService:
             "text_hash": text_hash,
             "source_updated_at": source_updated_at,
         }, on_conflict="individual_id").execute())
+        return True
+
+    async def store_interaction_embedding(self, supabase: Any, interaction: Dict[str, Any], *,
+                                          force: bool = False) -> bool:
+        """Embed one visit's transcript (H2-4.3); `interaction` is {id, individual_id,
+        transcription}. A blank transcript is skipped; a fresh row (same model and text
+        hash) is left alone unless `force`. Returns True when it embedded."""
+        text = (interaction.get("transcription") or "").strip()[:MAX_CHUNK_CHARS]
+        if not text:
+            return False
+        text_hash = embedding_text_hash(text)
+        if not force:
+            existing = (await run_db(lambda: supabase.table("interaction_embeddings")
+                                     .select("model, text_hash").eq("interaction_id", interaction["id"])
+                                     .limit(1).execute())).data or []
+            if existing and existing[0].get("model") == self.model and existing[0].get("text_hash") == text_hash:
+                return False
+        embedding = await self.generate_embedding(text)
+        await run_db(lambda: supabase.table("interaction_embeddings").upsert({
+            "interaction_id": interaction["id"],
+            "individual_id": interaction["individual_id"],
+            "embedding": embedding,
+            "model": self.model,
+            "text_hash": text_hash,
+        }, on_conflict="interaction_id").execute())
         return True
 
 

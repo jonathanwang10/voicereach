@@ -329,3 +329,96 @@ def test_embedding_text_leaves_out_sensitive_fields():
 def test_marking_a_category_sensitive_changes_the_hash():
     assert embedding_text_hash(build_embedding_text(PERSON, CATEGORIES)) != \
            embedding_text_hash(build_embedding_text(PERSON, SENSITIVE))
+
+
+# --- visit-level chunks (H2-4.3) -------------------------------------------------------------
+
+IID, PID = "00000000-0000-0000-0000-0000000000a1", "00000000-0000-0000-0000-0000000000b1"
+
+
+def _visit_db():
+    return (FakeSupabase().on("interaction_embeddings", "select", data=[])
+            .on("interaction_embeddings", "upsert", data=lambda c: [c.payload]))
+
+
+def test_store_interaction_embedding_writes_the_chunk():
+    svc, sb = _real_service(A), _visit_db()
+    assert asyncio.run(svc.store_interaction_embedding(
+        sb, {"id": IID, "individual_id": PID, "transcription": "  Lost his ID.  "})) is True
+    row = sb.payloads("interaction_embeddings", "upsert")[0]
+    assert set(row) == {"interaction_id", "individual_id", "embedding", "model", "text_hash"}
+    assert row["text_hash"] == embedding_text_hash("Lost his ID.")
+    assert sb.calls_to("interaction_embeddings", "upsert")[0].kwargs == {"on_conflict": "interaction_id"}
+
+
+@pytest.mark.parametrize("t", [None, "", "   "])
+def test_blank_transcripts_are_not_embedded(t):
+    svc, sb = _real_service(A), _visit_db()
+    assert asyncio.run(svc.store_interaction_embedding(sb, {"id": IID, "individual_id": PID, "transcription": t})) is False
+    svc.client.embeddings.create.assert_not_awaited()
+    assert sb.calls == []
+
+
+def test_long_transcripts_are_clipped_before_embedding():
+    svc, sb = _real_service(A), _visit_db()
+    asyncio.run(svc.store_interaction_embedding(sb, {"id": IID, "individual_id": PID, "transcription": "x" * 25000}))
+    assert len(svc.client.embeddings.create.await_args.kwargs["input"][0]) == 20000
+
+
+def test_a_fresh_visit_chunk_is_not_re_embedded():
+    svc = _real_service(A)
+    sb = (FakeSupabase().on("interaction_embeddings", "select", data=[
+        {"model": model_config.EMBEDDING_MODEL, "text_hash": embedding_text_hash("Lost his ID.")}]))
+    assert asyncio.run(svc.store_interaction_embedding(
+        sb, {"id": IID, "individual_id": PID, "transcription": "Lost his ID."})) is False
+
+
+@pytest.mark.real_embedding_task
+def test_background_task_embeds_the_person_and_the_visit():
+    from api import individuals
+    svc = _real_service(A)
+    db = _store_db().on("interaction_embeddings", "select", data=[]).on(
+        "interaction_embeddings", "upsert", data=lambda c: [c.payload])
+    with patch("api.individuals.get_supabase", return_value=db), \
+         patch("api.individuals.get_embedding_service", return_value=svc):
+        asyncio.run(individuals.generate_embedding_background(
+            "i-1", PERSON, CATEGORIES, interaction={"id": IID, "individual_id": "i-1", "transcription": "Seen at 16th"}))
+    assert len(db.calls_to("individual_embeddings", "upsert")) == 1
+    assert len(db.calls_to("interaction_embeddings", "upsert")) == 1
+
+
+@pytest.mark.real_embedding_task
+def test_a_failed_person_embedding_still_embeds_the_visit(caplog):
+    from api import individuals
+    svc = _real_service(A)
+    svc.generate_embeddings = AsyncMock(side_effect=[RuntimeError("down"), [A]])
+    db = _store_db().on("interaction_embeddings", "select", data=[]).on(
+        "interaction_embeddings", "upsert", data=lambda c: [c.payload])
+    with patch("api.individuals.get_supabase", return_value=db), \
+         patch("api.individuals.get_embedding_service", return_value=svc):
+        asyncio.run(individuals.generate_embedding_background(
+            "i-1", PERSON, CATEGORIES, interaction={"id": IID, "individual_id": "i-1", "transcription": "Seen at 16th"}))
+    assert db.calls_to("individual_embeddings", "upsert") == []
+    assert len(db.calls_to("interaction_embeddings", "upsert")) == 1
+    assert "RuntimeError" in caplog.text and "16th" not in caplog.text
+
+
+@pytest.mark.parametrize("transcription,visit", [("Seen at 16th", True), ("  ", False), (None, False)])
+def test_save_route_passes_the_visit_to_the_background_task(transcription, visit):
+    from main import app
+    from tests.helpers import save_rpc
+    db = (FakeSupabase().on("categories", "select", data=CATEGORIES)
+          .on_rpc("save_individual", data=save_rpc(None)))
+    body = {"data": {"name": "Ann", "height": 60, "weight": 120}}
+    if transcription is not None:
+        body["transcription"] = transcription
+    with patch("api.individuals.get_supabase", return_value=db), \
+         patch("api.individuals.generate_embedding_background", new=AsyncMock()) as task:
+        r = TestClient(app).post("/api/individuals", json=body)
+    assert r.status_code == 200, r.text
+    interaction = task.await_args.kwargs.get("interaction")
+    if visit:
+        assert interaction == {"id": r.json()["interaction"]["id"], "individual_id": r.json()["individual"]["id"],
+                               "transcription": "Seen at 16th"}
+    else:
+        assert interaction is None

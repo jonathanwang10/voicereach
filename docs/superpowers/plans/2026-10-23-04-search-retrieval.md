@@ -599,7 +599,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `async def EmbeddingService.store_interaction_embedding(self, supabase, interaction: dict, *, force: bool = False) -> bool`, where `interaction` is `{"id", "individual_id", "transcription"}`. The text is `transcription.strip()[:MAX_CHUNK_CHARS]`; empty or None returns `False` with no call. Hash and model gating work as for individuals (`select("model, text_hash").eq("interaction_id", id).limit(1)`). It upserts `{"interaction_id", "individual_id", "embedding", "model", "text_hash"}` with `on_conflict="interaction_id"`.
   - `async def generate_embedding_background(individual_id: str, individual_data: dict, categories: list | None = None, interaction: dict | None = None) -> None`. The person and the visit are embedded in separate `try` blocks, so one failure doesn't skip the other; each failure logs only the id and error type. `save_individual` passes `interaction={"id": str(result.interaction.id), "individual_id": str(result.individual.id), "transcription": request.transcription}` when the transcription isn't blank, else `None`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_store_interaction_embedding_writes_the_chunk():
@@ -636,12 +636,12 @@ def test_match_interactions_signature():
     assert "ORDER BY e.embedding <=> p_query_embedding LIMIT" in fn and "SET hnsw.ef_search = 100" in fn
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_embedding_text.py backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL.
 
-- [ ] **Step 3: Write the migration** (also folded into `schema.sql`): the table, the indexes, `ALTER TABLE interaction_embeddings ENABLE ROW LEVEL SECURITY;`, then:
+- [x] **Step 3: Write the migration** (also folded into `schema.sql`): the table, the indexes, `ALTER TABLE interaction_embeddings ENABLE ROW LEVEL SECURITY;`, then:
 
 ```sql
 CREATE OR REPLACE FUNCTION match_interactions(
@@ -667,15 +667,15 @@ $$;
 
 Then `REVOKE`/`GRANT` as in Task 4 for `match_interactions(halfvec, uuid, int)`, and `NOTIFY pgrst, 'reload schema';`. Ranking is pure cosine distance (ties by id) with no threshold; callers apply their own floor.
 
-- [ ] **Step 4: Implement `store_interaction_embedding` and the background-task change**
+- [x] **Step 4: Implement `store_interaction_embedding` and the background-task change**
 
 README's new data-flow row: "Each visit's transcript → OpenAI embeddings → `interaction_embeddings` (vector only; the transcript is already stored with the interaction). It was already sent to OpenAI to be transcribed, so this sends nothing new."
 
-- [ ] **Step 5: Append to manual steps:** `20261104000003_interaction_embeddings.sql`.
+- [x] **Step 5: Append to manual steps:** `20261104000003_interaction_embeddings.sql`.
 
-- [ ] **Step 6: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 6: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add supabase backend README.md docs/EMBEDDINGS.md docs/superpowers/plans/2026-10-23-manual-steps.md

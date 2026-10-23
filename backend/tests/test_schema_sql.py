@@ -27,7 +27,8 @@ SQL = re.sub(r"--[^\n]*", "", RAW_SQL)
 SEED_RAW = (SCHEMA.parent / "seed.sql").read_text()
 SEED_SQL = re.sub(r"--[^\n]*", "", SEED_RAW)
 
-TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log", "duplicate_decisions")
+TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log", "duplicate_decisions",
+          "interaction_embeddings")
 SEED_NAMES = {"Sarah Smith", "Michael Chen", "John Doe", "Maria Garcia", "Robert Johnson", "James Brown"}
 
 # Every policy name any earlier version of the schema (or the old migration chain) created.
@@ -129,7 +130,7 @@ def test_old_policies_are_dropped(policy, table):
 # --- safe to re-run (R-12 / C-54) ------------------------------------------
 
 def test_tables_and_indexes_are_guarded():
-    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 6
+    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 7
     assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX", SQL)) == len(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS", SQL))
 
 
@@ -475,7 +476,8 @@ def _function_sql(text: str, name: str) -> str:
     body = text.index("$$", start)
     return _norm(text[start:text.index("$$;", body + 2) + 3])
 
-PHASE4_FUNCTIONS = {"search_individuals_hybrid": "20261104000002_hybrid_search.sql"}  # Tasks 5 and 7 add theirs
+PHASE4_FUNCTIONS = {"search_individuals_hybrid": "20261104000002_hybrid_search.sql",
+                    "match_interactions": "20261104000003_interaction_embeddings.sql"}  # Task 7 adds its own
 
 @pytest.mark.parametrize("name,migration", PHASE4_FUNCTIONS.items())
 def test_phase4_functions_match_their_migrations(name, migration):
@@ -509,3 +511,26 @@ def test_search_tsv_indexes_name_and_string_values_never_keys():
     col = _column_def("individuals", "search_tsv")
     assert "GENERATED ALWAYS AS" in col and """'["string"]'::jsonb""" in FLAT
     assert re.search(r"CREATE INDEX IF NOT EXISTS \w+ ON individuals USING gin \(search_tsv\)", FLAT)
+
+
+# --- visit-level chunks (H2-4.3) --------------------------------------------------------
+
+@pytest.mark.parametrize("column,definition", [
+    ("interaction_id", "UUID PRIMARY KEY REFERENCES interactions(id) ON DELETE CASCADE"),
+    ("individual_id", "UUID NOT NULL REFERENCES individuals(id) ON DELETE CASCADE"),
+    ("embedding", "halfvec(3072) NOT NULL"), ("model", "TEXT NOT NULL"), ("text_hash", "TEXT NOT NULL"),
+    ("created_at", "TIMESTAMPTZ NOT NULL DEFAULT NOW()")])
+def test_interaction_embeddings_table(column, definition):
+    assert _column_def("interaction_embeddings", column).startswith(definition)
+
+def test_interaction_embeddings_hnsw_index():
+    assert re.search(r"CREATE INDEX IF NOT EXISTS idx_interaction_embeddings_hnsw ON interaction_embeddings "
+                     r"USING hnsw \(embedding halfvec_cosine_ops\)", FLAT)
+    assert re.search(r"CREATE INDEX IF NOT EXISTS idx_interaction_embeddings_individual ON interaction_embeddings ?"
+                     r"\(individual_id\)", FLAT)
+
+def test_match_interactions_signature():
+    fn = _function_sql(SQL, "match_interactions")
+    assert ("match_interactions( p_query_embedding halfvec(3072), p_individual_id uuid DEFAULT NULL, "
+            "p_limit int DEFAULT 5 )") in fn
+    assert "ORDER BY e.embedding <=> p_query_embedding LIMIT" in fn and "SET hnsw.ef_search = 100" in fn

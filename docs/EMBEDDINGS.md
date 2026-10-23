@@ -176,6 +176,14 @@ Creating a category doesn't re-embed anyone: existing people pick up the new
 field's label when they are next saved, or run `/generate-all` or the backfill
 script.
 
+### 2b. Visit chunks
+Each visit's transcript is embedded too (H2-4.3): `interaction_embeddings` holds
+one `halfvec(3072)` per interaction (the transcript itself stays on the
+interaction), up to 20,000 characters, with the same model/text-hash freshness
+rule. `match_interactions(query_embedding, individual_id?, limit)` returns the
+nearest visits by cosine distance. The save's background task embeds the person
+and the visit separately, so one failing doesn't skip the other.
+
 ### 3. Automatic generation on save
 Every successful `POST /api/individuals` (create or merge) schedules a FastAPI
 background task, so the save returns without waiting for OpenAI:
