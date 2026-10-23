@@ -9,6 +9,7 @@ import uuid
 from typing import Dict, List, Optional
 from supabase import Client
 
+from db.client import run_db
 from services.search_matching import match_individual
 
 logger = logging.getLogger(__name__)
@@ -132,20 +133,20 @@ class DuplicateDetectionService:
                     seen_ids.add(ind.get("id"))
 
         name_filter = ",".join(f"name.ilike.*{token}*" for token in tokens)
-        by_name = self.supabase.table("individuals") \
-            .select(CANDIDATE_COLUMNS) \
-            .or_(name_filter) \
-            .order("updated_at", desc=True) \
-            .limit(limit) \
-            .execute()
+        by_name = await run_db(lambda: self.supabase.table("individuals")
+                               .select(CANDIDATE_COLUMNS)
+                               .or_(name_filter)
+                               .order("updated_at", desc=True)
+                               .limit(limit)
+                               .execute())
         add(by_name.data)
 
         if len(candidates) < limit:
-            recent = self.supabase.table("individuals") \
-                .select(CANDIDATE_COLUMNS) \
-                .order("updated_at", desc=True) \
-                .limit(VALUE_SCAN_LIMIT) \
-                .execute()
+            recent = await run_db(lambda: self.supabase.table("individuals")
+                                  .select(CANDIDATE_COLUMNS)
+                                  .order("updated_at", desc=True)
+                                  .limit(VALUE_SCAN_LIMIT)
+                                  .execute())
             add([ind for ind in (recent.data or []) if match_individual(name, ind)])
 
         return candidates

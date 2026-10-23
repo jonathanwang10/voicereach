@@ -1,13 +1,18 @@
 """
-The one service-key Supabase client per process (H2-1.2).
+The one service-key Supabase client per process (H2-1.2), and the thread hop every
+async path uses to call it (H2-1.1).
 
 api/auth.py keeps its own anon-key client for token checks; backend/scripts/ are
 separate processes and build their own.
 """
 import os
 import threading
+from typing import Callable, TypeVar
 
+from starlette.concurrency import run_in_threadpool
 from supabase import Client, ClientOptions, create_client
+
+T = TypeVar("T")
 
 # Below the 110 s transcribe deadline (api/transcription.py), so a hung PostgREST
 # call fails as a database error instead of eating the whole request budget (H2-1.2).
@@ -34,3 +39,13 @@ def get_supabase() -> Client:
                 _client = create_client(
                     url, key, options=ClientOptions(postgrest_client_timeout=POSTGREST_TIMEOUT_SECONDS))
     return _client
+
+
+async def run_db(fn: Callable[[], T]) -> T:
+    """Run a sync supabase-py call (`lambda: ....execute()`) in the threadpool.
+
+    supabase-py is synchronous; calling it inside `async def` blocks the event loop,
+    which stalls every request and the realtime proxy (H2-1.1). Returns fn()'s value
+    and propagates its exception.
+    """
+    return await run_in_threadpool(fn)

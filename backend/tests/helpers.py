@@ -1,4 +1,5 @@
 """Shared test helpers: strict and in-memory Supabase fakes, row builders, route listing."""
+import asyncio
 import copy
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -28,6 +29,16 @@ def all_route_paths(application) -> List[str]:
         else:
             out.append(getattr(r, "path", ""))
     return out
+
+
+def assert_off_event_loop(what: str) -> None:
+    """Fail a sync query made while an asyncio loop runs in this thread: in the real
+    app it would block the loop. Every fake's execute() calls this first (H2-1.1)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise AssertionError(f"{what} ran on the event loop thread; wrap it in run_db (H2-1.1)")
 
 
 # --- FakeSupabase: strict and scripted ------------------------------------------------------
@@ -138,6 +149,7 @@ class _Chain:
         raise AttributeError(f"FakeSupabase has no .{name}()")
 
     def execute(self):
+        assert_off_event_loop(f"FakeSupabase: table({self._table!r}).execute()")
         assert self._call is not None, f"execute() with no select/insert/update/... on {self._table}"
         call = self._call
         self._sb.calls.append(call)
@@ -202,6 +214,7 @@ class _PeopleQuery:
         return self
 
     def execute(self):
+        assert_off_event_loop(f"FakePeopleDB: table({self.table!r}).execute()")
         self.sb.queries.append((self.table, list(self.filters)))
         if self.sb.fail or (self.table == "categories" and self.sb.categories_fail):
             raise RuntimeError("database unavailable")
@@ -284,6 +297,7 @@ class _ListQuery:
         return self
 
     def execute(self):
+        assert_off_event_loop(f"FakeListDB: table({self.table!r}).execute()")
         self.sb.queries.append((self.table, self.filters))
         if self.table == "individuals":
             rows = self.sb.individuals

@@ -8,7 +8,7 @@ from uuid import UUID
 from typing import Any, Dict, Optional
 from api.auth import get_current_user
 from api.errors import internal_error
-from db.client import get_supabase
+from db.client import get_supabase, run_db
 from db.models import (
     SaveIndividualRequest,
     SaveIndividualResponse,
@@ -52,7 +52,8 @@ async def generate_embedding_background(individual_id: str, individual_data: dic
 
         supabase = get_supabase()
         if categories is None:
-            categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+            categories = (await run_db(lambda: supabase.table("categories").select("*")
+                                       .order("created_at").execute())).data or []
         await EmbeddingService().store_individual_embedding(
             supabase, {**individual_data, "id": str(individual_id)}, categories)
     except Exception as e:
@@ -94,7 +95,7 @@ async def save_individual(
                 )
         
         # Fetch categories for validation
-        categories_response = supabase.table("categories").select("*").order("created_at").execute()
+        categories_response = await run_db(lambda: supabase.table("categories").select("*").order("created_at").execute())
         categories = categories_response.data
         
         # Validate the categorized data

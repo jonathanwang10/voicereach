@@ -7,7 +7,7 @@ from services.embedding_service import EmbeddingService, DEFAULT_SIMILARITY_THRE
 from uuid import UUID
 from api.auth import get_current_user
 from api.errors import internal_error
-from db.client import get_supabase
+from db.client import get_supabase, run_db
 from pydantic import BaseModel, Field
 from services.rate_limit import rate_limit
 from services.individual_service import IndividualService, fetch_last_seen
@@ -54,13 +54,14 @@ async def generate_embedding_for_individual(
         
         # Get individual data from database
         individual_id = str(request.individual_id)
-        result = supabase.table("individuals").select("*").eq("id", individual_id).execute()
+        result = await run_db(lambda: supabase.table("individuals").select("*").eq("id", individual_id).execute())
         
         if not result.data:
             raise HTTPException(status_code=404, detail="Individual not found")
         
         individual = result.data[0]
-        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+        categories = (await run_db(lambda: supabase.table("categories").select("*")
+                                   .order("created_at").execute())).data or []
 
         # Same text and storage as every other embedding path (C-34)
         dimensions = await embedding_service.store_individual_embedding(supabase, individual, categories)
@@ -97,7 +98,8 @@ async def semantic_search_individuals(
         # A database failure here is an outage, not "no matches": let it become a 500 (C-17).
         text_results = []
         if request.query.strip():
-            for ind in supabase.table("individuals").select("*").execute().data or []:
+            people = (await run_db(lambda: supabase.table("individuals").select("*").execute())).data or []
+            for ind in people:
                 kind = match_individual(request.query, ind)
                 if kind:
                     text_results.append(dict(ind, **TEXT_MATCH[kind]))
@@ -106,7 +108,8 @@ async def semantic_search_individuals(
         # exact matches only; the log names the error type, never the query.
         embedding_results = []
         try:
-            result = supabase.table("individual_embeddings").select("*, individuals(*)").execute()
+            result = await run_db(lambda: supabase.table("individual_embeddings")
+                                  .select("*, individuals(*)").execute())
             # Rows from another embedding model (another vector size) can't be compared
             # with the query and would make the whole comparison fail: skip them (C-34)
             rows = [r for r in (result.data or [])
@@ -143,7 +146,7 @@ async def semantic_search_individuals(
                 unique.append(r)
 
         # last_seen / address come from ONE interactions query for all results
-        latest = fetch_last_seen(supabase, [r['id'] for r in unique])
+        latest = await run_db(lambda: fetch_last_seen(supabase, [r['id'] for r in unique]))
         abbreviate = IndividualService(supabase).abbreviate_address
         all_results = []
         for r in unique:
@@ -196,13 +199,14 @@ async def generate_embeddings_for_all_individuals(
         supabase = get_supabase()
         
         # Get all individuals
-        result = supabase.table("individuals").select("*").execute()
+        result = await run_db(lambda: supabase.table("individuals").select("*").execute())
         
         if not result.data:
             return {"message": "No individuals found in database"}
         
         individuals = result.data
-        categories = supabase.table("categories").select("*").order("created_at").execute().data or []
+        categories = (await run_db(lambda: supabase.table("categories").select("*")
+                                   .order("created_at").execute())).data or []
 
         generated_count = 0
         errors = []
@@ -231,7 +235,7 @@ async def generate_embeddings_for_all_individuals(
 
 
 @router.get("/status")
-async def get_embedding_status(user_id: str = Depends(get_current_user)):
+def get_embedding_status(user_id: str = Depends(get_current_user)):
     """
     Get status of embeddings in the database
     """

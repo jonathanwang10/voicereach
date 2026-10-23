@@ -8,6 +8,7 @@ from openai import AsyncOpenAI
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
+from db.client import run_db
 from services.field_registry import build_embedding_text
 
 # Load environment variables
@@ -71,11 +72,11 @@ class EmbeddingService:
         Used by the save path, /generate, /generate-all and the backfill script.
         Returns the vector length."""
         embedding, text = await self.generate_individual_embedding(individual, categories)
-        supabase.table("individual_embeddings").upsert({
+        await run_db(lambda: supabase.table("individual_embeddings").upsert({
             "individual_id": individual["id"],
             "embedding_data": embedding,
             "embedding_text": text,
-        }, on_conflict="individual_id").execute()
+        }, on_conflict="individual_id").execute())
         return len(embedding)
 
     async def search_similar_individuals(

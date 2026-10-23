@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from api.errors import internal_error
-from db.client import get_supabase
+from db.client import get_supabase, run_db
 from services.openai_service import AudioTooLarge, OpenAIService, temp_audio_file
 from services.rate_limit import rate_limit
 from services.validation_helper import validate_categorized_data
@@ -72,7 +72,7 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
         supabase = get_supabase()
         
         # 1. Fetch all categories from database
-        categories_response = supabase.table("categories").select("*").order("created_at").execute()
+        categories_response = await run_db(lambda: supabase.table("categories").select("*").order("created_at").execute())
         
         if not categories_response.data:
             raise HTTPException(

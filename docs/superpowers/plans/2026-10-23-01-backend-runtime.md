@@ -270,7 +270,7 @@ Roadmap item 1.
 - Produces: `backend/db/client.py: async def run_db(fn: Callable[[], T]) -> T`, built on `starlette.concurrency.run_in_threadpool`. It returns `fn()`'s value and propagates its exception.
 - Produces: `FakeSupabase`, `FakePeopleDB` and `FakeListDB` raise `AssertionError("... ran on the event loop thread; wrap it in run_db (H2-1.1)")` when `execute()` runs while an asyncio loop is running in the current thread. Later phases' fakes (Phase 2's `rpc`) follow the same rule.
 
-- [ ] **Step 1: Write the failing tests** in `backend/tests/test_event_loop.py`
+- [x] **Step 1: Write the failing tests** in `backend/tests/test_event_loop.py`
 
 ```python
 import asyncio, threading, time
@@ -358,27 +358,27 @@ async def test_background_embedding_reads_and_upserts_off_the_loop():
     assert [c.verb for c in sb.calls] == ["select", "upsert"]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_event_loop.py -v`
 Expected: FAIL. `run_db` can't be imported, and once it exists the fake and route cases fail until the fakes check the loop and the paths are moved.
 
-- [ ] **Step 3: Implement `async def run_db(fn: Callable[[], T]) -> T` in `backend/db/client.py`**
+- [x] **Step 3: Implement `async def run_db(fn: Callable[[], T]) -> T` in `backend/db/client.py`**
 
 It is `return await run_in_threadpool(fn)`. Add the off-loop check to the three fakes' `execute()`, first, before the call is recorded in `calls`/`queries` (the background-task test relies on that, because `generate_embedding_background` swallows errors): `asyncio.get_running_loop()` succeeding means the call is on the loop, so raise the AssertionError from **Interfaces**.
 
-- [ ] **Step 4: Move every path off the loop**
+- [x] **Step 4: Move every path off the loop**
 
 - In each `async` method and route listed under **Files**, wrap each `.execute()` chain, and each call to a sync helper that executes (`fetch_last_seen`), as `await run_db(lambda: <chain>.execute())`. Keep the logic as it is.
 - In `save_individual`, the compensating delete at `:313` is wrapped too.
 - Make the four no-await routes `def`.
 - Add this CLAUDE.md bullet: "**Database access:** one service-key client from `db.client.get_supabase()`; every `.execute()` reached from `async` code goes through `await run_db(...)` (the test fakes fail a query made on the event loop)."
 
-- [ ] **Step 5: Run the tests and the full checks**
+- [x] **Step 5: Run the tests and the full checks**
 
 Run: `python -m pytest backend/tests/test_event_loop.py -v`. Expected: all pass. Then run the full checks. Any older test that now fails with "ran on the event loop thread" points at a path still to wrap. Fix the code, not the test.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/db/client.py backend/services backend/api backend/tests CLAUDE.md

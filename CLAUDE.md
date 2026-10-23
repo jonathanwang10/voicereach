@@ -72,6 +72,9 @@ only after `npx expo prebuild --platform ios`.
   The proxy forwards only the client events in `services/realtime_guard.py`; database
   text goes to the model only as a delimited `user` item (`build_context_item`), never
   as a `system` message.
+- **Database access:** one service-key client from `db.client.get_supabase()`; every
+  `.execute()` reached from `async` code goes through `await run_db(...)` (the test fakes
+  fail a query made on the event loop).
 - **Categories** are schema-as-data rows; the API names are `urgency_weight` and
   `single_select`. A category's `name` is its key (`category_key`, e.g. `hiv_status`)
   and `display_name` is the label as typed; export columns, embedding text and the

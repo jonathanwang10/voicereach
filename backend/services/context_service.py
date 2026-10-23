@@ -24,8 +24,9 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from starlette.concurrency import run_in_threadpool
 from supabase import Client
+
+from db.client import run_db
 
 from services.field_registry import category_key, display_label
 from services.urgency_calculator import get_display_urgency_score
@@ -183,7 +184,7 @@ class ContextService:
         entry = self.cache.get(key)
         if entry and time.time() - entry["timestamp"] < self.cache_ttl:
             return entry["data"]
-        found = await run_in_threadpool(self._lookup_names, names)
+        found = await run_db(lambda: self._lookup_names(names))
         self.cache[key] = {"data": found, "timestamp": time.time()}
         return found
 
@@ -228,7 +229,7 @@ class ContextService:
         def fetch():
             return self.supabase.table("categories").select("*").order("created_at").execute().data
         try:
-            return await run_in_threadpool(fetch) or None
+            return await run_db(fetch) or None
         except Exception as e:
             logger.warning("Context categories unavailable: %s", type(e).__name__)
             return None

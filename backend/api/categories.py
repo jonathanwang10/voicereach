@@ -53,7 +53,7 @@ def _unique_headers(columns):
 
 
 @router.get("/api/export")
-async def export_csv(user_id: str = Depends(get_current_user)):
+def export_csv(user_id: str = Depends(get_current_user)):
     """
     Export every individual as CSV.
 
@@ -101,7 +101,7 @@ async def export_csv(user_id: str = Depends(get_current_user)):
 
 
 @router.get("/api/categories", response_model=Dict[str, List[Dict[str, Any]]])
-async def get_categories(user_id: str = Depends(get_current_user)):
+def get_categories(user_id: str = Depends(get_current_user)):
     """
     Get all categories (preset and custom) for dynamic prompt generation.
     Returns categories with their configuration for use in GPT-4o categorization.
@@ -144,7 +144,7 @@ def _is_unique_violation(exc: Exception) -> bool:
 
 
 @router.post("/api/categories", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-async def create_category(
+def create_category(
     request: CreateCategoryRequest,
     user_id: str = Depends(get_current_user)
 ):

@@ -23,6 +23,7 @@ from services.urgency_calculator import calculate_urgency_score, get_display_urg
 from services.field_registry import normalize_individual_data
 from services.search_matching import MATCH_TIER, match_individual
 from services import context_service
+from db.client import run_db
 
 
 LAST_SEEN_CHUNK = 50  # ids per interactions query (URL length and the ~1000-row cap)
@@ -200,7 +201,7 @@ class IndividualService:
         6. Return both records
         """
         # Fetch categories for normalisation and urgency weights
-        categories_response = self.supabase.table("categories").select("*").execute()
+        categories_response = await run_db(lambda: self.supabase.table("categories").select("*").execute())
         categories = categories_response.data or []
 
         # Normalise before the diff and the urgency calculation, so None/"" never
@@ -224,11 +225,11 @@ class IndividualService:
         
         if merge_with_id:
             # Verify individual exists
-            existing_response = self.supabase.table("individuals") \
-                .select("*") \
-                .eq("id", str(merge_with_id)) \
-                .maybe_single() \
-                .execute()
+            existing_response = await run_db(lambda: self.supabase.table("individuals")
+                                             .select("*")
+                                             .eq("id", str(merge_with_id))
+                                             .maybe_single()
+                                             .execute())
             
             if existing_response is None or not existing_response.data:
                 raise ValueError(f"Individual not found: {merge_with_id}")
@@ -254,25 +255,25 @@ class IndividualService:
             if location_dict:
                 update_data["last_location"] = location_dict
             
-            update_response = self.supabase.table("individuals") \
-                .update(update_data) \
-                .eq("id", str(merge_with_id)) \
-                .execute()
+            update_response = await run_db(lambda: self.supabase.table("individuals")
+                                           .update(update_data)
+                                           .eq("id", str(merge_with_id))
+                                           .execute())
             
             individual = update_response.data[0]
             
             # Create interaction with changes only
-            interaction_response = self.supabase.table("interactions") \
-                .insert({
-                    "individual_id": str(merge_with_id),
-                    "user_id": user_id,
-                    "user_name": user_name,
-                    "transcription": transcription,
-                    "audio_url": audio_url,
-                    "location": location_dict,
-                    "changes": changes
-                }) \
-                .execute()
+            interaction_response = await run_db(lambda: self.supabase.table("interactions")
+                                                .insert({
+                                                    "individual_id": str(merge_with_id),
+                                                    "user_id": user_id,
+                                                    "user_name": user_name,
+                                                    "transcription": transcription,
+                                                    "audio_url": audio_url,
+                                                    "location": location_dict,
+                                                    "changes": changes
+                                                })
+                                                .execute())
             
             interaction = interaction_response.data[0]
             
@@ -288,29 +289,30 @@ class IndividualService:
             if location_dict:
                 individual_data["last_location"] = location_dict
             
-            individual_response = self.supabase.table("individuals") \
-                .insert(individual_data) \
-                .execute()
+            individual_response = await run_db(lambda: self.supabase.table("individuals")
+                                               .insert(individual_data)
+                                               .execute())
             
             individual = individual_response.data[0]
             
             # Create interaction with all data (first interaction). If it fails,
             # remove the person we just created so a retry does not duplicate them.
             try:
-                interaction_response = self.supabase.table("interactions") \
-                    .insert({
-                        "individual_id": individual["id"],
-                        "user_id": user_id,
-                        "user_name": user_name,
-                        "transcription": transcription,
-                        "audio_url": audio_url,
-                        "location": location_dict,
-                        "changes": data  # All data for first interaction
-                    }) \
-                    .execute()
+                interaction_response = await run_db(lambda: self.supabase.table("interactions")
+                                                    .insert({
+                                                        "individual_id": individual["id"],
+                                                        "user_id": user_id,
+                                                        "user_name": user_name,
+                                                        "transcription": transcription,
+                                                        "audio_url": audio_url,
+                                                        "location": location_dict,
+                                                        "changes": data  # All data for first interaction
+                                                    })
+                                                    .execute())
             except Exception:
                 try:
-                    self.supabase.table("individuals").delete().eq("id", individual["id"]).execute()
+                    await run_db(lambda: self.supabase.table("individuals")
+                                 .delete().eq("id", individual["id"]).execute())
                 except Exception:
                     pass  # best effort; the original error is the one to surface
                 raise
@@ -368,7 +370,7 @@ class IndividualService:
         """
         # Database errors propagate (the route turns them into a 500). Returning
         # an empty list here made an outage look like "no one recorded yet" (C-17).
-        individuals = self.supabase.table("individuals").select("*").execute().data or []
+        individuals = (await run_db(lambda: self.supabase.table("individuals").select("*").execute())).data or []
         term = search.strip() if search else ""
         tier: Dict[str, int] = {}
         if term:
@@ -385,7 +387,7 @@ class IndividualService:
 
         # last_seen for every person when sorting by it, else only for the page
         if sort_by == "last_seen":
-            seen = fetch_last_seen(self.supabase, [i["id"] for i in individuals])
+            seen = await run_db(lambda: fetch_last_seen(self.supabase, [i["id"] for i in individuals]))
             individuals.sort(
                 key=lambda x: _parse_timestamp(seen.get(x["id"], {}).get("last_seen", x["created_at"])),
                 reverse=reverse
@@ -399,7 +401,7 @@ class IndividualService:
 
         page = individuals[offset:offset + limit]
         if sort_by != "last_seen":
-            seen = fetch_last_seen(self.supabase, [i["id"] for i in page])
+            seen = await run_db(lambda: fetch_last_seen(self.supabase, [i["id"] for i in page]))
 
         results = []
         for ind in page:
@@ -431,21 +433,21 @@ class IndividualService:
     async def delete_individual(self, individual_id: UUID) -> bool:
         """Delete a person. FK cascades remove their interactions and embeddings.
         Returns True if a row was deleted, False if there was no such person."""
-        response = self.supabase.table("individuals") \
-            .delete() \
-            .eq("id", str(individual_id)) \
-            .execute()
+        response = await run_db(lambda: self.supabase.table("individuals")
+                                .delete()
+                                .eq("id", str(individual_id))
+                                .execute())
         return bool(response.data)
 
     async def get_individual_by_id(self, individual_id: UUID) -> Optional[IndividualDetailResponse]:
         """Get individual details with recent interactions"""
         # maybe_single() returns None for zero rows (the only "not found"); any other
         # database error propagates, so an outage is a 500 and not a 404 (C-17).
-        individual_response = self.supabase.table("individuals") \
-            .select("*") \
-            .eq("id", str(individual_id)) \
-            .maybe_single() \
-            .execute()
+        individual_response = await run_db(lambda: self.supabase.table("individuals")
+                                           .select("*")
+                                           .eq("id", str(individual_id))
+                                           .maybe_single()
+                                           .execute())
 
         if individual_response is None or not individual_response.data:
             return None
@@ -467,7 +469,7 @@ class IndividualService:
             .limit(10)
         
         # Execute the query
-        interactions_response = interactions_query.execute()
+        interactions_response = await run_db(interactions_query.execute)
         
         # Format response
         individual_resp = IndividualResponse(
@@ -510,7 +512,7 @@ class IndividualService:
             .eq("id", str(individual_id))
         
         # Execute the query
-        update_response = update_query.execute()
+        update_response = await run_db(update_query.execute)
         
         if not update_response.data:
             raise ValueError(f"Individual not found: {individual_id}")
@@ -538,12 +540,12 @@ class IndividualService:
     ) -> InteractionsResponse:
         """Get detailed interaction history"""
         # Get interactions
-        interactions_response = self.supabase.table("interactions") \
-            .select("*") \
-            .eq("individual_id", str(individual_id)) \
-            .order("created_at", desc=True) \
-            .range(offset, offset + limit - 1) \
-            .execute()
+        interactions_response = await run_db(lambda: self.supabase.table("interactions")
+                                             .select("*")
+                                             .eq("individual_id", str(individual_id))
+                                             .order("created_at", desc=True)
+                                             .range(offset, offset + limit - 1)
+                                             .execute())
         
         # Format response with full addresses
         interactions = [
