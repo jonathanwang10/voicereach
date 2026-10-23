@@ -44,8 +44,12 @@ only after `npx expo prebuild --platform ios`.
   Height is stored in inches; weight in pounds; both 0-300.
 - **Do not reintroduce `skin_color`.** It was removed on purpose (it was a scored
   field with different urgency values per skin tone). See `supabase/schema.sql`.
-- **Recording:** M4A/AAC, 5 s minimum, 2 min maximum, timer red from 1:30,
-  warning alert at 1:45, auto-stop at 2:00. Recording starts on tap; the GPS fix
+- **Recording:** M4A/AAC, 16 kHz mono at 32 kbps (`FIELD_NOTE_RECORDING`), 5 s
+  minimum, 2 min maximum, timer red from 1:30, warning alert at 1:45, auto-stop at
+  2:00. The timer reads the recorder's own status (`durationMillis`). An
+  interruption (a call, Siri) stops the recording and offers Keep (5 s or more) or
+  Record again. Only `mobile/services/audioSession.ts` changes the audio session.
+  Recording starts on tap; the GPS fix
   is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s) at
   stop (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
   own fix unless the worker picked a location by hand. The server re-checks the

@@ -8,9 +8,18 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import {
+  AudioQuality,
+  IOSOutputFormat,
+  RecordingOptions,
+  requestRecordingPermissionsAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
+import { acquireRecording } from '../services/audioSession';
 import { ErrorHandler } from '../utils/errorHandler';
 import { formatGeocodedAddress } from '../utils/location';
 import { theme } from '../theme';
@@ -35,6 +44,27 @@ export interface AudioRecorderRef {
 
 // How long stopping waits for a GPS fix that is still on its way (C-39)
 export const LOCATION_WAIT_MS = 3000;
+
+// The field note: 16 kHz mono AAC at 32 kbps, about 4 KB a second (H2-5.4)
+export const FIELD_NOTE_RECORDING: RecordingOptions = {
+  extension: '.m4a',
+  sampleRate: 16000,
+  numberOfChannels: 1,
+  bitRate: 32000,
+  ios: { outputFormat: IOSOutputFormat.MPEG4AAC, audioQuality: AudioQuality.MEDIUM },
+  android: { outputFormat: 'mpeg4', audioEncoder: 'aac' },
+  web: { mimeType: 'audio/webm', bitsPerSecond: 32000 },
+};
+
+export const INTERRUPTED_MESSAGE = (at: string) =>
+  `Recording was interrupted at ${at}. You can keep what was recorded or record again.`;
+
+// m:ss
+const formatDuration = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
 
 // The GPS fix and its address, or undefined when there is none. Never throws.
 const captureLocation = async (): Promise<RecordingLocation | undefined> => {
@@ -76,15 +106,23 @@ const awaitLocation = async (pending: Promise<RecordingLocation | undefined> | n
 export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
   onRecordingComplete,
 }, ref) => {
+  const recorder = useAudioRecorder(FIELD_NOTE_RECORDING);
+  const recorderState = useAudioRecorderState(recorder, 250);
   const [isRecording, setIsRecording] = useState(false);
+  // Whole seconds recorded, from the recorder's own status (H2-5.3)
   const [duration, setDuration] = useState(0);
   // Between the stop tap and the hand-over, while the location is awaited
   const [isFinishing, setIsFinishing] = useState(false);
   // False after unmount, so a start that finishes late releases the mic
   const mountedRef = useRef(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  // True from record() until the worker stops or the recording is interrupted
+  const activeRef = useRef(false);
+  // The recorder's status has said "recording" since this start, so a later
+  // "not recording" is an interruption and not the status lagging behind
+  const sawRecordingRef = useRef(false);
+  const warnedRef = useRef(false);
   const durationRef = useRef(0);
+  const releaseRef = useRef<(() => Promise<void>) | null>(null);
   // Set from the first tap until the recording has started: later taps are ignored (C-39)
   const startingRef = useRef(false);
   // The location being captured alongside the current recording (C-39)
@@ -94,18 +132,18 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const clearTimer = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+  // Hands the audio session back; safe to call more than once
+  const releaseSession = async () => {
+    const release = releaseRef.current;
+    releaseRef.current = null;
+    await release?.().catch(() => {});
   };
 
   // Back to the idle "Tap to start recording" state
   const resetState = () => {
-    recordingRef.current = null;
+    activeRef.current = false;
     locationRef.current = null;
-    clearTimer();
+    durationRef.current = 0;
     stopAnimations();
     setIsRecording(false);
     setIsFinishing(false);
@@ -121,8 +159,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   useEffect(() => {
     (async () => {
       try {
-        const { status } = await Audio.requestPermissionsAsync();
-        if (status !== 'granted') {
+        const { granted } = await requestRecordingPermissionsAsync();
+        if (!granted) {
           const error = ErrorHandler.handleRecordingError(new Error('Recording permission denied'));
           ErrorHandler.showError(error);
         }
@@ -166,66 +204,65 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }).start();
   }, [duration]);
 
+  // Each status poll: interruption, the 1:45 warning, the 2:00 auto-stop
   useEffect(() => {
-    durationRef.current = duration;
-    if (!isRecording) return;
-    if (duration === 105) {
+    if (!activeRef.current) return;
+    if (recorderState.isRecording) sawRecordingRef.current = true;
+    if (!sawRecordingRef.current && !recorderState.mediaServicesDidReset) return;
+    // A call or Siri stopped the recorder, or the media services reset (H2-5.3)
+    if (!recorderState.isRecording || recorderState.mediaServicesDidReset) {
+      handleInterruption();
+      return;
+    }
+    const seconds = Math.floor((recorderState.durationMillis ?? 0) / 1000);
+    durationRef.current = seconds;
+    setDuration(seconds);
+    if (seconds >= 120) {
+      stopRecording();
+    } else if (seconds >= 105 && !warnedRef.current) {
+      warnedRef.current = true;
       Alert.alert('⏱️ Time Warning', 'Recording will stop in 15 seconds', [{ text: 'OK', style: 'default' }]);
     }
-    if (duration >= 120) {
-      stopRecording();
-    }
-  }, [duration, isRecording]);
+  }, [recorderState.isRecording, recorderState.durationMillis, recorderState.mediaServicesDidReset, isRecording]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      if (activeRef.current) {
+        activeRef.current = false;
+        Promise.resolve().then(() => recorder.stop()).catch(() => {});
+      }
+      releaseSession();
     };
   }, []);
 
   // Start recording first; the location is captured alongside it (C-39)
   const startRecording = async () => {
-    if (startingRef.current || recordingRef.current) return;
+    if (startingRef.current || activeRef.current) return;
     startingRef.current = true;
     try {
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync({
-        ...Audio.RecordingOptionsPresets.LOW_QUALITY,
-        android: {
-          extension: '.m4a',
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 64000,
-        },
-      });
+      releaseRef.current = await acquireRecording('record-tab');
+      await recorder.prepareToRecordAsync();
       if (!mountedRef.current) {
         // Unmounted while starting: release the mic and start nothing else
-        recording.stopAndUnloadAsync().catch(() => {});
+        await releaseSession();
         return;
       }
-      recordingRef.current = recording;
+      recorder.record();
+      activeRef.current = true;
+      sawRecordingRef.current = false;
+      warnedRef.current = false;
+      durationRef.current = 0;
       locationRef.current = captureLocation();
       setIsRecording(true);
       setDuration(0);
 
       // Start animations
       startPulseAnimation();
-
-      // Start duration timer
-      intervalRef.current = setInterval(() => {
-        setDuration((prev) => prev + 1);
-      }, 1000);
     } catch (err) {
       if (__DEV__) console.error('Failed to start recording', err);
+      await releaseSession();
       const error = ErrorHandler.handleRecordingError(err);
       ErrorHandler.showError(error);
     } finally {
@@ -235,8 +272,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
   // Stop recording
   const stopRecording = async () => {
-    const activeRecording = recordingRef.current;
-    if (!activeRecording) return;
+    if (!activeRef.current) return;
 
     // Check minimum recording duration
     if (durationRef.current < 5) {
@@ -249,15 +285,15 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }
 
     // Taken first, so a second tap or the 2:00 auto-stop is a no-op from here on
-    recordingRef.current = null;
+    activeRef.current = false;
     const pendingLocation = locationRef.current;
-    clearTimer();
     stopAnimations();
     setIsFinishing(true);
 
     try {
-      await activeRecording.stopAndUnloadAsync();
-      const uri = activeRecording.getURI();
+      await recorder.stop();
+      const uri = recorder.uri;
+      await releaseSession();
       const location = await awaitLocation(pendingLocation);
       resetState();
       if (uri) {
@@ -265,8 +301,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       }
     } catch (err) {
       if (__DEV__) console.error('Failed to stop recording', err);
-      // One more best-effort unload, so the next createAsync isn't blocked
-      activeRecording.stopAndUnloadAsync().catch(() => {});
+      // One more best-effort stop, so the next start isn't blocked
+      Promise.resolve().then(() => recorder.stop()).catch(() => {});
+      await releaseSession();
       // Never leave the UI stuck on the stop button (C-61)
       resetState();
       const error = ErrorHandler.handleRecordingError(err);
@@ -274,11 +311,33 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }
   };
 
-  // Format duration
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  // The recording stopped without the worker: keep what was recorded or start over (H2-5.3)
+  const handleInterruption = async () => {
+    activeRef.current = false;
+    const seconds = durationRef.current;
+    const pendingLocation = locationRef.current;
+    stopAnimations();
+    setIsFinishing(true);
+    await Promise.resolve().then(() => recorder.stop()).catch(() => {});
+    const uri = recorder.uri;
+    await releaseSession();
+    const location = await awaitLocation(pendingLocation);
+    resetState();
+    const recordAgain = {
+      text: 'Record again',
+      onPress: () => {
+        if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+        resetState();
+      },
+    };
+    const keep = {
+      text: 'Keep',
+      onPress: () => {
+        if (uri) onRecordingComplete(uri, location);
+      },
+    };
+    Alert.alert('Recording interrupted', INTERRUPTED_MESSAGE(formatDuration(seconds)),
+      seconds >= 5 && uri ? [recordAgain, keep] : [recordAgain]);
   };
 
   // Get button color

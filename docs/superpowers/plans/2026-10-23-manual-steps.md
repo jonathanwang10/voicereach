@@ -54,6 +54,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 
 2. D5.1 (Phase 5, Task 1) Native rebuild for Phase 5. `cd mobile && npm install && npx expo prebuild --platform ios && cd ios && pod install && cd .. && npx expo run:ios --device`. Expected: the build succeeds; `ios/Podfile.lock` gains `ExpoAudio` and `RNAudioAPI` (and, after Task 8, loses `EXAV`); `Info.plist` has no `UIBackgroundModes` `audio` entry. Commit the regenerated `ios/` (it stays committed). If pod install fails, follow the last row of the Phase 5 Task 1 decision table.
 3. D5.2 (Phase 5, Task 1) Mic frames are 24 kHz. On the Assistant, start listening and speak for 5 s. Expected: the worker bubble shows a sensible transcript, and the reply addresses what was said. Garbled or sped-up/slowed audio means the recorder ignored `sampleRate`: add linear resampling from `buffer.sampleRate` to 24000 in `micStream.ts` (helper `resampleLinear(input: Float32Array, fromRate: number, toRate: number): Float32Array` in `audioProcessor.ts`, with a unit test) and re-check.
+4. D5.3 (Phase 5, Task 3) Record-tab interruption. Start a field-note recording, record 10 s, then trigger Siri (or have someone call the phone). Expected: recording stops; "Recording was interrupted at 0:1x. You can keep what was recorded or record again." with Keep and Record again; Keep goes on to transcription with the audio up to the interruption. Also record 10 s normally: the file is about 40 KB (32 kbps).
 
 ## Owner actions outside code
 

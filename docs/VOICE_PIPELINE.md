@@ -7,8 +7,16 @@ question. File paths are relative to the repo root.
 
 `mobile/components/ModernAudioRecorder.tsx`, on the Record tab.
 
-- **Format:** M4A with AAC at 64 kbps. iOS uses expo-av's `LOW_QUALITY` preset
-  (which is AAC `.m4a`); Android overrides it with an explicit AAC/MPEG-4 config.
+- **Format:** M4A with AAC, 16 kHz mono at 32 kbps (`FIELD_NOTE_RECORDING`,
+  recorded with expo-audio), about 4 KB a second. The timer reads the recorder's
+  own status (`durationMillis`, polled every 250 ms). The recorder takes the
+  audio session from `mobile/services/audioSession.ts` before it starts and hands
+  it back on stop, failure, interruption and unmount.
+- **Interruption:** if a call, Siri or a media-services reset stops the recorder
+  without the worker, the recording stops and the app says "Recording was
+  interrupted at m:ss. You can keep what was recorded or record again." Keep
+  (offered only at 5 s or more) goes on to transcription with the audio so far;
+  Record again deletes the file.
 - **Length:** 5 s minimum (stopping earlier shows "Too Short" and keeps
   recording), 2 min maximum. The timer text turns red at 1:30; the progress bar
   turns amber at 1:30 and red at 1:45; a warning alert appears at 1:45; and
