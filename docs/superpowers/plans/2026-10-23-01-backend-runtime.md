@@ -46,6 +46,10 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 3. **The merge target vanishing during the first read is also a 404.** `individual_service.py:233-234` raises `ValueError` (400) on the same race as `:262`. Both now raise `IndividualNotFound` (404). `update_urgency_override` (`:515-525`) uses it too, so the route no longer turns a `ValidationError` into a 404 through `except ValueError`.
 4. **`backend/scripts/` keep their own `create_client`.** They are separate processes, so "one client per process" holds. Phase 4 rewrites `backfill_embeddings.py`. They still benefit from `fetch_all` through `rescore_all_individuals`.
 
+**Executor deviations (recorded while implementing):**
+
+- Task 1: the roadmap and phase plans were already committed on `hardening-2` (15251d2), so Task 1's commit adds only the manual-steps file (`docs: add hardening-2 manual-steps file`). Baseline: 718 passed, 5 skipped (all five are the live smoke tests in `test_live_smoke.py`), not 1 skipped; jest 40/40 suites (the first cold run timed out 4 suites, a rerun passed; not a code failure).
+
 ## Decisions the roadmap left open
 
 - **Routes that await nothing become plain `def`** instead of wrapping each `.execute()` in `run_db`: `get_categories`, `export_csv`, `create_category` (`api/categories.py`) and `get_embedding_status` (`api/embeddings.py`). FastAPI already runs `def` routes in its threadpool (roadmap item 1). This also moves the re-score at `categories.py:231` off the loop.
@@ -76,21 +80,21 @@ Line numbers below are as of `main` at `ce238db`. Earlier tasks shift them, so f
 **Interfaces:**
 - Produces: the manual-steps file with four sections that every later task and phase appends to.
 
-- [ ] **Step 1: Create or switch to the branch**
+- [x] **Step 1: Create or switch to the branch**
 
 Run: `git switch hardening-2 2>/dev/null || git switch -c hardening-2 main`
 Expected: `git branch --show-current` prints `hardening-2`.
 
-- [ ] **Step 2: Recreate the venv with Python 3.11**
+- [x] **Step 2: Recreate the venv with Python 3.11**
 
 Run: `rm -rf .venv && python3.11 -m venv .venv && source .venv/bin/activate && python -m pip install -r requirements.txt -r requirements-dev.txt`
 Expected: `python --version` prints `Python 3.11.x`, and `python -c "import httpcore, supabase, openai"` exits 0.
 
-- [ ] **Step 3: Record the baseline**
+- [x] **Step 3: Record the baseline**
 
 Run the full checks. Expected: everything passes, with 1 skipped. Note the passed count in the task report. A failure here is pre-existing: stop and report it rather than fixing it inside this phase.
 
-- [ ] **Step 4: Write the manual-steps file**
+- [x] **Step 4: Write the manual-steps file**
 
 Write exactly this content:
 
@@ -128,7 +132,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 4. Choose the App Store bundle id (Phase 8 leaves a placeholder).
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/superpowers/
