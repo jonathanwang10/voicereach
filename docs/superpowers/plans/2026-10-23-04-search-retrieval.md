@@ -841,7 +841,7 @@ The data (approximate centroids; the owner may refine them; keep this list):
 | Presidio | 37.7989, -122.4662 | 1500 | |
 | Treasure Island | 37.8235, -122.3706 | 900 | |
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_names_and_aliases_resolve_to_the_same_centre():
@@ -877,12 +877,12 @@ def test_most_urgent_uses_haversine_and_guards_bad_coordinates():
     assert "COALESCE(l.urgency_override, l.urgency_score)" in fn
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_sf_neighborhoods.py backend/tests/test_schema_sql.py -q`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `sf_neighborhoods.py` and the migration** (also folded into `schema.sql`)
+- [x] **Step 3: Implement `sf_neighborhoods.py` and the migration** (also folded into `schema.sql`)
 
 ```sql
 -- H2-4.7: most urgent people, optionally within a radius of a point (haversine, no PostGIS)
@@ -925,11 +925,11 @@ $$;
 
 Then `REVOKE`/`GRANT` for `most_urgent_individuals(double precision, double precision, double precision, int)` and `NOTIFY pgrst, 'reload schema';`. The display urgency matches `get_display_urgency_score`: an override of 0 counts. It scans `individuals` once per call, which is fine to tens of thousands of rows; the trigger for change is PostGIS or `earthdistance`, and a comment says so.
 
-- [ ] **Step 4: Append to manual steps:** `20261104000004_most_urgent.sql`.
+- [x] **Step 4: Append to manual steps:** `20261104000004_most_urgent.sql`.
 
-- [ ] **Step 5: Run the tests, then the global checks.** Expected: PASS.
+- [x] **Step 5: Run the tests, then the global checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/services/sf_neighborhoods.py backend/tests supabase docs/superpowers/plans/2026-10-23-manual-steps.md

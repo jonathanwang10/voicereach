@@ -477,7 +477,8 @@ def _function_sql(text: str, name: str) -> str:
     return _norm(text[start:text.index("$$;", body + 2) + 3])
 
 PHASE4_FUNCTIONS = {"search_individuals_hybrid": "20261104000002_hybrid_search.sql",
-                    "match_interactions": "20261104000003_interaction_embeddings.sql"}  # Task 7 adds its own
+                    "match_interactions": "20261104000003_interaction_embeddings.sql",
+                    "most_urgent_individuals": "20261104000004_most_urgent.sql"}
 
 @pytest.mark.parametrize("name,migration", PHASE4_FUNCTIONS.items())
 def test_phase4_functions_match_their_migrations(name, migration):
@@ -534,3 +535,13 @@ def test_match_interactions_signature():
     assert ("match_interactions( p_query_embedding halfvec(3072), p_individual_id uuid DEFAULT NULL, "
             "p_limit int DEFAULT 5 )") in fn
     assert "ORDER BY e.embedding <=> p_query_embedding LIMIT" in fn and "SET hnsw.ef_search = 100" in fn
+
+
+# --- most_urgent_individuals (H2-4.7) -------------------------------------------------
+
+def test_most_urgent_uses_haversine_and_guards_bad_coordinates():                 # Review Focus 4
+    fn = _function_sql(SQL, "most_urgent_individuals")
+    assert "2 * 6371000 * asin(least(1, sqrt(" in fn
+    assert "jsonb_typeof(i.last_location->'latitude') = 'number'" in fn
+    assert "ORDER BY display_urgency DESC, last_seen DESC NULLS LAST, l.id" in fn
+    assert "COALESCE(l.urgency_override, l.urgency_score)" in fn
