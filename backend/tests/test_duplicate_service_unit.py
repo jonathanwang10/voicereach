@@ -318,3 +318,35 @@ def test_name_tokens_carry_no_wildcards_or_filter_syntax():
     # Candidate search builds its PostgREST filter from letter/digit runs only (C-22)
     assert DuplicateDetectionService._name_tokens("a_b%c*,name.eq.x)") == ["name"]
     assert DuplicateDetectionService._name_tokens("Ann%") == ["ann"]
+
+
+# --- phonetic pre-rank (H2-3.5) -------------------------------------------------------------------
+
+from services.duplicate_detection_service import DuplicateDetectionService  # noqa: E402
+
+
+def test_a_sound_alike_token_scores_075():
+    assert DuplicateDetectionService._token_score("smyth", _person("Ann Smith")) == 0.75
+
+
+def test_a_typo_scores_05_through_jaro_winkler():
+    assert DuplicateDetectionService._token_score("brwon", _person("Lee Brown")) == 0.5
+
+
+def test_an_unrelated_token_scores_0():
+    assert DuplicateDetectionService._token_score("zed", _person("Lee Brown")) == 0
+
+
+def test_a_substring_token_still_scores_1():
+    assert DuplicateDetectionService._token_score("brown", _person("Lee Brown")) == 1.0
+
+
+def test_phonetic_match_outranks_body_closeness():
+    sound = _person("Ann Smith", {"height": 50}); close = _person("Bo Quill", {"height": 72, "weight": 180})
+    ranked = DuplicateDetectionService._rank_candidates({"name": "Ann Smyth", "height": 72, "weight": 180}, [close, sound])
+    assert ranked[0] is sound
+
+
+@pytest.mark.parametrize("name", ["José O'Neil", "李", "Ⅻ", "a-b"])
+def test_ranking_never_raises_on_unusual_names(name):                          # Review Focus 4
+    DuplicateDetectionService._rank_candidates({"name": name}, [_person("José Oneil"), _person("李明"), _person("")])

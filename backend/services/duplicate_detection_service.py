@@ -7,6 +7,8 @@ import logging
 import re
 import uuid
 from typing import Dict, List, Optional
+
+import jellyfish
 from supabase import Client
 
 from db.client import run_db
@@ -132,11 +134,13 @@ class DuplicateDetectionService:
 
     @classmethod
     def _rank_candidates(cls, new_data: dict, candidates: List[Dict]) -> List[Dict]:
-        """Best candidates first: name tokens matched, plus height/weight closeness.
+        """Best candidates first: name evidence, then height/weight closeness.
 
-        Each matched token counts 1. Height (within 12 in) and weight (within 50 lb)
-        add up to 0.5 each, so closeness only orders people who match the same
-        number of tokens. Ties keep retrieval order (most recently updated first).
+        Each token of the new name scores up to 1 (`_token_score`: substring 1,
+        sound-alike 0.75, close spelling 0.5). Height (within 12 in) and weight
+        (within 50 lb) add up to 0.5 each, and only order people with the same name
+        score: name evidence always outranks body closeness (H2-3.5). Ties keep
+        retrieval order.
         """
         name = new_data.get("name") or new_data.get("Name") or ""
         tokens = cls._name_tokens(name) if isinstance(name, str) else []
@@ -147,12 +151,31 @@ class DuplicateDetectionService:
                 return 0.0
             return 0.5 * max(0.0, 1 - abs(mine - theirs) / scale)
 
-        def score(candidate: Dict) -> float:
-            matched = sum(1 for token in tokens if match_individual(token, candidate))
+        def score(candidate: Dict) -> tuple:
+            names = sum(cls._token_score(token, candidate) for token in tokens)
             data = candidate.get("data") if isinstance(candidate.get("data"), dict) else {}
-            return matched + closeness("height", 12, data) + closeness("weight", 50, data)
+            return names, closeness("height", 12, data) + closeness("weight", 50, data)
 
         return sorted(candidates, key=score, reverse=True)
+
+    @classmethod
+    def _token_score(cls, token: str, candidate: Dict) -> float:
+        """How well one token of the new name matches a candidate (H2-3.5): 1 when it is
+        in the name or a data value (match_individual), 0.75 when it sounds the same as
+        a word of the name (metaphone), 0.5 when it is a close spelling of one
+        (Jaro-Winkler >= 0.88), else 0. Odd input that an encoder can't handle is 0."""
+        if match_individual(token, candidate):
+            return 1.0
+        words = [w for w in re.split(r"[\W_]+", str(candidate.get("name") or "").casefold()) if w]
+        try:
+            code = jellyfish.metaphone(token)
+            if code and any(jellyfish.metaphone(w) == code for w in words):
+                return 0.75
+            if words and max(jellyfish.jaro_winkler_similarity(token, w) for w in words) >= 0.88:
+                return 0.5
+        except Exception:
+            return 0.0
+        return 0.0
 
     @staticmethod
     def _score(value) -> Optional[int]:
