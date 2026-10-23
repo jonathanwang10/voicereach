@@ -41,6 +41,7 @@ export default function CategoriesScreen() {
   const [newCategoryWeight, setNewCategoryWeight] = useState('');
   const [newCategoryAutoTrigger, setNewCategoryAutoTrigger] = useState(false);
   const [newCategoryOptionsText, setNewCategoryOptionsText] = useState('');
+  const [newCategoryScaleMax, setNewCategoryScaleMax] = useState('');
 
   const isSelectType = newCategoryType === 'single_select' || newCategoryType === 'multi_select';
   const isWeightedType = newCategoryType === 'number' || newCategoryType === 'single_select';
@@ -67,6 +68,7 @@ export default function CategoriesScreen() {
       optionsText: newCategoryOptionsText,
       weight: newCategoryWeight,
       autoTrigger: newCategoryAutoTrigger,
+      scaleMax: newCategoryScaleMax,
     };
     // Same rules as the backend's CreateCategoryRequest
     const problem = validateCategoryForm(form);
@@ -87,6 +89,7 @@ export default function CategoriesScreen() {
       setNewCategoryWeight('');
       setNewCategoryAutoTrigger(false);
       setNewCategoryOptionsText('');
+      setNewCategoryScaleMax('');
 
       Alert.alert('Success', 'Category created successfully!');
     } catch (error: any) {
@@ -258,6 +261,20 @@ export default function CategoriesScreen() {
                 Auto-Trigger Urgency: {newCategoryAutoTrigger ? 'ON' : 'OFF'}
               </Text>
             </TouchableOpacity>
+            {newCategoryType === 'number' && (
+              <>
+                {/* The value that counts as the full weight; blank means 300 (H2-2.8) */}
+                <Text style={styles.dangerWeightLabel}>Scale max (optional)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="300"
+                  value={newCategoryScaleMax}
+                  onChangeText={setNewCategoryScaleMax}
+                  keyboardType="numeric"
+                  maxLength={9}
+                />
+              </>
+            )}
           </View>
         )}
         

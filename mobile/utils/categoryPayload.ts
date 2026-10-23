@@ -17,6 +17,7 @@ export interface Category {
   auto_trigger: boolean;
   is_required: boolean;
   is_preset: boolean;
+  number_scale_max?: number | null; // a number's full-weight value; null = 300 (H2-2.8)
 }
 
 export interface CategoryForm {
@@ -26,6 +27,7 @@ export interface CategoryForm {
   optionsText: string;
   weight: string | number;
   autoTrigger: boolean;
+  scaleMax?: string; // number only: the value that counts as the full weight (blank = 300)
 }
 
 export const MAX_CATEGORY_NAME_LENGTH = 50;
@@ -110,6 +112,10 @@ export const validateCategoryForm = (form: CategoryForm): string | null => {
   if (isWeighted(form.type) && String(form.weight).trim() !== '' && !Number.isFinite(Number(form.weight))) {
     return 'Weight must be a number from 0 to 100';
   }
+  if (form.type === 'number' && (form.scaleMax ?? '').trim() !== '') {
+    const scale = Number(form.scaleMax);
+    if (!Number.isFinite(scale) || scale <= 0) return 'Scale max must be a number greater than 0';
+  }
   return null;
 };
 
@@ -126,5 +132,6 @@ export const buildCategoryPayload = (form: CategoryForm) => {
     urgency_weight: weighted ? clampWeight(form.weight) : 0,
     auto_trigger: weighted ? form.autoTrigger : false,
     options: parseOptionsInput(form.optionsText, form.type).options,
+    number_scale_max: form.type === 'number' && (form.scaleMax ?? '').trim() !== '' ? Number(form.scaleMax) : null,
   };
 };

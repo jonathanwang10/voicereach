@@ -54,6 +54,7 @@
 - Task 7: the plan's route assertion expected only `medical_conditions` in `_removed`, but that test's fixture (EXISTING) also has `veteran_status: "No"`, which the merge omits too; by the task's own rule both are removals, so the test expects both. Three older tests that pinned "a dropped field leaves no trace" (`test_get_changed_fields_never_records_empty_new_values`, `test_merge_updates_the_target_and_records_only_what_changed`, and the wholesale-replace test) now expect the removal.
 - Task 9: `test_audit_routes_use_phase_1s_device_dependency` moved to Task 10. It asserts that `api.individuals` and `api.categories` import `get_device_id`, which only Task 10 wires up; importing it unused in Task 9 would fail ruff F401.
 - Task 10: the individuals-route audit tests live in `test_individuals_routes.py` (its `_db`/FakeSupabase covers delete too; `test_delete_individual.py`'s route tests mock the service). `_writes()` there leaves `audit_log` rows out so the save tests keep asserting "one rpc, no table writes"; `test_schema_contract.py`'s recording DB scripts `audit_log` and expects its insert.
+- Task 12: the older single-select `toEqual` payload test in `CategoriesScreen.test.tsx` now includes `number_scale_max: null`.
 
 ## File Structure
 
@@ -982,20 +983,20 @@ git commit -m "feat(urgency): per-category number_scale_max, default 300 (H2-2.8
   - `validateCategoryForm`, for a number type with a non-blank box that isn't a finite number > 0, returns `'Scale max must be a number greater than 0'`.
   - The screen shows a `TextInput` with placeholder `"300"` and label `Scale max (optional)` only when the type is `number`. It resets with the form.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `categoryPayload.test.ts`: `buildCategoryPayload({...numberForm, scaleMax: '10'}).number_scale_max === 10`; a blank box gives `null`; a single-select with `scaleMax: '10'` gives `null`; `validateCategoryForm` rejects `'0'`, `'-2'` and `'abc'` for number and accepts `''`.
   - `CategoriesScreen.test.tsx`:
     - `it('shows Scale max only for number categories and sends it')`: choose Number, type 10 into Scale max, add. `api.createCategory` was called with `expect.objectContaining({ number_scale_max: 10 })`.
     - `it('hides Scale max for single-select')`.
     - `it('blocks a scale max of 0 before calling the API')`.
 
-- [ ] **Step 2: Run them and check they fail** (`cd mobile && npx jest utils/__tests__/categoryPayload.test.ts screens/__tests__/CategoriesScreen.test.tsx`).
+- [x] **Step 2: Run them and check they fail** (`cd mobile && npx jest utils/__tests__/categoryPayload.test.ts screens/__tests__/CategoriesScreen.test.tsx`).
 
-- [ ] **Step 3: Implement** the Interfaces block. Reuse the `dangerWeightContainer` styles; no new design.
+- [x] **Step 3: Implement** the Interfaces block. Reuse the `dangerWeightContainer` styles; no new design.
 
-- [ ] **Step 4: Run** `cd mobile && npx tsc --noEmit && npx jest`. Expected: PASS.
+- [x] **Step 4: Run** `cd mobile && npx tsc --noEmit && npx jest`. Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mobile/

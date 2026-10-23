@@ -123,3 +123,22 @@ describe('categoryLabel', () => {
     expect(categoryLabel({ name: 'age', display_name: null })).toBe('Age');
   });
 });
+
+// H2-2.8: a number category's optional "Scale max"
+describe('scale max', () => {
+  const numberForm = { ...base, type: 'number' };
+  it('sends number_scale_max for a number type with a value, else null', () => {
+    expect(buildCategoryPayload({ ...numberForm, scaleMax: '10' }).number_scale_max).toBe(10);
+    expect(buildCategoryPayload({ ...numberForm, scaleMax: ' ' }).number_scale_max).toBeNull();
+    expect(buildCategoryPayload(numberForm).number_scale_max).toBeNull();
+    expect(buildCategoryPayload({ ...base, type: 'single_select', optionsText: 'A', scaleMax: '10' })
+      .number_scale_max).toBeNull();
+  });
+
+  it('rejects a scale max that is not a number greater than 0', () => {
+    for (const scaleMax of ['0', '-2', 'abc']) {
+      expect(validateCategoryForm({ ...numberForm, scaleMax })).toBe('Scale max must be a number greater than 0');
+    }
+    expect(validateCategoryForm({ ...numberForm, scaleMax: '' })).toBeNull();
+  });
+});

@@ -101,6 +101,7 @@ describe('add category form (C-07, OD-2)', () => {
       name: 'Mood', type: 'single_select', is_required: false, priority: 'medium',
       urgency_weight: 35, auto_trigger: false,
       options: [{ label: 'Calm', value: 0 }, { label: 'Agitated', value: 0.5 }, { label: 'Violent', value: 1 }],
+      number_scale_max: null,
     });
     await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
   });
@@ -132,6 +133,35 @@ describe('add category form (C-07, OD-2)', () => {
     fireEvent.press(screen.getByText('Add Category'));
     expect(api.createCategory).not.toHaveBeenCalled();
     expect(alertSpy).toHaveBeenCalledWith('Error', expect.stringMatching(/at least one option/i));
+  });
+
+  // H2-2.8
+  it('shows Scale max only for number categories and sends it', async () => {
+    const screen = render(<CategoriesScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('Category name'), 'Days without food');
+    chooseType(screen, 'number');
+    expect(screen.getByText('Scale max (optional)')).toBeTruthy();
+    fireEvent.changeText(screen.getByPlaceholderText('300'), '10');
+    fireEvent.press(screen.getByText('Add Category'));
+    await waitFor(() => expect(api.createCategory).toHaveBeenCalled());
+    expect(api.createCategory).toHaveBeenCalledWith(expect.objectContaining({ number_scale_max: 10 }));
+  });
+
+  it('hides Scale max for single-select', () => {
+    const screen = render(<CategoriesScreen />);
+    chooseType(screen, 'single-select');
+    expect(screen.queryByText('Scale max (optional)')).toBeNull();
+    expect(screen.queryByPlaceholderText('300')).toBeNull();
+  });
+
+  it('blocks a scale max of 0 before calling the API', () => {
+    const screen = render(<CategoriesScreen />);
+    fireEvent.changeText(screen.getByPlaceholderText('Category name'), 'Days');
+    chooseType(screen, 'number');
+    fireEvent.changeText(screen.getByPlaceholderText('300'), '0');
+    fireEvent.press(screen.getByText('Add Category'));
+    expect(api.createCategory).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledWith('Error', 'Scale max must be a number greater than 0');
   });
 
   it('blocks a name with no letters or digits', () => {
