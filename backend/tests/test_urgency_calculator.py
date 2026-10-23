@@ -100,3 +100,18 @@ def test_auto_trigger_number_fires_for_a_non_zero_value():
 
 def test_auto_trigger_number_zero_does_not_fire():
     assert calculate_urgency_score({"incidents": 0}, [_number("incidents", 10, auto_trigger=True)]) == 0
+
+
+# --- per-category number scale (H2-2.8) ---
+
+import pytest  # noqa: E402
+
+DAYS = {"name": "days", "type": "number", "urgency_weight": 50, "auto_trigger": False}
+
+@pytest.mark.parametrize("scale,value,expected", [
+    (10, 5, 50), (10, 20, 100), (None, 150, 50), (0, 150, 50), (-5, 150, 50), ("junk", 150, 50), ("10", 5, 50)])
+def test_number_term_uses_its_scale_max(scale, value, expected):
+    assert calculate_urgency_score({"days": value}, [{**DAYS, "number_scale_max": scale}]) == expected
+
+def test_a_category_without_the_column_scores_as_before():
+    assert calculate_urgency_score({"days": 150}, [DAYS]) == 50

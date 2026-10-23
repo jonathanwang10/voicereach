@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS categories (
     is_required    BOOLEAN NOT NULL DEFAULT FALSE,
     is_preset      BOOLEAN NOT NULL DEFAULT FALSE,
     is_active      BOOLEAN NOT NULL DEFAULT TRUE,   -- reserved; not currently filtered on
+    number_scale_max NUMERIC                        -- a number's full-weight value; NULL = 300 (H2-2.8)
+                   CONSTRAINT categories_number_scale_max_positive
+                   CHECK (number_scale_max IS NULL OR number_scale_max > 0),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()   -- maintained by set_updated_at()
 );
@@ -182,6 +185,11 @@ ALTER TABLE individual_embeddings
 -- Phase 2 columns (supabase/migrations/20261102000001_save_individual.sql)
 ALTER TABLE individuals ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE interactions ADD COLUMN IF NOT EXISTS client_request_id UUID UNIQUE;
+-- (supabase/migrations/20261102000004_number_scale_max.sql)
+ALTER TABLE categories ADD COLUMN IF NOT EXISTS number_scale_max NUMERIC;
+ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_number_scale_max_positive;
+ALTER TABLE categories ADD CONSTRAINT categories_number_scale_max_positive
+    CHECK (number_scale_max IS NULL OR number_scale_max > 0);
 
 -- ---------------------------------------------------------------------------
 -- updated_at is set by the database on every UPDATE, so it no longer depends

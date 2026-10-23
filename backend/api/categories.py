@@ -132,7 +132,8 @@ def get_categories(user_id: str = Depends(get_current_user)):
                 "priority": category.get("priority", "medium"),
                 "urgency_weight": category.get("urgency_weight", 0),
                 "auto_trigger": category.get("auto_trigger", False),
-                "options": category.get("options", None)
+                "options": category.get("options", None),
+                "number_scale_max": category.get("number_scale_max"),
             }
             categories.append(cat_data)
         
@@ -201,6 +202,7 @@ def create_category(
             "urgency_weight": request.urgency_weight,
             "auto_trigger": request.auto_trigger,
             "options": request.options,
+            "number_scale_max": request.number_scale_max,
             "created_at": now,
             "updated_at": now
         }
@@ -242,6 +244,7 @@ def create_category(
             urgency_weight=created["urgency_weight"],
             auto_trigger=created["auto_trigger"],
             options=created["options"],
+            number_scale_max=created.get("number_scale_max"),
             created_at=created["created_at"],
             updated_at=created["updated_at"]
         )

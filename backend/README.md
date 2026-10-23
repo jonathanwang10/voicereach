@@ -198,12 +198,14 @@ presets created without one), `type`, `is_required`, `is_preset`, `priority`,
 
 **`POST /api/categories`** — Body: `name`, `type` (`text`, `number`,
 `single_select`, `multi_select`, `date`, `location`), optional `priority`,
-`urgency_weight` (0-100), `auto_trigger`, `is_required`, `options`. Rules
+`urgency_weight` (0-100), `auto_trigger`, `is_required`, `options`,
+`number_scale_max` (number only, > 0, up to 1,000,000; null = 300). Rules
 (`CreateCategoryRequest`, 422 otherwise):
 - `name` is stripped (inner whitespace collapsed), 1-50 characters, with at
   least one letter or digit. It is stored as `display_name`, and its
   `category_key` (`"HIV status"` -> `"hiv_status"`) as `name`.
-- only `number` and `single_select` may have a weight or auto-trigger;
+- only `number` and `single_select` may have a weight or auto-trigger, and only
+  `number` a `number_scale_max`;
 - `single_select` and `multi_select` need at least one option (at most 50).
   Single-select options are `[{"label": ..., "value": <number 0-1>}]`,
   multi-select options are strings. Labels are stripped, non-blank, at most 50

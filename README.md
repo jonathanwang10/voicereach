@@ -128,7 +128,9 @@ rejected (409), so "Veteran status" can't duplicate the preset. Single- and
 multi-select fields need options, typed comma-separated; for single-select,
 `Label=0.5` gives an option a value from 0 to 1 (default 0), which is the share
 of the category's weight it adds to urgency. The weight box (0–100) appears for
-number and single-select fields only. A weighted or auto-trigger category
+number and single-select fields only. A number field also has an optional
+"Scale max": the value that counts as its full weight (blank means 300; for
+"days without food", 10 makes 5 days half the weight). A weighted or auto-trigger category
 changes everyone's urgency (every weighted category is in the denominator), so
 creating one re-scores every stored person (`rescore_all_individuals`; only
 changed scores are written, overrides are kept). Every category, custom ones
@@ -454,8 +456,9 @@ request bodies are in [`backend/README.md`](backend/README.md).
 **Urgency score.** Only `number` and `single_select` types may carry an urgency
 weight or an auto-trigger — enforced in `CreateCategoryRequest`
 (`db/models.py`). Each category with a value adds `normalized_value * weight` to
-a running sum, where a number is `min(max(value, 0) / 300, 1.0)` (so it clamps
-above 300) and a select is its option's value. The result is then **normalized
+a running sum, where a number is `min(max(value, 0) / (number_scale_max or 300), 1.0)`
+(so it clamps above the scale) and a select is its option's value. Each number
+category sets its own scale ("Scale max" when creating it; blank means 300). The result is then **normalized
 by the total weight** and scaled: `int(weighted_sum / total_weight * 100)`,
 clamped to 0–100. The total weight is the sum of `urgency_weight` over **every**
 `number`/`single_select` category with a weight above 0, whether or not the

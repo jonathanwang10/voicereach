@@ -324,3 +324,15 @@ def test_audit_log_is_append_only():
 def test_audit_log_has_no_foreign_key():
     body = SQL[SQL.index("CREATE TABLE IF NOT EXISTS audit_log ("):]
     assert "REFERENCES" not in body[:body.index(");")]
+
+
+# --- number_scale_max (H2-2.8) -------------------------------------------------
+
+def test_categories_number_scale_max_column_and_check():
+    check = "CHECK (number_scale_max IS NULL OR number_scale_max > 0)"
+    assert "NUMERIC" in _column_def("categories", "number_scale_max")
+    assert f"CONSTRAINT categories_number_scale_max_positive {check}" in FLAT
+    assert "ALTER TABLE categories ADD COLUMN IF NOT EXISTS number_scale_max NUMERIC;" in FLAT
+    drop = "ALTER TABLE categories DROP CONSTRAINT IF EXISTS categories_number_scale_max_positive;"
+    add = f"ALTER TABLE categories ADD CONSTRAINT categories_number_scale_max_positive {check};"
+    assert drop in FLAT and add in FLAT and FLAT.index(drop) < FLAT.index(add)

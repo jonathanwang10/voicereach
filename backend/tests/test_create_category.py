@@ -190,7 +190,7 @@ def test_get_categories_maps_rows_and_fills_defaults():
     assert r.json()["categories"][1] == {
         "id": "c2", "name": "mood", "display_name": None, "type": "single_select", "is_required": False,
         "is_preset": False, "priority": "medium", "urgency_weight": 0, "auto_trigger": False,
-        "options": [{"label": "Calm", "value": 0}],
+        "options": [{"label": "Calm", "value": 0}], "number_scale_max": None,
     }
 
 
@@ -211,3 +211,34 @@ def test_create_category_is_audited_with_user_and_device():     # H2-2.7
     assert sb.payloads("audit_log", "insert") == [{"user_id": "test-user-123", "device_id": "device-1234",
         "action": "create_category", "entity_type": "category", "entity_id": r.json()["id"],
         "detail": {"name": "shoe_size"}}]
+
+
+# --- number_scale_max (H2-2.8) ---
+
+def test_a_number_category_stores_its_scale_max():
+    r, db = _post({"name": "Days without food", "type": "number", "number_scale_max": 10})
+    assert r.status_code == 201, r.text
+    assert db.inserted[0]["number_scale_max"] == 10
+    assert r.json()["number_scale_max"] == 10
+
+def test_an_omitted_scale_max_is_stored_as_null():
+    r, db = _post({"name": "Days without food", "type": "number"})
+    assert r.status_code == 201 and db.inserted[0]["number_scale_max"] is None
+
+@pytest.mark.parametrize("scale", [0, -1])
+def test_a_non_positive_scale_max_is_422(scale):
+    r, db = _post({"name": "Days without food", "type": "number", "number_scale_max": scale})
+    assert r.status_code == 422 and not db.inserted
+
+def test_a_scale_max_on_a_select_category_is_422():
+    r, db = _post({"name": "Mood", "type": "single_select", "number_scale_max": 10,
+                   "options": [{"label": "Calm", "value": 0}]})
+    assert r.status_code == 422 and "number_scale_max is only allowed for number categories" in r.text
+    assert not db.inserted
+
+def test_get_categories_returns_the_scale_max():
+    db = _CategoryDB(existing=[{"id": "c1", "name": "days", "display_name": "Days", "type": "number",
+                                "is_required": False, "is_preset": False, "number_scale_max": 10}])
+    with patch("api.categories.get_supabase", return_value=db):
+        r = TestClient(app).get("/api/categories")
+    assert r.status_code == 200 and r.json()["categories"][0]["number_scale_max"] == 10

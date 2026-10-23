@@ -922,7 +922,7 @@ git commit -m "feat(api): audit profile views, exports, deletes, overrides, save
   - `CreateCategoryRequest.number_scale_max: Optional[float] = Field(None, gt=0, le=1_000_000)`. Set on a type other than `number`, it is a 422 `number_scale_max is only allowed for number categories`.
   - `CategoryResponse.number_scale_max: Optional[float] = None`. `GET /api/categories` items include `number_scale_max`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 DAYS = {"name": "days", "type": "number", "urgency_weight": 50, "auto_trigger": False}
@@ -945,20 +945,20 @@ def test_a_category_without_the_column_scores_as_before():
 - `test_schema_sql.py`: the column, the named CHECK, and its idempotent re-add.
 - `test_schema_contract.py`: the categories columns include `number_scale_max`. The category-insert contract test already checks written keys.
 
-- [ ] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_urgency_calculator.py backend/tests/test_create_category.py backend/tests/test_schema_sql.py -q`).
+- [x] **Step 2: Run them and check they fail** (`python -m pytest backend/tests/test_urgency_calculator.py backend/tests/test_create_category.py backend/tests/test_schema_sql.py -q`).
 
-- [ ] **Step 3: Implement** the migration, the `schema.sql` fold and the code from the Interfaces block. Update the `calculate_urgency_score` docstring formula.
+- [x] **Step 3: Implement** the migration, the `schema.sql` fold and the code from the Interfaces block. Update the `calculate_urgency_score` docstring formula.
 
-- [ ] **Step 4: Docs and manual step.**
+- [x] **Step 4: Docs and manual step.**
   - CLAUDE.md Urgency rule: "Number → `min(value / (number_scale_max or 300), 1) * weight`".
   - README "Urgency score": the same formula, plus a note that the scale is set per number category ("Scale max"; blank means 300).
   - README "Creating a category": the Scale max box.
   - `backend/README.md`: the new field.
   - Manual-steps file: `4. 20261102000004_number_scale_max.sql. Check: select number_scale_max from categories; is null for every existing row (scores unchanged).`
 
-- [ ] **Step 5: Run the checks.** Expected: PASS.
+- [x] **Step 5: Run the checks.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/ backend/ CLAUDE.md README.md docs/superpowers/plans/2026-10-23-manual-steps.md

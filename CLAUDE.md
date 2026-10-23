@@ -52,7 +52,7 @@ only after `npx expo prebuild --platform ios`.
   assistant questions 1-60 s (`services/openai_service.py`, `RECORDING_LIMITS`).
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and
   `single_select` categories can have a weight or auto-trigger. Number →
-  `min(value/300, 1) * weight`; select → `option_value * weight`; final score is
+  `min(value / (number_scale_max or 300), 1) * weight`; select → `option_value * weight`; final score is
   `int(sum / total_weight * 100)`, where `total_weight` sums the weight of every
   weighted number/single_select category, so a missing value counts as 0.
   Auto-trigger pins 100 only when the chosen select option's value is > 0 (or a

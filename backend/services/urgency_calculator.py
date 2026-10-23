@@ -46,6 +46,16 @@ def _auto_trigger_fires(category: dict, value: Any) -> bool:
     return num is not None and num != 0
 
 
+# A number category's value that counts as its full weight, unless the category sets
+# its own `number_scale_max` (H2-2.8)
+DEFAULT_NUMBER_SCALE_MAX = 300
+
+
+def _number_scale(category: dict) -> float:
+    scale = _as_number(category.get("number_scale_max"))
+    return scale if scale is not None and scale > 0 else DEFAULT_NUMBER_SCALE_MAX
+
+
 def calculate_urgency_score(individual_data: dict, categories: list) -> int:
     """
     Calculate urgency score based on weighted category values (owner decision OD-1).
@@ -62,7 +72,8 @@ def calculate_urgency_score(individual_data: dict, categories: list) -> int:
           select's chosen option value is > 0 or a number is non-zero -> 100
         - Denominator: sum of `urgency_weight or 0` over EVERY number/single_select
           category with weight > 0, whether or not it has a value
-        - Numbers: min(max(value, 0) / 300, 1) * weight
+        - Numbers: min(max(value, 0) / scale, 1) * weight, where scale is the
+          category's number_scale_max when it is > 0, else 300
         - Single-select: option_value * weight
         - A missing (None / "") or unparseable value contributes 0
         - Final: int(sum / total_weight * 100), clamped to 0-100
@@ -88,7 +99,7 @@ def calculate_urgency_score(individual_data: dict, categories: list) -> int:
         if category["type"] == "number":
             num = _as_number(value)
             if num is not None:
-                weighted_sum += min(max(num, 0.0) / 300, 1.0) * weight
+                weighted_sum += min(max(num, 0.0) / _number_scale(category), 1.0) * weight
         else:
             option_value = _option_value(category, value)
             if option_value is not None:

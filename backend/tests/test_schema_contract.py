@@ -185,3 +185,7 @@ def test_no_backend_code_updates_interactions():        # H2-2.6: the table is a
     assert chains
     for where, _, chain in chains:
         assert ".update(" not in chain and ".upsert(" not in chain, where
+
+
+def test_categories_have_number_scale_max():               # H2-2.8
+    assert "number_scale_max" in SCHEMA["categories"]

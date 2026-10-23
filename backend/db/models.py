@@ -182,6 +182,8 @@ class CreateCategoryRequest(BaseModel):
     auto_trigger: bool = False
     is_required: bool = False
     options: Optional[List[Any]] = None  # List[Dict] for single_select, List[str] for multi_select
+    # The value that counts as the full weight (number only; None = 300) (H2-2.8)
+    number_scale_max: Optional[float] = Field(None, gt=0, le=1_000_000)
 
     @field_validator('name')
     @classmethod
@@ -209,6 +211,8 @@ class CreateCategoryRequest(BaseModel):
             raise ValueError(f"urgency_weight must be 0 for type {self.type}")
         if self.type not in WEIGHTED_TYPES and self.auto_trigger:
             raise ValueError(f"auto_trigger not allowed for type {self.type}")
+        if self.number_scale_max is not None and self.type != "number":
+            raise ValueError("number_scale_max is only allowed for number categories")
         return self
 
 
@@ -258,5 +262,6 @@ class CategoryResponse(BaseModel):
     urgency_weight: int
     auto_trigger: bool
     options: Optional[List[Any]]
+    number_scale_max: Optional[float] = None
     created_at: datetime
     updated_at: datetime
