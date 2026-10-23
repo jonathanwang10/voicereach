@@ -132,7 +132,8 @@ a failed check: a name comparison stands in.
 }
 ```
 
-`data` must contain `name`, `height` and `weight` (422 otherwise), and is then
+The body is capped at 256 KB (413), `transcription` at 20,000 characters and
+`data` at 100 fields (422). `data` must contain `name`, `height` and `weight` (422 otherwise), and is then
 normalised and validated against the categories (`normalize_individual_data`
 in `services/field_registry.py`; 400 with `field: message` details on failure).
 Only the normalised data is stored: empty values are dropped, numbers are real

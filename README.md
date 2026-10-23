@@ -400,6 +400,7 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | Recording length (read from the M4A header with mutagen) | 5 s to 125 s (2:00 plus 5 s slack) | 400 "Audio must be at least 5 seconds long" / "Audio must be less than 2 minutes"; an unreadable M4A is 400 "File is not in M4A format" |
 | Assistant question length | 1 s to 60 s | 400 "Question must be at least 1 second long" / "Question must be under 1 minute" |
 | `POST /api/individuals/check-duplicates` body | 20 KB, a JSON object | 413 / 422 |
+| `POST /api/individuals` body (a save or merge) | 256 KB; `transcription` ≤ 20,000 chars; `data` ≤ 100 fields | 413 / 422 |
 | `POST /api/embeddings/search` | `query` ≤ 500 chars, `top_k` 1–50, `similarity_threshold` 0–1 | 422 |
 | A saved `name` | 200 characters | 422 |
 | Realtime client frame | 1 MB; only the allowed event types (below) | error event, frame dropped |

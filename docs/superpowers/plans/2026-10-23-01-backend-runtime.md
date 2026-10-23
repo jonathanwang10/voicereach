@@ -932,7 +932,7 @@ Roadmap item 5.
 **Interfaces:**
 - Produces: `BODY_LIMITS["/api/individuals"] == 262144`. Phase 7 adds `/api/recordings` to the same dict.
 
-- [ ] **Step 1: Write the failing tests** in `test_request_limits.py`
+- [x] **Step 1: Write the failing tests** in `test_request_limits.py`
 
 ```python
 VALID = {"name": "A", "height": 70, "weight": 150}
@@ -956,16 +956,16 @@ def test_save_data_over_100_fields_is_422():
     assert r.status_code == 422 and "at most 100 fields" in r.text
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_request_limits.py -k save -v`
 Expected: FAIL. The 256 KB body reaches the route, and 20,001 characters or 101 fields are accepted.
 
-- [ ] **Step 3: Implement** the changes listed under **Files**.
+- [x] **Step 3: Implement** the changes listed under **Files**.
 
-- [ ] **Step 4: Run the tests and the full checks.** Expected: all pass.
+- [x] **Step 4: Run the tests and the full checks.** Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/main.py backend/db/models.py backend/tests README.md backend/README.md

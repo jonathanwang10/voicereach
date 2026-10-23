@@ -309,3 +309,26 @@ def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
         r = _client().post(route, **kwargs)
     assert r.status_code == 500
     assert seen and not os.path.exists(seen[0])
+
+
+# --- save body and field limits (H2-1.5) ----------------------------------------------
+
+VALID = {"name": "A", "height": 70, "weight": 150}
+
+def test_save_body_over_256kb_is_413_before_any_work():
+    with patch("api.individuals.get_supabase") as gs:
+        r = _client().post("/api/individuals", json={"data": VALID, "notes": "x" * (256 * 1024)})
+    assert r.status_code == 413 and r.json()["detail"] == "Request body too large (max 256 KB)"
+    gs.assert_not_called()
+
+def test_save_transcription_over_20000_chars_is_422():
+    from db.models import SaveIndividualRequest
+    assert SaveIndividualRequest(data=VALID, transcription="x" * 20000)
+    assert _client().post("/api/individuals", json={"data": VALID, "transcription": "x" * 20001}).status_code == 422
+
+def test_save_data_over_100_fields_is_422():
+    from db.models import SaveIndividualRequest
+    fields = {**VALID, **{f"f{i}": "v" for i in range(97)}}            # 100 keys
+    assert SaveIndividualRequest(data=fields)
+    r = _client().post("/api/individuals", json={"data": {**fields, "f97": "v"}})
+    assert r.status_code == 422 and "at most 100 fields" in r.text

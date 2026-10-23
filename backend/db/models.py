@@ -10,6 +10,9 @@ from uuid import UUID
 
 
 MAX_NAME_LENGTH = 200
+# Bounds on one save, so a request can't store an unbounded record (H2-1.5)
+MAX_TRANSCRIPTION_LENGTH = 20000
+MAX_DATA_FIELDS = 100
 
 
 # Request Models
@@ -25,12 +28,14 @@ class SaveIndividualRequest(BaseModel):
     data: Dict[str, Any]  # Categorized data from AI or manual entry
     merge_with_id: Optional[UUID] = None  # If merging, ID of existing individual
     location: Optional[LocationData] = None
-    transcription: Optional[str] = None  # Original audio transcription if voice entry
+    transcription: Optional[str] = Field(None, max_length=MAX_TRANSCRIPTION_LENGTH)  # Original audio transcription if voice entry
     audio_url: Optional[str] = None  # Reference to audio file
     
     @field_validator('data')
     def validate_required_fields(cls, v):
         """Ensure required fields exist per PRD. A blank or whitespace-only value counts as missing."""
+        if len(v) > MAX_DATA_FIELDS:
+            raise ValueError(f"data can have at most {MAX_DATA_FIELDS} fields")
         required = ['name', 'height', 'weight']
         missing = [
             f for f in required

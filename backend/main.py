@@ -87,6 +87,7 @@ BODY_LIMITS = {
     "/api/transcribe": 8 * MB,                            # base64 audio
     "/api/voice-assistant/transcribe": 3 * MB + 64 * 1024,  # 3 MB file + multipart overhead
     "/api/individuals/check-duplicates": 20 * 1024,       # a field dict
+    "/api/individuals": 256 * 1024,                       # a save or merge (H2-1.5)
 }
 
 
