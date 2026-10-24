@@ -323,8 +323,12 @@ reaches the iOS build only after `npx expo prebuild --platform ios`; review
 that diff before committing it.
 
 **After pulling, rebuild any existing development build** (`npx expo run:ios`):
-CSV export added the native module `expo-sharing`. An older build still opens,
-but Export CSV fails with "Rebuild it" until you rebuild.
+the app now uses the native modules `expo-sharing` (CSV export), `expo-audio` and
+`react-native-audio-api` (recording and the Assistant's audio), `expo-secure-store`
+and `react-native-get-random-values` (the encrypted session),
+`@react-native-community/netinfo` and `@shopify/flash-list`. `expo-av` is gone.
+An older build fails on the first of these it reaches. `mobile/ios/Podfile.lock`
+already lists them; `cd mobile/ios && pod install` installs them.
 
 ### 4. Backfill embeddings (needed for semantic search)
 

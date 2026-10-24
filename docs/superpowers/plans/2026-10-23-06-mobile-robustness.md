@@ -77,6 +77,10 @@
     change in an async `act`; its assertions are unchanged. `getIndividualProfile` is still mocked
     for the profile; the merge tests in `MergeUI`, `TranscriptionResults` and `ManualEntryForm`
     mock `getIndividual` instead.
+13. **(Task 15, during execution) No Face ID string.** `expo-secure-store`'s config plugin adds
+    `NSFaceIDUsageDescription` by default; the app never asks for Face ID, so `app.json` passes
+    `faceIDPermission: false`. The prebuild's added `android` script was not kept (the app is
+    iOS only). The prebuild also picked up Phase 5's audio pods (and dropped EXAV).
 
 ## Global Constraints
 
@@ -1249,23 +1253,23 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:** none new.
 
-- [ ] **Step 1: Verify the versions.**
+- [x] **Step 1: Verify the versions.**
 Run: `cd mobile && npx expo install --check`
 Expected: "Dependencies are up to date" (no SDK 53 mismatch for the packages this phase added).
 
-- [ ] **Step 2: Regenerate the native project.**
+- [x] **Step 2: Regenerate the native project.**
 Run: `cd mobile && npx expo prebuild --platform ios --no-install && cd ios && pod install`
 Expected: the pods install, and `Podfile.lock` lists `ExpoSecureStore`, `react-native-netinfo`, `RNFlashList` and `react-native-get-random-values`. If CocoaPods isn't available on the machine, skip this step and add a manual step: "Run `cd mobile/ios && pod install` and commit Podfile.lock".
 
-- [ ] **Step 3: Check that no data reaches the device's storage or logs.**
+- [x] **Step 3: Check that no data reaches the device's storage or logs.**
 Run: `cd mobile && npx jest test/noDataLogs.test.ts && grep -rn "persistQueryClient\|createAsyncStoragePersister" --include='*.ts*' --exclude-dir=node_modules --exclude-dir=ios . ; grep -rn "supabase.from" --include='*.ts*' --exclude-dir=node_modules --exclude-dir=ios .`
 Expected: the test passes and both greps print nothing.
 
-- [ ] **Step 4: Run the full checks.**
+- [x] **Step 4: Run the full checks.**
 Run: `python -m pytest -q && ruff check backend --select F,E9 && cd mobile && npx tsc --noEmit && npx jest`
 Expected: all PASS.
 
-- [ ] **Step 5: Docs, then commit.**
+- [x] **Step 5: Docs, then commit.**
   - README rebuild note.
   - Manual step: "(H2-6) Rebuild the iOS dev client (`cd mobile && npx expo run:ios --device`) before running the H2-6 device checks."
 
