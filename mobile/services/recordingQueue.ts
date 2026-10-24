@@ -27,6 +27,8 @@ export type QueueEvent =
 const listeners = new Set<(e: QueueEvent) => void>();
 let flushing: Promise<void> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
+// Set by the stop function (sign-out): a flush still running then must not re-arm
+let stopped = false;
 
 const emit = (e: QueueEvent) => listeners.forEach(listener => listener(e));
 
@@ -108,7 +110,7 @@ async function armRetry(): Promise<void> {
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
   const waiting = (await allQueued()).filter(i => i.state === 'pending' && i.nextAttemptAt > Date.now());
-  if (!waiting.length) return;
+  if (stopped || !waiting.length) return;
   const at = Math.min(...waiting.map(i => i.nextAttemptAt));
   retryTimer = setTimeout(() => {
     retryTimer = null;
@@ -134,6 +136,7 @@ export function flushQueue(): Promise<void> {
 }
 
 export function startRecordingQueue(): () => void {
+  stopped = false;
   // The app may have been killed mid-upload: those items go back to pending
   resetUploading().catch(() => 0).then(() => flushQueue());
   const unsubscribeNet = NetInfo.addEventListener(state => {
@@ -143,6 +146,7 @@ export function startRecordingQueue(): () => void {
     if (state === 'active') flushQueue();
   });
   return () => {
+    stopped = true;
     unsubscribeNet?.();
     appState.remove();
     if (retryTimer) clearTimeout(retryTimer);
@@ -153,6 +157,7 @@ export function startRecordingQueue(): () => void {
 export function __resetRecordingQueueForTests(): void {
   listeners.clear();
   flushing = null;
+  stopped = false;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
 }

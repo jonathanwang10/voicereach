@@ -212,6 +212,32 @@ it('stop removes the listeners and the retry timer', async () => {
   expect(upload).toHaveBeenCalledTimes(1);
 });
 
+it('a flush still running when stop is called arms no retry afterwards', async () => {   // review M-6
+  let fail: (e: unknown) => void = () => {};
+  upload.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+  await enqueueRecording('file:///cache/rec.m4a', 61000, LOC);
+  const stop = startRecordingQueue();
+  await jest.advanceTimersByTimeAsync(0);
+  expect(upload).toHaveBeenCalledTimes(1);      // the upload is in flight
+  stop();                                       // e.g. sign-out
+  fail(new ApiError(0, 'offline', 'network'));
+  await jest.advanceTimersByTimeAsync(0);
+  expect(mockRows[0]).toMatchObject({ state: 'pending', attempts: 1 });
+  await jest.advanceTimersByTimeAsync(3_600_000);
+  expect(upload).toHaveBeenCalledTimes(1);
+});
+
+it('start after a stop arms retries again', async () => {
+  startRecordingQueue()();
+  upload.mockRejectedValueOnce(new ApiError(0, 'offline', 'network'));
+  await enqueueRecording('file:///cache/rec.m4a', 61000, LOC);
+  const stop = startRecordingQueue();
+  await jest.advanceTimersByTimeAsync(0);
+  await jest.advanceTimersByTimeAsync(5000);
+  expect(upload).toHaveBeenCalledTimes(2);
+  stop();
+});
+
 it('removeQueued deletes the file and the row', async () => {
   const listener = jest.fn();
   await enqueueRecording('file:///cache/rec.m4a', 61000, LOC);
