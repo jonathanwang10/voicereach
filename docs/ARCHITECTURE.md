@@ -367,6 +367,10 @@ Match-confidence colours mean the same on every screen (`confidenceColor` in
   auth). The one live test, `backend/tests/integration/test_live_smoke.py`, is
   read-only and runs only when `VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN`
   are set.
+- **Database:** `backend/tests/db/` calls the real SQL functions on a local
+  Supabase Postgres (Docker). They are skipped unless `SUPABASE_DB_URL` is set, and CI
+  runs them. `supabase/check_migrations.sh` applies `schema.sql` and then every
+  migration twice. README Testing has the commands.
 - **App:** `npx jest` (component and service tests with mocked native modules)
   and `npx tsc --noEmit`.
 

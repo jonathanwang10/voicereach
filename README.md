@@ -715,8 +715,9 @@ token cache, the shared clients, `app.dependency_overrides`) around
 every test, so the order tests run in doesn't matter. A test that builds a real
 Supabase client fails (see `pytest.ini`).
 
-The only skipped tests are the read-only live smoke test in
-`backend/tests/integration/test_live_smoke.py`. It runs only when both variables
+Two groups are skipped by default. The first is the database tests below. The
+other is the read-only live smoke test in
+`backend/tests/integration/test_live_smoke.py`, which runs only when both variables
 are set, against a running backend and its real Supabase project:
 
 ```bash
@@ -726,6 +727,25 @@ python -m pytest backend/tests/integration
 ```
 
 It writes nothing and calls no OpenAI endpoint.
+
+**Database tests** (`backend/tests/db/`, marker `db`). These call the real SQL functions
+(`save_individual`, `find_duplicate_candidates`, `search_individuals_hybrid`,
+`match_interactions`, `most_urgent_individuals`, `rescore_batch`,
+`coarsen_old_locations`, `claim_recording_job`, `purge_old_recordings`) on a local
+Postgres. They are skipped unless `SUPABASE_DB_URL` is set, and CI runs them. They
+truncate the tables, so point them only at a throwaway local database. With Docker
+running, from the repo root:
+
+```bash
+SB="$TMPDIR/vr-sb"; mkdir -p "$SB" && npx --yes supabase@2.122.0 init --workdir "$SB" && npx supabase@2.122.0 db start --workdir "$SB"
+export SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql   # schema, then every migration twice
+python -m pytest -m db -q
+npx supabase@2.122.0 stop --workdir "$SB" --no-backup
+```
+
+`check_migrations.sh` prints `migrations applied twice: OK` when every migration is
+a no-op on a database that already has it.
 
 ### Evals
 
