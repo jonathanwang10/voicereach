@@ -54,7 +54,8 @@
         {
           "faceIDPermission": false
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }

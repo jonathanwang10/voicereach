@@ -28,6 +28,9 @@ if (!globalThis.crypto?.getRandomValues) {
 // for; a microtask lands inside act(async () => ...)
 require('@tanstack/react-query').notifyManager.setScheduler(fn => Promise.resolve().then(fn));
 
+// H2-7.6: the recording queue's database (a scripted fake, test/mocks/expoSqlite.js)
+jest.mock('expo-sqlite', () => require('./mocks/expoSqlite'));
+
 // H2-6.10: FlashList's own Jest setup (renders rows without native layout)
 require('@shopify/flash-list/jestSetup');
 

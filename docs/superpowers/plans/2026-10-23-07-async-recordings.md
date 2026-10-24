@@ -823,7 +823,7 @@ Behaviour the tests pin:
 - `removeQueued` deletes the file and the row and emits `changed` (discarding a recording before it is uploaded).
 - `__DEV__`-guarded logs pass error objects only (`noDataLogs.test.ts`).
 
-- [ ] **Step 1: Write the failing store tests** (`recordingQueueStore.test.ts`, against `test/mocks/expoSqlite.js`, whose `openDatabaseAsync` resolves one shared fake db with `jest.fn` `execAsync`/`runAsync`/`getAllAsync`/`getFirstAsync`)
+- [x] **Step 1: Write the failing store tests** (`recordingQueueStore.test.ts`, against `test/mocks/expoSqlite.js`, whose `openDatabaseAsync` resolves one shared fake db with `jest.fn` `execAsync`/`runAsync`/`getAllAsync`/`getFirstAsync`)
 
 ```ts
 it('creates the table with only audio, location and upload-state columns', async () => {
@@ -839,7 +839,7 @@ it('maps rows back to QueuedRecording, parsing location', ...);
 it('resetUploading moves uploading rows back to pending', ...);   // UPDATE ... WHERE state = 'uploading'
 ```
 
-- [ ] **Step 2: Write the failing queue tests** (`recordingQueue.test.ts`)
+- [x] **Step 2: Write the failing queue tests** (`recordingQueue.test.ts`)
 
 Mock `../recordingQueueStore` with an in-memory array behind the same five functions. Mock `expo-file-system` with `documentDirectory: 'file:///docs/'`, `cacheDirectory: 'file:///cache/'`, `makeDirectoryAsync`, `moveAsync`, `deleteAsync`. Mock `../api` with `api.uploadRecording: jest.fn()` and the real `ApiError`. Use NetInfo's jest mock with `fetch` set per test, and an `AppState.addEventListener` spy. Use `jest.useFakeTimers()`, with `Date.now` driven by the fake timers. `newRequestId` (mock `../../utils/requestId`) returns `'c1'`, `'c2'`, ...
 
@@ -875,25 +875,25 @@ it('treats unknown reachability as online', () => {
 });
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `cd mobile && npx jest services/__tests__/recordingQueue`
 Expected: FAIL (modules missing).
 
-- [ ] **Step 4: Install and implement**
+- [x] **Step 4: Install and implement**
 
 Run `cd mobile && npx expo install expo-sqlite`, then write the two modules. The database opens lazily with one cached promise (`SQLite.openDatabaseAsync('recording-queue.db')`, then `CREATE TABLE IF NOT EXISTS ...`). Comment on `RECORDINGS_DIR` that it's `documentDirectory`, not the cache, because the OS may clear the cache and a queued note must survive (H2-7.6).
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd mobile && npx jest && npx tsc --noEmit`
 Expected: PASS, `noDataLogs.test.ts` included.
 
-- [ ] **Step 6: Manual step**
+- [x] **Step 6: Manual step**
 
 Under **Owner actions outside code** in the manual steps: "After pulling Phase 7: `cd mobile && npx expo prebuild --platform ios` (adds the ExpoSQLite pod), review the `ios/` diff, commit it, and rebuild the dev build (`npx expo run:ios`). An older build crashes on the Record tab without it." Task 9 adds the entitlement to the same prebuild, so the owner can do both in one pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add mobile/package.json mobile/package-lock.json mobile/services/recordingQueue*.ts mobile/services/__tests__/recordingQueue*.test.ts mobile/test/ docs/superpowers/plans/2026-10-23-manual-steps.md
