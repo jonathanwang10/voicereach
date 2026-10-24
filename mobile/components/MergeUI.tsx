@@ -80,9 +80,10 @@ export const MergeUI: React.FC<MergeUIProps> = ({
     }
     let cancelled = false;
     setLoadError(null);
-    api.getIndividualProfile(potentialMatch.id)
-      .then(profile => {
-        if (!cancelled) setExisting({ forId: potentialMatch.id, data: profile?.data || {}, version: profile?.version });
+    // Only the person: the merge needs their fields and version, not their history (H2-6.5)
+    api.getIndividual(potentialMatch.id)
+      .then(person => {
+        if (!cancelled) setExisting({ forId: potentialMatch.id, data: person?.data || {}, version: person?.version });
       })
       .catch(() => {
         if (!cancelled) setLoadError('Failed to load existing individual data');

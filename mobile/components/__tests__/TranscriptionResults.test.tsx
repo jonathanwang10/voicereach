@@ -19,7 +19,7 @@ jest.mock('../../services/api', () => ({
     ]),
     saveIndividual: jest.fn(async () => ({ id: 'x', individual: { id: 'x' } })),
     checkDuplicates: jest.fn(async () => []),
-    getIndividualProfile: jest.fn(async () => ({ data: { name: 'Anne Lee' } })),
+    getIndividual: jest.fn(async () => ({ data: { name: 'Anne Lee' } })),
   },
 }));
 
@@ -531,7 +531,7 @@ it('sends one Idempotency key for every save attempt in a review', async () => {
 });
 
 it('passes expected_version from the loaded match to the merge save', async () => {
-  (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce({ data: { name: 'John' }, version: 5 });
+  (api.getIndividual as jest.Mock).mockResolvedValueOnce({ data: { name: 'John' }, version: 5 });
   const { getByText, findByText } = render(
     <TranscriptionResults result={baseResult({ potential_matches: [serverJohn] })} onSave={jest.fn()} onCancel={jest.fn()} />
   );
@@ -545,7 +545,7 @@ it('passes expected_version from the loaded match to the merge save', async () =
 
 it('leaves a 409 on merge to MergeUI: one toast, and the person is re-fetched', async () => {
   (api.saveIndividual as jest.Mock).mockRejectedValueOnce(conflict);
-  (api.getIndividualProfile as jest.Mock)
+  (api.getIndividual as jest.Mock)
     .mockResolvedValueOnce({ data: { name: 'John' }, version: 1 })
     .mockResolvedValueOnce({ data: { name: 'John' }, version: 2 });
   const { getByText, findByText } = render(
@@ -554,7 +554,7 @@ it('leaves a 409 on merge to MergeUI: one toast, and the person is re-fetched', 
   await waitFor(() => getByText('Save'));
   fireEvent.press(getByText('Save'));
   fireEvent.press(await findByText('Merge'));
-  await waitFor(() => expect(api.getIndividualProfile).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(api.getIndividual).toHaveBeenCalledTimes(2));
   expect(Toast.show).toHaveBeenCalledTimes(1);
   expect(Toast.show).toHaveBeenCalledWith(expect.objectContaining({ text2: CONFLICT_MSG }));
 });
@@ -575,7 +575,7 @@ it('opens the best match and can switch to another possible match', async () => 
   fireEvent.press(getByText('Other possible matches (2)'));
   fireEvent.press(getByText('Ann Leigh · 80%'));
   expect(await findByText('We found a similar individual: Ann Leigh')).toBeTruthy();
-  await waitFor(() => expect(api.getIndividualProfile).toHaveBeenCalledWith(OTHER_ID));
+  await waitFor(() => expect(api.getIndividual).toHaveBeenCalledWith(OTHER_ID));
 });
 
 it('shows at most 3 matches when the re-check adds more', async () => {                // Review Focus 5

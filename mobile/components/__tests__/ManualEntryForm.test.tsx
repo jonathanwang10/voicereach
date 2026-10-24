@@ -22,7 +22,7 @@ jest.mock('../../services/api', () => ({
     ]),
     checkDuplicates: jest.fn(async () => []),
     saveIndividual: jest.fn(async () => ({ id: 'x', individual: { id: 'x' } })),
-    getIndividualProfile: jest.fn(async () => ({ data: { name: 'Ann Lee' } })),
+    getIndividual: jest.fn(async () => ({ data: { name: 'Ann Lee' } })),
   },
 }));
 

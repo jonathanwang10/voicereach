@@ -5,11 +5,13 @@ import {
   InfiniteData,
   QueryClient,
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
 import { api, IndividualsPage } from './api';
-import { SearchResult } from '../types';
+import { IndividualProfile, SearchResult } from '../types';
+import { showApiError } from '../utils/errors';
 import { subscribePendingDeletes } from '../utils/delayedDelete';
 
 export const queryKeys = {
@@ -81,4 +83,41 @@ export const useEvictCommittedDeletes = (): void => {
   useEffect(() => subscribePendingDeletes(({ id, type }) => {
     if (type === 'committed') removeIndividualFromCache(client, id);
   }), [client]);
+};
+
+// One person's profile and history
+export const useIndividualProfile = (id: string) =>
+  useQuery({
+    queryKey: queryKeys.individual(id),
+    queryFn: () => api.getIndividualProfile(id),
+  });
+
+type OverrideScores = { urgency_score: number; urgency_override: number | null; display_score: number };
+
+// The manual override (C-10): shown at once, then the scores the PUT returns; a failure
+// restores the profile. Search refetches either way, so its row shows the new score.
+export const useUrgencyOverride = (id: string) => {
+  const client = useQueryClient();
+  const key = queryKeys.individual(id);
+  return useMutation<OverrideScores, unknown, number | null, { previous?: IndividualProfile }>({
+    mutationFn: value => api.updateUrgencyOverride(id, value),
+    onMutate: async value => {
+      await client.cancelQueries({ queryKey: key });
+      const previous = client.getQueryData<IndividualProfile>(key);
+      client.setQueryData<IndividualProfile>(key, p => p && { ...p, urgency_override: value });
+      return { previous };
+    },
+    onError: (error, _value, context) => {
+      if (context?.previous) client.setQueryData(key, context.previous);
+      showApiError(error, 'Update failed');
+    },
+    onSuccess: scores => {
+      client.setQueryData<IndividualProfile>(key, p => p && {
+        ...p,
+        urgency_score: scores.urgency_score,
+        urgency_override: scores.urgency_override,
+      });
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['individuals'] }),
+  });
 };

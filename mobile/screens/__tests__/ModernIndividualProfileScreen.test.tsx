@@ -2,7 +2,8 @@
 // pull-to-refresh keeps the profile on screen instead of navigating away.
 import React from 'react';
 import { RefreshControl } from 'react-native';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { fireEvent, waitFor, act } from '@testing-library/react-native';
+import { renderWithQuery } from '../../test/renderWithQuery';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn(), hide: jest.fn() } }));
 jest.mock('../../components/IndividualLocationMap', () => () => null);
@@ -25,6 +26,9 @@ import { Alert } from 'react-native';
 import { ModernIndividualProfileScreen } from '../ModernIndividualProfileScreen';
 import { api } from '../../services/api';
 import { isPendingDelete, __resetPendingDeletesForTests } from '../../utils/delayedDelete';
+
+// The profile comes from TanStack Query (H2-6.6): each render gets a fresh client
+const render = (ui: React.ReactElement) => renderWithQuery(ui);
 
 const apiError = (status: number, detail: string) =>
   Object.assign(new Error(detail), { status, detail, kind: status ? 'http' : 'network' });
@@ -186,7 +190,8 @@ describe('urgency override (C-10)', () => {
     const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     let pending: Promise<void> = Promise.resolve();
-    act(() => { pending = mockUrgencyProps.onOverrideChange(75); });
+    // async act: the mutation's onMutate cancels in-flight refetches before the optimistic write
+    await act(async () => { pending = mockUrgencyProps.onOverrideChange(75); });
     expect(screen.getByText('75')).toBeTruthy();
     await act(async () => { resolve({ urgency_score: 12, urgency_override: 70, display_score: 70 }); await pending; });
     expect(screen.getByText('70')).toBeTruthy();
@@ -207,6 +212,29 @@ describe('urgency override (C-10)', () => {
 
 // C-09: empty values are not rendered as "null", arrays are joined and a location
 // object shows its address instead of [object Object].
+it('an override refreshes the Search list', async () => {
+  (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
+  (api.updateUrgencyOverride as jest.Mock).mockResolvedValue({ urgency_score: 10, urgency_override: 80, display_score: 80 });
+  const navigation = nav();
+  const { client, findByText } = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
+  await findByText('Ann Lee');
+  const spy = jest.spyOn(client, 'invalidateQueries');
+  await act(async () => { mockUrgencyProps.onOverrideChange(80); });
+  await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: ['individuals'] }));
+});
+
+it('a person deleted elsewhere (404 on a background refetch) goes back once', async () => {
+  (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce(profile)
+    .mockRejectedValue(apiError(404, 'Individual not found: p1'));
+  const navigation = nav();
+  const { client, findByText } = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
+  await findByText('Ann Lee');
+  await act(async () => { await client.refetchQueries(); });
+  await act(async () => { await client.refetchQueries(); });
+  await waitFor(() => expect(navigation.goBack).toHaveBeenCalledTimes(1));
+  expect((Toast.show as jest.Mock).mock.calls.filter(c => c[0].text1 === 'Individual not found')).toHaveLength(1);
+});
+
 describe('field rendering (C-09)', () => {
   it('skips empty values, joins lists and shows a location address', async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue({

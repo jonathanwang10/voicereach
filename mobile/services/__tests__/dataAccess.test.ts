@@ -152,6 +152,23 @@ describe('getIndividualProfile', () => {
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-10-10T00:00:00Z', last_location: null,
   };
 
+  it('loads the person and the history in parallel (H2-6.5)', async () => {
+    const pending: Array<(r: any) => void> = [];
+    (global as any).fetch = jest.fn(() => new Promise(r => pending.push(r)));
+    const p = api.getIndividualProfile('p1');
+    for (let i = 0; i < 20 && fetchMock().mock.calls.length < 2; i++) await Promise.resolve();
+    expect(fetchMock().mock.calls.map(c => new URL(c[0]).pathname)).toEqual(
+      expect.arrayContaining(['/api/individuals/p1', '/api/individuals/p1/interactions']));
+    pending.forEach(resolve => resolve(jsonResponse(200, { individual, interactions: [] })));
+    await expect(p).resolves.toMatchObject({ id: 'p1', interactions: [] });
+  });
+
+  it('getIndividual is the person alone, with no history request', async () => {
+    (global as any).fetch = jest.fn(async () => jsonResponse(200, { individual: { ...individual, version: 2 }, recent_interactions: [] }));
+    await expect(api.getIndividual('p1')).resolves.toMatchObject({ id: 'p1', version: 2 });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   it("last_seen is the latest interaction, like the list's (not updated_at)", async () => {
     (global as any).fetch = jest.fn(async (u: string) => jsonResponse(200, u.endsWith('/interactions')
       ? { interactions: [

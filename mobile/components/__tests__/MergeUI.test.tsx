@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
-jest.mock('../../services/api', () => ({ api: { getIndividualProfile: jest.fn() } }));
+jest.mock('../../services/api', () => ({ api: { getIndividual: jest.fn() } }));
+// getIndividualProfile is left out on purpose: MergeUI must not load the history (H2-6.5)
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 
 import { StyleSheet } from 'react-native';
@@ -241,7 +242,7 @@ describe('MergeUI', () => {
 
   // C-19: when the matched person can't be loaded, the recording can still be saved
   it('offers Create New when the matched person cannot be loaded', async () => {
-    (api.getIndividualProfile as jest.Mock).mockRejectedValueOnce(new Error('404'));
+    (api.getIndividual as jest.Mock).mockRejectedValueOnce(new Error('404'));
     const { findByText, getByText } = render(
       <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
         onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
@@ -251,10 +252,20 @@ describe('MergeUI', () => {
     expect(mockOnCreateNew).toHaveBeenCalledWith(mockNewData);
   });
 
+  it('loads only the matched person, not their history (H2-6.5)', async () => {
+    (api.getIndividual as jest.Mock).mockResolvedValueOnce({ id: mockPotentialMatch.id, name: 'John Smith', data: { name: 'John Smith' } });
+    render(
+      <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
+        onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
+    );
+    await waitFor(() => expect(api.getIndividual).toHaveBeenCalledWith(mockPotentialMatch.id));
+    expect((api as any).getIndividualProfile).toBeUndefined();   // the mock no longer provides it
+  });
+
   // C-64: the selection is built from the loaded person, so existing-only fields survive
   it('waits for the matched person to load, then keeps their existing-only fields on Merge', async () => {
     let load: (profile: any) => void = () => {};
-    (api.getIndividualProfile as jest.Mock).mockReturnValueOnce(new Promise(r => { load = r; }));
+    (api.getIndividual as jest.Mock).mockReturnValueOnce(new Promise(r => { load = r; }));
     const { findByText, queryByText, getByText } = render(
       <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
         onMerge={mockOnMerge} onCreateNew={mockOnCreateNew} onCancel={mockOnCancel} />
@@ -263,7 +274,7 @@ describe('MergeUI', () => {
     expect(getByText('Loading individual data for comparison...')).toBeTruthy();
     await act(async () => load({ data: { name: 'John Smith', medical_conditions: ['Diabetes'] } }));
     fireEvent.press(await findByText('Merge'));
-    expect(api.getIndividualProfile).toHaveBeenCalledWith(mockPotentialMatch.id);
+    expect(api.getIndividual).toHaveBeenCalledWith(mockPotentialMatch.id);
     expect(mockOnMerge).toHaveBeenCalledWith(
       { ...mockNewData, medical_conditions: ['Diabetes'] },
       mockPotentialMatch.id
@@ -288,7 +299,7 @@ describe('MergeUI', () => {
   const conflict = () => Object.assign(new Error(MSG), { status: 409, detail: MSG, kind: 'http' });
 
   it('passes the loaded version to onMerge', async () => {
-    (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce({ data: mockExistingData, version: 3 });
+    (api.getIndividual as jest.Mock).mockResolvedValueOnce({ data: mockExistingData, version: 3 });
     const onMerge = jest.fn();
     const { findByText } = render(
       <MergeUI newData={mockNewData} potentialMatch={mockPotentialMatch}
@@ -299,7 +310,7 @@ describe('MergeUI', () => {
   });
 
   it('on a 409 shows the message once and reloads the person, then merges with the new version', async () => {
-    (api.getIndividualProfile as jest.Mock)
+    (api.getIndividual as jest.Mock)
       .mockResolvedValueOnce({ data: mockExistingData, version: 3 })
       .mockResolvedValueOnce({ data: { ...mockExistingData, medical_conditions: 'Asthma' }, version: 4 });
     const onMerge = jest.fn().mockRejectedValueOnce(conflict()).mockResolvedValue(undefined);
@@ -311,13 +322,13 @@ describe('MergeUI', () => {
     expect(Toast.show).toHaveBeenCalledTimes(1);
     expect(Toast.show).toHaveBeenCalledWith(expect.objectContaining({ text2: MSG }));
     expect(await findByText('Asthma')).toBeTruthy();
-    expect(api.getIndividualProfile).toHaveBeenCalledTimes(2);
+    expect(api.getIndividual).toHaveBeenCalledTimes(2);
     { const button = await findByText('Merge'); await act(async () => { fireEvent.press(button); }); }
     expect(onMerge).toHaveBeenLastCalledWith(expect.any(Object), mockPotentialMatch.id, 4);
   });
 
   it('resets the field choices after a conflict reload', async () => {
-    (api.getIndividualProfile as jest.Mock)
+    (api.getIndividual as jest.Mock)
       .mockResolvedValueOnce({ data: mockExistingData, version: 3 })
       .mockResolvedValueOnce({ data: mockExistingData, version: 4 });
     const onMerge = jest.fn().mockRejectedValueOnce(conflict()).mockResolvedValue(undefined);

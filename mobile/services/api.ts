@@ -325,13 +325,20 @@ export const api = {
 
   // Get individual profile
   // Throws ApiError; only status 404 means the person does not exist (C-17).
-  getIndividualProfile: async (individualId: string): Promise<IndividualProfile> => {
+  // The person alone (no history), e.g. for the merge screen (H2-6.5). Carries `version`.
+  getIndividual: async (individualId: string): Promise<{ id: string; name: string; data: Record<string, any>; [k: string]: any }> => {
     const result = await apiRequest(`/api/individuals/${individualId}`);
+    return result.individual;
+  },
 
-    // Convert to IndividualProfile format. A failed history load fails the whole
-    // profile instead of showing "No interactions recorded".
+  getIndividualProfile: async (individualId: string): Promise<IndividualProfile> => {
+    // The person and the history load together (H2-6.5). A failed history load fails
+    // the whole profile instead of showing "No interactions recorded".
+    const [result, interactions] = await Promise.all([
+      apiRequest(`/api/individuals/${individualId}`),
+      api.getInteractions(individualId),
+    ]);
     const individual = result.individual;
-    const interactions = await api.getInteractions(individualId);
     // Same rule as the list's last_seen: the latest interaction, else created_at
     const latest = interactions.reduce<string | null>(
       (max, i) => (!max || new Date(i.created_at) > new Date(max) ? i.created_at : max), null);

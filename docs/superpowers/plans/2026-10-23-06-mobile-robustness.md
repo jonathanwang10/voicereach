@@ -71,6 +71,12 @@
     kept single-suite Jest runs alive for 5 minutes after the tests finished; `queryClient.test.ts`
     clears the clients it makes. Added tests: the server total in the stats card, a row repeated
     across pages shows once, and the last page makes no further request.
+12. **(Task 12, during execution) The optimistic-override test waits one microtask.** The mutation's
+    `onMutate` awaits `cancelQueries` (so an in-flight refetch can't overwrite the optimistic
+    value) before writing it, so `shows the optimistic value while the PUT is in flight` starts the
+    change in an async `act`; its assertions are unchanged. `getIndividualProfile` is still mocked
+    for the profile; the merge tests in `MergeUI`, `TranscriptionResults` and `ManualEntryForm`
+    mock `getIndividual` instead.
 
 ## Global Constraints
 
@@ -1052,7 +1058,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - Another error with no data shows "Couldn't load profile" with Retry (`refetch`).
   - Pull-to-refresh awaits `refetch()`. If it fails while data exists, it shows `showApiError(error, "Couldn't refresh profile")`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // dataAccess.test.ts
@@ -1087,17 +1093,17 @@ it('a person deleted elsewhere (404 on a background refetch) goes back once', as
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest services/__tests__/dataAccess.test.ts components/__tests__/MergeUI.test.tsx screens/__tests__/ModernIndividualProfileScreen.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces. Delete the hand-written optimistic code and the `profile`/`isLoading`/`loadError` state. `useLayoutEffect`'s `headerRight` reads the query's `data`.
+- [x] **Step 3: Implement** as in Interfaces. Delete the hand-written optimistic code and the `profile`/`isLoading`/`loadError` state. `useLayoutEffect`'s `headerRight` reads the query's `data`.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: PASS. This includes `shows the scores the PUT returns, not the optimistic value`, `shows the optimistic value while the PUT is in flight`, `reverts and shows the backend error once when the PUT fails`, `a 404 says "not found" and goes back`, `an outage offers a retry and does not go back`, `a failed refresh keeps the profile and shows one error` and `does not flip to the full-screen spinner while refreshing`.
 
-- [ ] **Step 5: Run the global checks and commit.**
+- [x] **Step 5: Run the global checks and commit.**
 ```bash
 git add mobile/services mobile/screens mobile/components
 git commit -m "feat(mobile): profile on TanStack Query with a parallel load and an override mutation (H2-6.5, H2-6.6)

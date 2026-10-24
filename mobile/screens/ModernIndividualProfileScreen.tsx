@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SearchStackParamList } from '../navigation/types';
 import {
@@ -12,12 +12,10 @@ import {
   RefreshControl,
   TouchableOpacity,
   SafeAreaView,
-  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
-import { IndividualProfile } from '../types';
-import { api } from '../services/api';
+import { useIndividualProfile, useUrgencyOverride } from '../services/queries';
 import { errorMessage, showApiError } from '../utils/errors';
 import {
   getUrgencyScoreColor,
@@ -39,23 +37,23 @@ import UrgencyScore from '../components/UrgencyScore';
 import InteractionDetailModal from '../components/InteractionDetailModal';
 import IndividualLocationMap from '../components/IndividualLocationMap';
 
-const { width } = Dimensions.get('window');
-
 export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<SearchStackParamList, 'IndividualProfile'>> = ({
   navigation,
   route,
 }) => {
-  const [profile, setProfile] = useState<IndividualProfile | null>(null);
   const { categories } = useCategories(); // for field labels (display_name)
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // Set when the first load failed for a reason other than "not found" (C-17)
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedInteraction, setSelectedInteraction] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'history' | 'map'>('overview');
 
   const { individualId } = route.params;
+  const query = useIndividualProfile(individualId);
+  const profile = query.data ?? null;
+  // A failure other than "not found" with nothing to show offers a retry (C-17)
+  const loadError = !profile && query.isError && (query.error as any)?.status !== 404
+    ? errorMessage(query.error) : null;
+  const override = useUrgencyOverride(individualId);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -72,32 +70,15 @@ export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<Sear
     });
   }, [navigation, individualId, profile]);
 
+  // Only a 404 means the person is gone (deleted elsewhere too, on a background
+  // refetch): say so and go back, once
+  const wentBack = useRef(false);
   useEffect(() => {
-    loadProfile();
-  }, [individualId]);
-
-  // A refresh keeps the current profile on screen (no full-screen spinner). Only a
-  // 404 means the person is gone; any other failure keeps the screen and offers a retry.
-  const loadProfile = async ({ refresh = false }: { refresh?: boolean } = {}) => {
-    try {
-      if (!refresh) setIsLoading(true);
-      const profileData = await api.getIndividualProfile(individualId);
-      setProfile(profileData);
-      setLoadError(null);
-    } catch (error: any) {
-      if (__DEV__) console.error('Error loading profile:', error);
-      if (error?.status === 404) {
-        Toast.show({ type: 'error', text1: 'Individual not found' });
-        navigation.goBack();
-      } else if (refresh && profile) {
-        showApiError(error, "Couldn't refresh profile");
-      } else {
-        setLoadError(errorMessage(error));
-      }
-    } finally {
-      if (!refresh) setIsLoading(false);
-    }
-  };
+    if ((query.error as any)?.status !== 404 || wentBack.current) return;
+    wentBack.current = true;
+    Toast.show({ type: 'error', text1: 'Individual not found' });
+    navigation.goBack();
+  }, [query.error, query.errorUpdatedAt]);
 
   // Delayed delete (OD-3): hide now and go back; the real DELETE runs only after
   // the undo window. Undo cancels it. A failed DELETE brings the person back and
@@ -136,10 +117,14 @@ export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<Sear
     );
   };
 
+  // A refresh keeps the current profile on screen (no full-screen spinner)
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await loadProfile({ refresh: true });
+    const result = await query.refetch();
     setIsRefreshing(false);
+    if (result.isError && profile && (result.error as any)?.status !== 404) {
+      showApiError(result.error, "Couldn't refresh profile");
+    }
   };
 
   const handleInteractionPress = (interaction: any) => {
@@ -152,23 +137,8 @@ export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<Sear
     setSelectedInteraction(null);
   };
 
-  const handleUrgencyOverrideChange = async (overrideValue: number | null) => {
-    if (!profile) return;
-
-    const previous = profile;
-    setProfile({ ...profile, urgency_override: overrideValue });
-
-    try {
-      const scores = await api.updateUrgencyOverride(profile.id, overrideValue);
-      setProfile(current => current && {
-        ...current,
-        urgency_score: scores.urgency_score,
-        urgency_override: scores.urgency_override,
-      });
-    } catch (error) {
-      setProfile(previous);
-      showApiError(error, 'Update failed');
-    }
+  const handleUrgencyOverrideChange = (overrideValue: number | null) => {
+    if (profile) override.mutate(overrideValue);
   };
 
   const renderField = (key: string, value: any, isRequired: boolean = false) => {
@@ -292,7 +262,7 @@ export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<Sear
     }
   };
 
-  if (isLoading) {
+  if (query.isPending) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary[600]} />
@@ -308,7 +278,7 @@ export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<Sear
         <Text style={styles.errorTitle}>{loadError ? "Couldn't load profile" : 'Profile not found'}</Text>
         <Text style={styles.errorText}>{loadError || "This individual's profile could not be loaded"}</Text>
         {loadError ? (
-          <Button variant="primary" onPress={() => loadProfile()} style={styles.retryButton}>
+          <Button variant="primary" onPress={() => query.refetch()} style={styles.retryButton}>
             Retry
           </Button>
         ) : null}
