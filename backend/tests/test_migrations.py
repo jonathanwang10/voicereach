@@ -84,3 +84,19 @@ def test_every_migration_object_is_in_schema_sql(path):
         assert schema_functions.get(name) == block, f"{path.name}: function {name} differs from schema.sql"
     for line in re.findall(r"(?:REVOKE|GRANT) EXECUTE ON FUNCTION [^;]+;", flat):
         assert line in SCHEMA_FLAT, f"{path.name}: {line} is not in schema.sql"
+
+
+PGVECTOR_LOAD = re.compile(r"'\[[^\]]*\]'::extensions\.(halfvec|vector)")
+
+
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.name)
+def test_a_function_that_sets_an_hnsw_option_loads_pgvector_first(path):
+    """`SET hnsw.ef_search` on a function needs the pgvector library loaded in that session:
+    before it, the option is an unknown placeholder, and Supabase's postgres role (not a
+    superuser) gets "permission denied to set parameter" (found by CI's db job). A cast to
+    halfvec loads it; schema.sql does so by building the HNSW indexes first."""
+    flat = _flat(_sql(path))
+    for name, block in _functions(flat).items():
+        if "SET hnsw." in block:
+            load = PGVECTOR_LOAD.search(flat)
+            assert load and load.start() < flat.index(block), f"{path.name}: {name} sets hnsw.* before pgvector is loaded"

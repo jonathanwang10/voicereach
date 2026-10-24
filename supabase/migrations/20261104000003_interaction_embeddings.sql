@@ -23,6 +23,9 @@ ALTER TABLE interaction_embeddings ENABLE ROW LEVEL SECURITY;
 
 -- match_interactions (H2-4.3): the visits nearest the query by cosine distance (ties by
 -- id), optionally for one person, with no threshold: callers apply their own floor.
+-- Load pgvector in this session first: until then hnsw.ef_search is an unknown
+-- placeholder, and Supabase's postgres role (not a superuser) can't SET one on a function
+DO $$ BEGIN PERFORM '[1]'::extensions.halfvec; END $$;
 CREATE OR REPLACE FUNCTION match_interactions(
     p_query_embedding halfvec(3072), p_individual_id uuid DEFAULT NULL, p_limit int DEFAULT 5
 )

@@ -22,6 +22,9 @@ CREATE INDEX IF NOT EXISTS idx_individuals_search_tsv ON individuals USING gin (
 --   - No embedding: a NULL embedding (the text-only fallback) empties the vector leg,
 --     and the other two fuse alone. A blank query returns no rows.
 -- ---------------------------------------------------------------------------
+-- Load pgvector in this session first: until then hnsw.ef_search is an unknown
+-- placeholder, and Supabase's postgres role (not a superuser) can't SET one on a function
+DO $$ BEGIN PERFORM '[1]'::extensions.halfvec; END $$;
 CREATE OR REPLACE FUNCTION search_individuals_hybrid(
     p_query text, p_query_embedding halfvec(3072),
     p_limit int DEFAULT 20, p_min_similarity double precision DEFAULT 0.15
