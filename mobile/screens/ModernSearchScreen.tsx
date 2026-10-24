@@ -231,6 +231,7 @@ export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
           ]}
           variant={isHighlighted ? 'filled' : 'elevated'}
           onPress={() => handleResultPress(item)}
+          accessibilityLabel={`${item.name}, urgency ${Math.round(urgencyScore)}, last seen ${formatLastSeen(item.last_seen_days)}`}
         >
         <View style={styles.resultHeader}>
           <View style={styles.nameContainer}>

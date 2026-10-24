@@ -59,6 +59,7 @@ export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: a
     navigation.setOptions({
       headerRight: () => (
         <TouchableOpacity
+          accessibilityRole="button"
           accessibilityLabel="Delete profile"
           onPress={() => confirmDelete()}
           style={styles.headerButton}

@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
+  AccessibilityInfo,
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Alert,
   Animated,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import {
   AudioQuality,
@@ -21,13 +22,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { acquireRecording } from '../services/audioSession';
 import { RECORDING_FAILED, showApiError } from '../utils/errors';
 import { awaitLocation, captureLocation, RecordingLocation } from '../utils/location';
+import { ensureMicPermission } from '../utils/micPermission';
 import { theme } from '../theme';
 
 // Re-exported: callers of the recorder import them from here
 export { LOCATION_WAIT_MS } from '../utils/location';
 export type { RecordingLocation } from '../utils/location';
-
-const { width } = Dimensions.get('window');
 
 interface AudioRecorderProps {
   onRecordingComplete: (uri: string, location?: RecordingLocation) => void;
@@ -51,6 +51,13 @@ export const FIELD_NOTE_RECORDING: RecordingOptions = {
 export const INTERRUPTED_MESSAGE = (at: string) =>
   `Recording was interrupted at ${at}. You can keep what was recorded or record again.`;
 
+// What VoiceOver says at each full minute of a recording (H2-6.11)
+export const minuteAnnouncement = (seconds: number): string | null => {
+  if (seconds <= 0 || seconds % 60 !== 0) return null;
+  const minutes = seconds / 60;
+  return minutes === 1 ? '1 minute recorded' : `${minutes} minutes recorded`;
+};
+
 // m:ss
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
@@ -62,6 +69,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   onRecordingComplete,
 }, ref) => {
   const recorder = useAudioRecorder(FIELD_NOTE_RECORDING);
+  const { width } = useWindowDimensions();
   const recorderState = useAudioRecorderState(recorder, 250);
   const [isRecording, setIsRecording] = useState(false);
   // Whole seconds recorded, from the recorder's own status (H2-5.3)
@@ -109,18 +117,6 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   useImperativeHandle(ref, () => ({
     resetRecording: resetState,
   }));
-
-  // Request permissions
-  useEffect(() => {
-    (async () => {
-      try {
-        const { granted } = await requestRecordingPermissionsAsync();
-        if (!granted) showApiError('Allow microphone access to record.', 'Microphone');
-      } catch {
-        showApiError('Allow microphone access to record.', 'Microphone');
-      }
-    })();
-  }, []);
 
   // Start animations
   const startPulseAnimation = () => {
@@ -176,6 +172,12 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     }
   }, [recorderState.isRecording, recorderState.durationMillis, recorderState.mediaServicesDidReset, isRecording]);
 
+  // VoiceOver hears each full minute go by
+  useEffect(() => {
+    const text = isRecording ? minuteAnnouncement(duration) : null;
+    if (text) AccessibilityInfo.announceForAccessibility(text);
+  }, [duration, isRecording]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -193,6 +195,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     if (startingRef.current || activeRef.current) return;
     startingRef.current = true;
     try {
+      // Asked on the first tap, not at mount (H2-6.3)
+      if (!(await ensureMicPermission(requestRecordingPermissionsAsync))) return;
+      if (!mountedRef.current) return;
       releaseRef.current = await acquireRecording('record-tab');
       await recorder.prepareToRecordAsync();
       if (!mountedRef.current) {
@@ -329,7 +334,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       </View>
 
       {/* Progress Bar */}
-      <View style={styles.progressContainer}>
+      <View testID="progress-track" style={[styles.progressContainer, { width: width - theme.spacing.lg * 2 }]}>
         <Animated.View
           style={[
             styles.progressBar,
@@ -362,6 +367,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
           testID="record-button"
           onPress={isRecording ? stopRecording : startRecording}
           disabled={isFinishing}
+          accessibilityRole="button"
+          accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+          accessibilityState={{ disabled: isFinishing }}
           activeOpacity={0.7}
         >
           {isRecording ? (
@@ -440,7 +448,6 @@ const styles = StyleSheet.create({
     marginLeft: theme.spacing.sm,
   },
   progressContainer: {
-    width: width - theme.spacing.lg * 2,
     height: 6,
     backgroundColor: theme.colors.neutral[200],
     borderRadius: theme.borderRadius.full,

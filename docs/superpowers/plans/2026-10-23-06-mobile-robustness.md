@@ -440,7 +440,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - The recorder passes `Audio.requestPermissionsAsync` (expo-av). Phase 5 passes expo-audio's `requestRecordingPermissionsAsync`; both resolve a `PermissionResponse` with `granted`.
 - `minuteAnnouncement(seconds: number): string | null`, exported from the recorder: `'1 minute recorded'` at 60, `'2 minutes recorded'` at 120, else `null`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // micPermission.test.ts
@@ -491,28 +491,28 @@ it('reads each row as name, urgency and last seen', async () => {
 ```
 Update the `expo-av` mock: `requestPermissionsAsync: jest.fn(async () => ({ granted: true, status: 'granted' }))`.
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest utils/__tests__/micPermission.test.ts components/__tests__/ModernAudioRecorder.test.tsx screens/__tests__/ModernSearchScreen.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - Record button: `accessibilityRole="button"`, `accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}`, `accessibilityState={{ disabled: isFinishing }}`.
   - Progress track: `testID="progress-track"`, with `width: width - theme.spacing.lg * 2` from `useWindowDimensions()` in the inline style. Delete the module-level `Dimensions`.
   - The announcement effect runs on `[duration, isRecording]`: when recording and `minuteAnnouncement(duration)` returns text, it calls `AccessibilityInfo.announceForAccessibility`.
   - `ensureMicPermission` runs after `startingRef.current = true` and before `setAudioModeAsync`. On `false`, return. The `finally` block clears `startingRef`.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Device check.**
+- [x] **Step 5: Device check.**
   > (H2-6.3, H2-6.11)
   > - Fresh install: opening the Record tab shows no mic prompt. The first Record tap shows it.
   > - Deny it, tap again: the "Microphone access is off" alert. "Open Settings" opens VoiceReach's page in Settings.
   > - With VoiceOver on: the button reads "Start recording, button", and at 1:00 VoiceOver says "1 minute recorded".
   > - Rotate an iPad: the progress track resizes.
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/utils mobile/components mobile/screens docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "feat(mobile): ask for the mic on the first tap with Open Settings; label icon buttons (H2-6.3, H2-6.11)

@@ -60,6 +60,13 @@ it('shows a retry state when loading fails, and retries on tap', async () => {
   alert.mockRestore();
 });
 
+it('reads each row as name, urgency and last seen (H2-6.11)', async () => {
+  (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
+  const { getByLabelText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  await waitFor(() => getByLabelText('Ann Lee, urgency 10, last seen 1 day ago'));
+  expect(getByLabelText('Ann Lee, urgency 10, last seen 1 day ago').props.accessibilityRole).toBe('button');
+});
+
 it('still shows the empty state when there really is no one', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([]);
   const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);

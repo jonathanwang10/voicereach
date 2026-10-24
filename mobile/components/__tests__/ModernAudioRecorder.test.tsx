@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, StyleSheet } from 'react-native';
+import { AccessibilityInfo, Alert, StyleSheet } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { render, fireEvent, act } from '@testing-library/react-native';
 
@@ -33,6 +33,8 @@ jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { sh
 const mockRelease = jest.fn(async () => {});
 jest.mock('../../services/audioSession', () => ({ acquireRecording: jest.fn(async () => mockRelease) }));
 jest.mock('expo-file-system', () => ({ deleteAsync: jest.fn(async () => {}) }));
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true, default: () => ({ width: 400, height: 800, scale: 2, fontScale: 1 }) }));
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(async () => ({ status: 'denied' })),
   getCurrentPositionAsync: jest.fn(),
@@ -43,9 +45,9 @@ jest.mock('expo-location', () => ({
 
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
-import { useAudioRecorder } from 'expo-audio';
+import { requestRecordingPermissionsAsync, useAudioRecorder } from 'expo-audio';
 import { acquireRecording } from '../../services/audioSession';
-import { ModernAudioRecorder, LOCATION_WAIT_MS } from '../ModernAudioRecorder';
+import { ModernAudioRecorder, LOCATION_WAIT_MS, minuteAnnouncement } from '../ModernAudioRecorder';
 import { theme } from '../../theme';
 
 const press = async (screen: ReturnType<typeof render>) => {
@@ -70,6 +72,51 @@ beforeEach(() => {
   (Location.requestForegroundPermissionsAsync as jest.Mock).mockResolvedValue({ status: 'denied' });
 });
 afterEach(() => jest.useRealTimers());
+
+it('does not ask for the microphone at mount', () => {
+  render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  expect(requestRecordingPermissionsAsync).not.toHaveBeenCalled();
+});
+
+it('asks on the first tap and records nothing when denied', async () => {
+  (requestRecordingPermissionsAsync as jest.Mock).mockResolvedValueOnce({ granted: false, status: 'denied' });
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  await press(screen);
+  expect(requestRecordingPermissionsAsync).toHaveBeenCalledTimes(1);
+  expect(acquireRecording).not.toHaveBeenCalled();
+  expect(mockRecorder.prepareToRecordAsync).not.toHaveBeenCalled();
+  expect(lastAlert()[0]).toBe('Microphone access is off');
+  expect(screen.getByText('Tap to start recording')).toBeTruthy();
+});
+
+it('labels the Record button for VoiceOver (H2-6.11)', async () => {
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  const button = screen.getByTestId('record-button');
+  expect(button.props.accessibilityRole).toBe('button');
+  expect(button.props.accessibilityLabel).toBe('Start recording');
+  await press(screen);
+  expect(screen.getByTestId('record-button').props.accessibilityLabel).toBe('Stop recording');
+});
+
+it('announces each full minute while recording', async () => {
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  await press(screen);
+  await at(59_000);
+  await at(60_000);
+  await at(60_500);
+  expect(announce).toHaveBeenCalledWith('1 minute recorded');
+  expect(announce).toHaveBeenCalledTimes(1);
+});
+
+it('minuteAnnouncement names whole minutes only', () => {
+  expect([59, 60, 61, 120].map(minuteAnnouncement)).toEqual([null, '1 minute recorded', null, '2 minutes recorded']);
+});
+
+it('sizes the progress track from the window width', () => {
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  expect(StyleSheet.flatten(screen.getByTestId('progress-track').props.style).width).toBe(400 - theme.spacing.lg * 2);
+});
 
 it('records 16 kHz mono AAC at 32 kbps', () => {
   render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);

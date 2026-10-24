@@ -38,6 +38,7 @@ export const Card: React.FC<CardProps> = ({
         style={cardStyles}
         onPress={onPress}
         activeOpacity={0.7}
+        accessibilityRole="button"
         {...props}
       >
         {children}
