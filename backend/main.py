@@ -20,11 +20,15 @@ from services.rate_limit import (acquire_session, check_keyed_limit, limit_from_
                                 release_session)
 from services.assistant_tools import TOOL_DEFINITIONS, ToolCallRouter
 from services.recording_worker import start_workers, stop_workers, worker_enabled
-from services.request_log import JsonFormatter, RequestLogMiddleware, emit_summary, log_context, record_usage
+from services.request_log import (QUIET_LIBRARY_LOGGERS, JsonFormatter, RequestLogMiddleware, emit_summary,  # noqa: F401
+                                  log_context, record_usage)
+from services.sentry_setup import init_sentry
 from services.realtime_guard import error_event, sanitize_client_event
 
 # Load environment variables
 load_dotenv()
+# Error reports, only when SENTRY_DSN is set (H2-8.2)
+init_sentry()
 
 # --- Logging (R-14, C-30) ---------------------------------------------------------
 # Server logs carry lifecycle events, counts, ids and error TYPES only: never names,
@@ -33,8 +37,6 @@ load_dotenv()
 # These libraries log request URLs and bodies at INFO/DEBUG: PostgREST filters carry
 # names (`name=ilike.John Doe`), OpenAI request bodies carry transcripts and records.
 # They stay at WARNING whatever LOG_LEVEL says.
-QUIET_LIBRARY_LOGGERS = ("httpx", "httpx2", "httpcore", "openai", "postgrest", "supabase",
-                         "supabase_auth", "gotrue", "websockets", "hpack")
 
 
 def configure_logging(level_name: str | None = None, log_format: str | None = None) -> None:

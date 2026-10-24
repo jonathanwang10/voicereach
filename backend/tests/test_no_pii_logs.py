@@ -279,6 +279,25 @@ def test_recording_worker_logs_no_transcript_or_fields(capture, capsys, extracti
     _assert_clean(capture, capsys)
 
 
+# --- Sentry (H2-8.2) -----------------------------------------------------------------
+
+def test_sentry_scrubber_removes_person_data():
+    from services.sentry_setup import scrub_event
+    event = {"request": {"method": "POST", "url": f"http://h/api/individuals?search={SENTINEL_NAME}",
+                         "query_string": f"search={SENTINEL_NAME}",
+                         "data": {"name": SENTINEL_NAME, "lat": SENTINEL_LAT},
+                         "headers": {"x-email": SENTINEL_EMAIL}, "cookies": {}, "env": {}},
+             "exception": {"values": [{"type": "RuntimeError", "value": f"failed for {SENTINEL_NAME} at {SENTINEL_LAT}",
+                                       "stacktrace": {"frames": [{"function": "f", "vars": {"email": SENTINEL_EMAIL}}]}}]},
+             "user": {"email": SENTINEL_EMAIL}, "extra": {"name": SENTINEL_NAME},
+             "breadcrumbs": {"values": [{"type": "log", "category": "api.individuals",
+                                         "message": "Saved", "data": {"name": SENTINEL_NAME}}]}}
+    dumped = json.dumps(scrub_event(event, {})).lower()
+    assert SENTINEL_TOKEN not in dumped
+    assert str(SENTINEL_LAT) not in dumped
+    assert SENTINEL_EMAIL not in dumped
+
+
 # --- auth ---------------------------------------------------------------------------
 
 @pytest.mark.real_auth

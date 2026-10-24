@@ -46,6 +46,8 @@ Each file is idempotent.
 | `ENABLE_API_DOCS` | unset (off; `1` serves `/docs`, `/redoc`, `/openapi.json`) | backend | 1 |
 | `RECORDING_WORKER_CONCURRENCY` | 2 (how many recording jobs run at once in the one process) | backend (Railway) | 7 |
 | `RECORDING_WORKER_ENABLED` | 1 (set to 0 only to pause processing) | backend (Railway) | 7 |
+| `SENTRY_DSN` | unset (optional: the Sentry project's DSN turns error reports on) | backend (Railway) | 8 |
+| `ENVIRONMENT` | `development` (set `production` on Railway) | backend (Railway) | 8 |
 
 ## Device checks
 
@@ -103,3 +105,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 12. (Phase 7, Task 1) Optional: enable pg_cron and uncomment the `purge-old-recordings` line in `supabase/schema.sql`. The backend already purges hourly, and the cron line purges rows only (it leaves stored files behind).
 13. (Phase 7, Task 6) After pulling Phase 7: `cd mobile && npx expo prebuild --platform ios` (adds the ExpoSQLite pod; Task 9 adds the Data Protection entitlement to the same prebuild), review the `ios/` diff, commit it, and rebuild the dev build (`npx expo run:ios`). An older build crashes on the Record tab without it.
 14. (Phase 7, Task 9) Enable the Data Protection capability for the App ID (Apple Developer → Identifiers; needs the paid account), then `cd mobile && npx expo prebuild --platform ios` and check that `ios/SFHomelessOutreach/SFHomelessOutreach.entitlements` has `com.apple.developer.default-data-protection = NSFileProtectionComplete` and that `CODE_SIGN_ENTITLEMENTS` points at it; commit the `ios/` diff (it also adds the ExpoSQLite pod from item 13).
+15. (Phase 8, Task 2) Optional: create a Sentry project (platform FastAPI), copy its DSN into Railway's `SENTRY_DSN`, then hit a route that 500s on staging and confirm in Sentry that the event has no message text, body or query string.

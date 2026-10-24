@@ -21,7 +21,14 @@ from datetime import datetime, timezone
 from typing import Any, Iterator, Optional
 from uuid import uuid4
 
+import sentry_sdk
+
 REQUEST_ID_HEADER = "X-Request-Id"
+# These libraries log request URLs and bodies at INFO/DEBUG: PostgREST filters carry
+# names (`name=ilike.John Doe`), OpenAI request bodies carry transcripts and records.
+# main pins them to WARNING; Sentry drops their breadcrumbs (H2-8.2).
+QUIET_LIBRARY_LOGGERS = ("httpx", "httpx2", "httpcore", "openai", "postgrest", "supabase",
+                         "supabase_auth", "gotrue", "websockets", "hpack")
 SUMMARY_LOGGER = "voicereach.request"
 SUMMARY_FIELDS = {"method", "route", "status", "duration_ms", "job_id", "job_status", "close_code"}
 USAGE_KEYS = ("prompt_tokens", "completion_tokens", "input_tokens", "output_tokens", "total_tokens")
@@ -121,6 +128,7 @@ class RequestLogMiddleware:
             await self.app(scope, receive, send)
             return
         request_id = _incoming_id(scope) or uuid4().hex
+        sentry_sdk.set_tag("request_id", request_id)   # a no-op without a Sentry client (H2-8.2)
         log = RequestLog(request_id=request_id)
         token = _current.set(log)
         start = time.perf_counter()

@@ -290,6 +290,8 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `RECORDING_WORKER_CONCURRENCY` | Optional. How many uploaded recordings the in-process worker runs at once (default 2). |
 | `RECORDING_WORKER_ENABLED` | Optional. `0` pauses processing uploaded recordings (they stay queued); default on. |
 | `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
+| `SENTRY_DSN` | Optional. Sends backend errors to Sentry (errors only, scrubbed: see [Data leaving the system](#data-leaving-the-system)). Unset means off. |
+| `ENVIRONMENT` | Optional. Sentry's environment name (default `development`; set `production` on Railway). |
 | `LOG_FORMAT` | Optional. Logs are one JSON object per line by default; `text` gives the old `time LEVEL logger: message` lines (handy locally). |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
@@ -619,6 +621,7 @@ is logged.
 | Records returned by the assistant's tools (`search_people`, `get_person`, `recent_interactions`, `most_urgent`), each value clipped | The OpenAI Realtime API, as a delimited tool output | Each tool call | For that assistant session. |
 | Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions, their embeddings and their visit embeddings. Once the owner schedules `coarsen_old_locations`, interaction locations older than 30 days are rounded to about 110 m with the house number removed; the newest visit and the person's last location stay exact. |
 | Who did what to which record: user id, device id, action, record id, a count or an override value (`audit_log`) | Supabase (Postgres) | Viewing a profile, export, delete, an urgency override, a merge, a new person, a new category | Kept after the person is deleted (no names or field values; the table is append-only). |
+| An error report (only when `SENTRY_DSN` is set) | Sentry | Each unhandled backend error | The error's type, its stack frames without local variables, the route template and `request_id`; never a body, query string, headers, cookies, the exception's message or a library's breadcrumb (`services/sentry_setup.py`). Sentry's retention. |
 | The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; on the phone the session is AES-256 encrypted in AsyncStorage, with its key in the iOS Keychain (this device only). |
 | The GPS position of each recording, and of a location picked by hand | The phone platform's geocoder, through `expo-location`'s `reverseGeocodeAsync` (Apple on iOS, Google Play services on Android) | Each recording, and in the location picker | The platform's own policy. |
 | The area shown on a map (location picker, profile map) | The map tile provider of `react-native-maps` (Apple Maps on iOS, Google Maps on Android) | Each map shown | Tile requests reveal the area being viewed. |
