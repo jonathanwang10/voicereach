@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { SearchStackParamList } from '../navigation/types';
 import { SearchResult } from '../types';
 import { api } from '../services/api';
 import { Button } from '../components/ui/Button';
@@ -37,7 +39,7 @@ const HIGHLIGHT_MS = 2500;
 // Rows fade in one after another; cap the stagger so row 100 does not wait 5 s (C-60)
 const MAX_FADE_DELAY_MS = 500;
 
-export const ModernSearchScreen: React.FC<{ navigation: any; route: any }> = ({
+export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackParamList, 'SearchMain'>> = ({
   navigation,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');

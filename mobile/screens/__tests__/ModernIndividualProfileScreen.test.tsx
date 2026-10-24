@@ -45,7 +45,7 @@ afterEach(() => __resetPendingDeletesForTests());
 it('a 404 says "not found" and goes back', async () => {
   (api.getIndividualProfile as jest.Mock).mockRejectedValue(apiError(404, 'Individual not found: p1'));
   const navigation = nav();
-  render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+  render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
   await waitFor(() => expect(navigation.goBack).toHaveBeenCalled());
   expect((Toast.show as jest.Mock).mock.calls[0][0]).toMatchObject({ text1: 'Individual not found' });
 });
@@ -53,7 +53,7 @@ it('a 404 says "not found" and goes back', async () => {
 it('an outage offers a retry and does not go back', async () => {
   (api.getIndividualProfile as jest.Mock).mockRejectedValue(apiError(0, 'No connection to the server.'));
   const navigation = nav();
-  const { getByText, queryByText } = render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+  const { getByText, queryByText } = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
   await waitFor(() => getByText("Couldn't load profile"));
   expect(queryByText('Profile not found')).toBeNull();
   expect(navigation.goBack).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ it('an outage offers a retry and does not go back', async () => {
 it('a failed refresh keeps the profile and shows one error', async () => {
   (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce(profile);
   const navigation = nav();
-  const screen = render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+  const screen = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
   await waitFor(() => screen.getByText('Ann Lee'));
 
   (api.getIndividualProfile as jest.Mock).mockRejectedValue(apiError(500, 'Get individual failed'));
@@ -82,7 +82,7 @@ it('a failed refresh keeps the profile and shows one error', async () => {
 
 it('does not flip to the full-screen spinner while refreshing', async () => {
   (api.getIndividualProfile as jest.Mock).mockResolvedValueOnce(profile);
-  const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+  const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
   await waitFor(() => screen.getByText('Ann Lee'));
 
   let finish: (p: any) => void = () => {};
@@ -99,7 +99,7 @@ describe('delayed delete', () => {
   const openDeleteDialog = async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
     const navigation = nav();
-    const screen = render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const headerRight = navigation.setOptions.mock.calls[navigation.setOptions.mock.calls.length - 1][0].headerRight;
@@ -141,7 +141,7 @@ it('too late to undo says the delete is in progress, not done', async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
     (api.deleteIndividual as jest.Mock).mockReturnValue(new Promise(() => {}));
     const navigation = nav();
-    const screen = render(<ModernIndividualProfileScreen navigation={navigation} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={navigation as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const headerRight = navigation.setOptions.mock.calls[navigation.setOptions.mock.calls.length - 1][0].headerRight;
@@ -169,7 +169,7 @@ describe('urgency override (C-10)', () => {
     // The server's answer differs from what the slider sent (e.g. a newer value was
     // stored meanwhile): what the server says is what must render.
     (api.updateUrgencyOverride as jest.Mock).mockResolvedValue({ urgency_score: 12, urgency_override: 70, display_score: 70 });
-    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     await act(async () => { await mockUrgencyProps.onOverrideChange(75); });
     expect(api.updateUrgencyOverride).toHaveBeenCalledWith('p1', 75);
@@ -183,7 +183,7 @@ describe('urgency override (C-10)', () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
     let resolve: (v: any) => void = () => {};
     (api.updateUrgencyOverride as jest.Mock).mockReturnValue(new Promise(r => { resolve = r; }));
-    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     let pending: Promise<void> = Promise.resolve();
     act(() => { pending = mockUrgencyProps.onOverrideChange(75); });
@@ -195,7 +195,7 @@ describe('urgency override (C-10)', () => {
   it('reverts and shows the backend error once when the PUT fails', async () => {
     (api.getIndividualProfile as jest.Mock).mockResolvedValue(profile);
     (api.updateUrgencyOverride as jest.Mock).mockRejectedValue(apiError(422, 'Input should be less than or equal to 100'));
-    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     await act(async () => { await mockUrgencyProps.onOverrideChange(75); });
     expect(screen.queryByText('75')).toBeNull();
@@ -220,7 +220,7 @@ describe('field rendering (C-09)', () => {
         weight: 0,
       },
     });
-    const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+    const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
     await waitFor(() => screen.getByText('Ann Lee'));
     expect(screen.queryByText('null')).toBeNull();
     expect(screen.queryByText('Behavior')).toBeNull();
@@ -239,7 +239,7 @@ it('labels fields with the category display_name', async () => {
     { name: 'hiv_status', display_name: 'HIV status', type: 'text', is_required: false },
     { name: 'height', display_name: 'Height', type: 'number', is_required: true });
   (api.getIndividualProfile as jest.Mock).mockResolvedValue({ ...profile, data: { height: 60, hiv_status: 'Unknown' } });
-  const screen = render(<ModernIndividualProfileScreen navigation={nav()} route={route} />);
+  const screen = render(<ModernIndividualProfileScreen navigation={nav() as any} route={route as any} />);
   await waitFor(() => screen.getByText('Ann Lee'));
   expect(screen.getByText('HIV status')).toBeTruthy();
   expect(screen.queryByText('Hiv Status')).toBeNull();

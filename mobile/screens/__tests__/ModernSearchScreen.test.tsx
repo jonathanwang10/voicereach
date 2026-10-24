@@ -47,7 +47,7 @@ afterEach(() => __resetPendingDeletesForTests());
 it('shows a retry state when loading fails, and retries on tap', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   (api.searchIndividuals as jest.Mock).mockRejectedValue(outage);
-  const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
 
   await waitFor(() => getByText("Couldn't load — tap to retry"));
   expect(queryByText('No individuals have been recorded yet')).toBeNull();
@@ -62,14 +62,14 @@ it('shows a retry state when loading fails, and retries on tap', async () => {
 
 it('reads each row as name, urgency and last seen (H2-6.11)', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
-  const { getByLabelText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByLabelText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByLabelText('Ann Lee, urgency 10, last seen 1 day ago'));
   expect(getByLabelText('Ann Lee, urgency 10, last seen 1 day ago').props.accessibilityRole).toBe('button');
 });
 
 it('still shows the empty state when there really is no one', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([]);
-  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('No individuals have been recorded yet'));
 });
 
@@ -77,7 +77,7 @@ it('falls back to text search without an error when semantic search fails', asyn
   (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
   (api.semanticSearchIndividuals as jest.Mock).mockRejectedValue(outage);
   const { getByText, getByPlaceholderText, queryByText } = render(
-    <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
   await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalled());
@@ -93,7 +93,7 @@ it('shows the retry state when both searches fail', async () => {
   });
   (api.semanticSearchIndividuals as jest.Mock).mockRejectedValue(outage);
   const { getByText, getByPlaceholderText, queryByText } = render(
-    <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
   await waitFor(() => getByText("Couldn't load — tap to retry"));
@@ -107,14 +107,14 @@ describe('pending deletes', () => {
   it('hides a pending delete that is already scheduled when the list loads', async () => {
     scheduleDelete('a1');
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob]);
-    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Bob Day'));
     expect(queryByText('Ann Lee')).toBeNull();
   });
 
   it('hides on schedule and shows again on Undo, without reloading', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob]);
-    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     const calls = (api.searchIndividuals as jest.Mock).mock.calls.length;
 
@@ -132,7 +132,7 @@ describe('pending deletes', () => {
 // C-32: anything seen in the last 24 hours is "today", never "1 day ago".
 it('shows "Last seen today" for 0 days', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([{ ...ann, last_seen_days: 0 }]);
-  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Last seen today'));
 });
 
@@ -140,7 +140,7 @@ it('shows the display score (override) on the row', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([
     { ...ann, urgency_score: 10, urgency_override: null, display_score: 88 },
   ]);
-  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('88'));
 });
 
@@ -152,7 +152,7 @@ describe('search sequencing', () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
     (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
     const { getByText, getByPlaceholderText } = render(
-      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+      <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     fireEvent.changeText(getByPlaceholderText(box), 'a');
     fireEvent.changeText(getByPlaceholderText(box), 'an');
@@ -170,7 +170,7 @@ describe('search sequencing', () => {
     (api.semanticSearchIndividuals as jest.Mock).mockImplementation((q: string) =>
       q === 'v' ? new Promise(r => { resolveV = r; }) : Promise.resolve([vet]));
     const { getByText, getByPlaceholderText, queryByText } = render(
-      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+      <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
 
     fireEvent.changeText(getByPlaceholderText(box), 'v');
@@ -188,7 +188,7 @@ describe('search sequencing', () => {
 describe('list reloads', () => {
   it('loads the list once on mount', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
-    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     await new Promise(r => setTimeout(r, 50));
     expect(api.searchIndividuals).toHaveBeenCalledTimes(1);
@@ -196,7 +196,7 @@ describe('list reloads', () => {
 
   it('a failed refresh keeps the last good list and shows a toast instead of the retry state', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
-    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     refocus();
     await waitFor(() => expect(Toast.show).toHaveBeenCalled());
@@ -208,7 +208,7 @@ describe('list reloads', () => {
   // Minor 5: one toast at a time, so a refresh error would replace "Tap to undo".
   it('a failed refresh shows no toast while a delete is waiting for undo', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
-    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     act(() => { scheduleDelete('someone-else', { delayMs: 60_000 }); });
     refocus();
@@ -222,7 +222,7 @@ describe('list reloads', () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
     (api.semanticSearchIndividuals as jest.Mock).mockResolvedValueOnce([ann]).mockRejectedValue(outage);
     const { getByText, getByPlaceholderText } = render(
-      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+      <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
     await waitFor(() => expect(api.semanticSearchIndividuals).toHaveBeenCalledTimes(1));
@@ -237,7 +237,7 @@ describe('list reloads', () => {
   it('a refresh shows new data without a full-screen spinner', async () => {
     (api.searchIndividuals as jest.Mock).mockResolvedValueOnce([ann])
       .mockResolvedValue([{ ...ann, name: 'Ann Updated' }]);
-    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    const { getByText, queryByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Ann Lee'));
     refocus();
     expect(queryByText('Loading individuals...')).toBeNull();
@@ -250,7 +250,7 @@ it('scrolls to a row whose pending delete was undone', async () => {
   const scroll = jest.spyOn(FlatList.prototype, 'scrollToIndex').mockImplementation(() => {});
   const people = [ann, { ...ann, id: 'b2', name: 'Bob Day' }, { ...ann, id: 'c3', name: 'Cy Moe' }];
   (api.searchIndividuals as jest.Mock).mockResolvedValue(people);
-  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Cy Moe'));
   let handle: { cancel: () => boolean } = { cancel: () => false };
   act(() => { handle = scheduleDelete('c3'); });
@@ -265,7 +265,7 @@ it('scrolls to a row whose pending delete was undone', async () => {
 it('waits for a 600 ms pause before searching three or more characters', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
   (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
-  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'ann');
   await act(async () => { await new Promise(r => setTimeout(r, 450)); });
@@ -276,7 +276,7 @@ it('waits for a 600 ms pause before searching three or more characters', async (
 it('searches a one- or two-character query after 300 ms', async () => {
   (api.searchIndividuals as jest.Mock).mockResolvedValue([ann]);
   (api.semanticSearchIndividuals as jest.Mock).mockResolvedValue([ann]);
-  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+  const { getByText, getByPlaceholderText } = render(<ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'an');
   await act(async () => { await new Promise(r => setTimeout(r, 150)); });
@@ -292,7 +292,7 @@ it('shows Name, Details and percentage badges by match type', async () => {
     { ...ann, id: 'c3', name: 'Cy Moe', search_type: 'semantic', similarity_score: 0 },
   ]);
   const { getByText, getByPlaceholderText } = render(
-    <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+    <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
   await waitFor(() => getByText('Ann Lee'));
   fireEvent.changeText(getByPlaceholderText('Search by name, description, or details...'), 'zz');
   await waitFor(() => getByText('0%'));
@@ -312,7 +312,7 @@ describe('restored-row scroll (fix round 1)', () => {
     (api.semanticSearchIndividuals as jest.Mock).mockImplementation((q: string) =>
       q === 'm' ? Promise.resolve([ann, bob, cy]) : new Promise(r => { resolveSearch = r; }));
     const { getByText, getByPlaceholderText } = render(
-      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+      <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Cy Moe'));
     const box = getByPlaceholderText('Search by name, description, or details...');
     fireEvent.changeText(box, 'm'); // results for "m" (Cy at index 2) stay in state under the spinner
@@ -335,7 +335,7 @@ describe('restored-row scroll (fix round 1)', () => {
     const offset = jest.spyOn(FlatList.prototype, 'scrollToOffset').mockImplementation(() => {});
     (api.searchIndividuals as jest.Mock).mockResolvedValue([ann, bob, cy]);
     const { getByText, UNSAFE_getByType } = render(
-      <ModernSearchScreen navigation={{ navigate: jest.fn() }} route={{}} />);
+      <ModernSearchScreen navigation={{ navigate: jest.fn() } as any} route={{} as any} />);
     await waitFor(() => getByText('Cy Moe'));
     const onFailed = UNSAFE_getByType(FlatList).props.onScrollToIndexFailed;
     const info = { index: 2, averageItemLength: 100, highestMeasuredFrameIndex: 0 };

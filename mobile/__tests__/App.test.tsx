@@ -55,7 +55,7 @@ function mockScreen(label: string) {
   return <Text>{label}</Text>;
 }
 
-import App from '../App';
+import App, { FROZEN_TABS } from '../App';
 import { api } from '../services/api';
 import { queryClient } from '../services/queryClient';
 
@@ -110,6 +110,18 @@ it('Sign Out clears cached case data from memory (H2-6.6)', async () => {
   fireEvent.press(screen.getByText('Profile'));
   await act(async () => { fireEvent.press(await screen.findByText('Profile Sign Out')); });
   await waitFor(() => expect(queryClient.getQueryData(['individual', 'p1'])).toBeUndefined());
+});
+
+it('freezes only the tabs whose hidden work need not run (H2-6.8)', () => {
+  expect(FROZEN_TABS).toEqual(['Search', 'Categories', 'Profile']);
+});
+
+it('the Search tab renders its stack', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  fireEvent.press(screen.getByText('Search'));
+  expect(await screen.findByText('Search screen')).toBeTruthy();
 });
 
 // Fix round 1: another phone signing out (or a failed refresh) emits SIGNED_OUT

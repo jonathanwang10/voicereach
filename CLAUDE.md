@@ -121,7 +121,9 @@ only after `npx expo prebuild --platform ios`.
 ## App structure
 
 Five tabs: Record (default), Search (pushes the individual profile), Assistant,
-Categories, Profile. API client: `mobile/services/api.ts`. All data access goes
+Categories, Profile. Search pushes the profile on a native stack (`SearchStackParamList`
+in `mobile/navigation/types.ts`); Search, Categories and Profile freeze while hidden
+(`FROZEN_TABS` in `App.tsx`). API client: `mobile/services/api.ts`. All data access goes
 through the backend; the app's Supabase client is for auth only (never call
 `supabase.from` in mobile/). Delete is delayed for an undo window
 (`mobile/utils/delayedDelete.ts`). Only `mobile/services/audioSession.ts` changes the

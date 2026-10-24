@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect } from 'react';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { SearchStackParamList } from '../navigation/types';
 import {
   View,
   Text,
@@ -39,7 +41,7 @@ import IndividualLocationMap from '../components/IndividualLocationMap';
 
 const { width } = Dimensions.get('window');
 
-export const ModernIndividualProfileScreen: React.FC<{ navigation: any; route: any }> = ({
+export const ModernIndividualProfileScreen: React.FC<NativeStackScreenProps<SearchStackParamList, 'IndividualProfile'>> = ({
   navigation,
   route,
 }) => {

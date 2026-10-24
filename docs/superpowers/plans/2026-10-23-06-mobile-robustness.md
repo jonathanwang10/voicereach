@@ -56,6 +56,12 @@
    native rebuild is Task 15 / the device checks. The full checks for this task also turned up
    a flaky Phase 3 test (`test_the_last_seen_area_is_sent_for_both_sides` asserted `"123"` was
    absent from a prompt that holds a random UUID); its assertion now names the house numbers.
+10. **(Task 8, during execution) Jest runs TanStack's notifications on a microtask.** Its default
+   `setTimeout(0)` batching lands after `act()` returns, so a context value read right after
+   `await act(() => refreshCategories())` was stale. `test/setup.js` sets
+   `notifyManager.setScheduler(fn => Promise.resolve().then(fn))`; the app keeps the default.
+   `CategoryContext`'s `isLoading` is now `isPending`, true only before the first result: a
+   refetch never swaps a form for the spinner.
 
 ## Global Constraints
 
@@ -779,7 +785,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - Record is not frozen, because its 2:00 auto-stop runs from an effect on `duration`.
   - VoiceAssistant is not frozen, because its focus gating and socket belong to Phase 5.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```tsx
 it('freezes only the tabs whose hidden work need not run (H2-6.8)', () => {
@@ -790,20 +796,20 @@ it('the Search tab renders its stack', async () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest __tests__/App.test.tsx`
 Expected: FAIL (`FROZEN_TABS` is undefined).
 
-- [ ] **Step 3: Install and implement.**
+- [x] **Step 3: Install and implement.**
   - `createNativeStackNavigator<SearchStackParamList>()` with `IndividualProfile` options `{ title: 'Individual Profile', presentation: 'card' }`.
   - `createBottomTabNavigator<RootTabParamList>()`.
   - Native-stack renders under jest-expo: React Native's jest setup mocks `requireNativeComponent`, which react-native-screens' native views go through. The existing bottom tabs already run through react-native-screens in these tests.
 
-- [ ] **Step 4: Run the checks.**
+- [x] **Step 4: Run the checks.**
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 ```bash
 git add mobile/navigation mobile/App.tsx mobile/screens mobile/__tests__ mobile/package.json mobile/package-lock.json CLAUDE.md
 git commit -m "refactor(mobile): native stack with typed RootTabParamList/SearchStackParamList and freezeOnBlur (H2-6.8)

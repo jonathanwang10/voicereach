@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'react-native';
@@ -19,34 +19,21 @@ import { ModernIndividualProfileScreen } from './screens/ModernIndividualProfile
 import { ModernVoiceAssistantScreen } from './screens/ModernVoiceAssistantScreen';
 import CategoriesScreen from './screens/CategoriesScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
+import type { RootTabParamList, SearchStackParamList } from './navigation/types';
 
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator();
+const Tab = createBottomTabNavigator<RootTabParamList>();
+const Stack = createNativeStackNavigator<SearchStackParamList>();
 
-// Stack navigator for Search tab
+// Hidden tabs that stop re-rendering while another is shown (H2-6.8). Record keeps
+// running (its 2:00 auto-stop runs from an effect), and so does the Assistant (its
+// socket and focus gating).
+export const FROZEN_TABS: ReadonlyArray<keyof RootTabParamList> = ['Search', 'Categories', 'Profile'];
+const frozen = (name: keyof RootTabParamList) => FROZEN_TABS.includes(name);
+
+// Search pushes the profile on a native stack
 function SearchStack() {
   return (
-    <Stack.Navigator
-      screenOptions={{
-        cardStyleInterpolator: CardStyleInterpolators.forHorizontalIOS,
-        gestureEnabled: true,
-        gestureDirection: 'horizontal',
-        transitionSpec: {
-          open: {
-            animation: 'timing',
-            config: {
-              duration: 300,
-            },
-          },
-          close: {
-            animation: 'timing',
-            config: {
-              duration: 250,
-            },
-          },
-        },
-      }}
-    >
+    <Stack.Navigator>
       <Stack.Screen
         name="SearchMain"
         component={ModernSearchScreen}
@@ -55,10 +42,7 @@ function SearchStack() {
       <Stack.Screen
         name="IndividualProfile"
         component={ModernIndividualProfileScreen}
-        options={{
-          title: 'Individual Profile',
-          cardStyleInterpolator: CardStyleInterpolators.forModalPresentationIOS,
-        }}
+        options={{ title: 'Individual Profile', presentation: 'card' }}
       />
     </Stack.Navigator>
   );
@@ -140,7 +124,7 @@ function AppContent() {
           <Tab.Screen
             name="Search"
             component={SearchStack}
-            options={{ title: 'Search', headerShown: false }}
+            options={{ title: 'Search', headerShown: false, freezeOnBlur: frozen('Search') }}
           />
           <Tab.Screen
             name="VoiceAssistant"
@@ -150,12 +134,12 @@ function AppContent() {
           <Tab.Screen 
             name="Categories" 
             component={CategoriesScreen}
-            options={{ title: 'Categories' }}
+            options={{ title: 'Categories', freezeOnBlur: frozen('Categories') }}
           />
           <Tab.Screen 
             name="Profile" 
             component={UserProfileScreen}
-            options={{ title: 'Profile' }}
+            options={{ title: 'Profile', freezeOnBlur: frozen('Profile') }}
           />
         </Tab.Navigator>
         <StatusBar style="auto" />
