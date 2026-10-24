@@ -42,17 +42,38 @@ init_sentry()
 # They stay at WARNING whatever LOG_LEVEL says.
 
 
+class TextFormatter(logging.Formatter):
+    """LOG_FORMAT=text: the plain line, and an exception's type instead of its traceback
+    (a message can echo the data that was sent), as JsonFormatter does."""
+
+    def __init__(self):
+        super().__init__("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    def formatException(self, exc_info) -> str:
+        return f"exc_type={exc_info[0].__name__}" if exc_info and exc_info[0] else ""
+
+    def formatStack(self, stack_info: str) -> str:
+        return ""
+
+
+# uvicorn gives these their own text handlers (propagate off) before it imports the app;
+# routed through the root handler instead, an unhandled exception logs its type only
+UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+
 def configure_logging(level_name: str | None = None, log_format: str | None = None) -> None:
     """Root logging at LOG_LEVEL (default INFO) unless something (uvicorn --log-config,
     pytest) already configured it: one JSON object per line (H2-8.1), or the old text
-    lines with LOG_FORMAT=text. Library loggers pinned to WARNING."""
+    lines with LOG_FORMAT=text. uvicorn's loggers go through the same handler. Library
+    loggers pinned to WARNING."""
     level = logging.getLevelName((level_name or "INFO").upper())
     handler = logging.StreamHandler()
-    if log_format == "text":
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
-    else:
-        handler.setFormatter(JsonFormatter())
+    handler.setFormatter(TextFormatter() if log_format == "text" else JsonFormatter())
     logging.basicConfig(level=level if isinstance(level, int) else logging.INFO, handlers=[handler])
+    for name in UVICORN_LOGGERS:
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = []
+        uvicorn_logger.propagate = True
     pin_library_loggers()
 
 

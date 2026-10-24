@@ -656,7 +656,9 @@ out of those.
   Python `logging` at `LOG_LEVEL` (default `INFO`). Never names, transcripts,
   questions, field values, GPS or a person's urgency. Exception messages aren't
   logged either, because an upstream error can echo the data that was sent.
-  - Logs are JSON, one object per line (`LOG_FORMAT=text` for plain lines). Each
+  - Logs are JSON, one object per line (`LOG_FORMAT=text` for plain lines),
+    uvicorn's own lines included; either way an exception logs only its type,
+    never its traceback or message (`main.configure_logging`). Each
     request ends with one summary line: `request_id`, method, the route
     *template* (never the path or query), status, `duration_ms`, the stage
     timings `whisper_ms` / `extract_ms` / `dup_ms`, and `usage` token counts per
