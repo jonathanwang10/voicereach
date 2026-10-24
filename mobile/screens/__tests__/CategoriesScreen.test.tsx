@@ -3,7 +3,7 @@
 // hardcoded list, marks essential fields), R-9 / C-44 (export opens the share sheet).
 import React from 'react';
 import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('../../services/api', () => ({
@@ -11,6 +11,7 @@ jest.mock('../../services/api', () => ({
 }));
 jest.mock('../../utils/csvExport', () => ({
   shareCsvExport: jest.fn(),
+  exportWarning: jest.requireActual('../../utils/csvExport').exportWarning,
 }));
 const mockRefresh = jest.fn();
 const mockCategories = [
@@ -200,18 +201,38 @@ describe('add category form (C-07, OD-2)', () => {
 });
 
 describe('export (C-44, R-9)', () => {
+  // The confirmation's button with this text (H2-6.13)
+  const pressInAlert = (text: string) =>
+    act(() => { alertSpy.mock.calls.at(-1)[2].find((b: any) => b.text === text)?.onPress?.(); });
+
   it('opens the share sheet through shareCsvExport, with no "ready for download" alert', async () => {
     (shareCsvExport as jest.Mock).mockResolvedValue(undefined);
     const screen = render(<CategoriesScreen />);
     fireEvent.press(screen.getByText('Export CSV'));
+    pressInAlert('Export');
     await waitFor(() => expect(shareCsvExport).toHaveBeenCalled());
-    expect(alertSpy).not.toHaveBeenCalled();
+    expect(alertSpy).toHaveBeenCalledTimes(1);   // only the confirmation
   });
 
   it('says when the export fails', async () => {
     (shareCsvExport as jest.Mock).mockRejectedValue(new Error('Sharing is not available on this device'));
     const screen = render(<CategoriesScreen />);
     fireEvent.press(screen.getByText('Export CSV'));
+    pressInAlert('Export');
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Export Failed', expect.any(String)));
+  });
+
+  it('asks before exporting and names the sensitive columns', () => {
+    const screen = render(<CategoriesScreen />);
+    fireEvent.press(screen.getByText('Export CSV'));
+    expect(alertSpy).toHaveBeenCalledWith('Export CSV?', expect.stringContaining('HIV status'), expect.any(Array));
+    expect(shareCsvExport).not.toHaveBeenCalled();
+  });
+
+  it('Cancel exports nothing', () => {
+    const screen = render(<CategoriesScreen />);
+    fireEvent.press(screen.getByText('Export CSV'));
+    pressInAlert('Cancel');
+    expect(shareCsvExport).not.toHaveBeenCalled();
   });
 });

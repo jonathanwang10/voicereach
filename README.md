@@ -148,9 +148,10 @@ kept, and a person saved meanwhile is skipped rather than overwritten). Every ca
 included, becomes an export column, part of each person's semantic-search text,
 and a field the voice assistant is shown (`services/field_registry.py`).
 
-**Export CSV** (Categories tab) writes the file to the app's cache and opens the
-share sheet, so the worker chooses where it goes; the cached copy is deleted
-when the sheet closes. Columns: one per category, then "Urgency Score" (the
+**Export CSV** (Categories tab) asks first, naming the fields marked sensitive,
+then writes the file to the app's cache and opens the share sheet, so the worker
+chooses where it goes; the cached copy is deleted when the sheet closes or when
+writing or sharing fails. Columns: one per category, then "Urgency Score" (the
 override if set) and "Last Seen". Cells that a spreadsheet would run as a
 formula (starting `=`, `+`, `-`, `@`) are prefixed with `'`. An empty database
 gives a header-only file.

@@ -1132,7 +1132,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - The Alert is `Alert.alert('Export CSV?', exportWarning(categories), [{ text: 'Cancel', style: 'cancel' }, { text: 'Export', onPress: runExport }])`.
 - The backend's `export_csv` audit entry is Phase 2's. Nothing to do here.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // csvExport.test.ts
@@ -1157,19 +1157,19 @@ it('asks before exporting and names the sensitive columns', () => {
 it('Cancel exports nothing', () => { /* press the Cancel button's onPress (if any) -> shareCsvExport not called */ });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest utils/__tests__/csvExport.test.ts screens/__tests__/CategoriesScreen.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces.
+- [x] **Step 3: Implement** as in Interfaces.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Docs.** README "Export CSV": "...asks first, naming the fields marked sensitive; the cached copy is deleted when the sheet closes or when writing or sharing fails."
+- [x] **Step 5: Docs.** README "Export CSV": "...asks first, naming the fields marked sensitive; the cached copy is deleted when the sheet closes or when writing or sharing fails."
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/utils mobile/screens README.md
 git commit -m "feat(mobile): confirm CSV export naming the sensitive columns (H2-6.13)

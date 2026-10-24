@@ -19,7 +19,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { errorMessage } from '../utils/errors';
-import { shareCsvExport } from '../utils/csvExport';
+import { exportWarning, shareCsvExport } from '../utils/csvExport';
 import { useCategories } from '../contexts/CategoryContext';
 
 // Categories are create-only (PRD): there is no edit, delete or on/off switch,
@@ -51,9 +51,17 @@ export default function CategoriesScreen() {
   const sensitiveFromName = looksSensitive(newCategoryName);
   const isSensitive = newCategorySensitive || sensitiveFromName;
 
-  // Writes the CSV to a cache file and opens the share sheet (R-9); the sheet is
-  // the feedback, so success needs no alert.
-  const handleExportCSV = async () => {
+  // Asks first, naming the sensitive fields (H2-6.13); then writes the CSV to a cache
+  // file and opens the share sheet (R-9). The sheet is the feedback, so success needs
+  // no alert.
+  const handleExportCSV = () => {
+    Alert.alert('Export CSV?', exportWarning(categories), [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Export', onPress: runExport },
+    ]);
+  };
+
+  const runExport = async () => {
     try {
       setIsExporting(true);
       await shareCsvExport();

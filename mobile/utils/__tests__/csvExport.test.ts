@@ -17,7 +17,7 @@ jest.mock('../../services/api', () => ({
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { api } from '../../services/api';
-import { exportCsvFileName, shareCsvExport } from '../csvExport';
+import { exportCsvFileName, exportWarning, shareCsvExport } from '../csvExport';
 
 const CSV = 'Name,Urgency Score,Last Seen\nAnn Lee,40,2025-01-01\n';
 
@@ -25,6 +25,33 @@ beforeEach(() => {
   jest.clearAllMocks();
   (api.exportCSV as jest.Mock).mockResolvedValue(CSV);
   (Sharing.isAvailableAsync as jest.Mock).mockResolvedValue(true);
+});
+
+const cat = (name: string): any => ({
+  id: name, name, display_name: null, type: 'text', priority: 'medium', urgency_weight: 0,
+  auto_trigger: false, is_required: false, is_preset: false,
+});
+
+it('names the sensitive columns (H2-6.13)', () => {
+  expect(exportWarning([cat('name'), { ...cat('hiv_status'), display_name: 'HIV status', is_sensitive: true }]))
+    .toBe("The file has every person's records, including these sensitive fields: HIV status. Share it only with someone allowed to see them.");
+});
+
+it('lists several sensitive columns in the given order', () => {
+  expect(exportWarning([{ ...cat('b'), is_sensitive: true }, { ...cat('a'), display_name: 'A field', is_sensitive: true }]))
+    .toContain('sensitive fields: B, A field.');   // categoryLabel title-cases a bare key
+});
+
+it('says nothing about sensitive fields when none are flagged', () => {
+  expect(exportWarning([cat('name'), cat('notes')]))
+    .toBe("The file has every person's records. Share it only with someone allowed to see them.");
+});
+
+it('deletes the cached file when writing it fails', async () => {
+  (FileSystem.writeAsStringAsync as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+  await expect(shareCsvExport()).rejects.toThrow('disk full');
+  expect(FileSystem.deleteAsync).toHaveBeenCalled();
+  expect(Sharing.shareAsync).not.toHaveBeenCalled();
 });
 
 it('names the file with the date and time', () => {

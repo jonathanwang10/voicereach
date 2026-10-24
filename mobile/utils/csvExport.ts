@@ -3,6 +3,7 @@
 // The file is deleted once the sheet closes, and the contents are never logged:
 // every row is personal and medical data.
 import { api } from '../services/api';
+import { Category, categoryLabel } from './categoryPayload';
 
 type FileSystemModule = typeof import('expo-file-system');
 type SharingModule = typeof import('expo-sharing');
@@ -13,6 +14,15 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export const exportCsvFileName = (now: Date = new Date()): string =>
   `individuals_export_${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
   `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.csv`;
+
+// The confirmation before an export (H2-6.13): the file holds everyone, so it names
+// the fields marked sensitive
+export const exportWarning = (categories: Category[]): string => {
+  const labels = categories.filter(c => c.is_sensitive).map(categoryLabel);
+  return labels.length
+    ? `The file has every person's records, including these sensitive fields: ${labels.join(', ')}. Share it only with someone allowed to see them.`
+    : "The file has every person's records. Share it only with someone allowed to see them.";
+};
 
 // expo-sharing is a native module that resolves its native half when imported. A
 // dev build made before it was added has no such half, and a top-level import
@@ -37,8 +47,9 @@ export const shareCsvExport = async (): Promise<void> => {
   }
   const csv = await api.exportCSV();
   const uri = `${FileSystem.cacheDirectory}${exportCsvFileName()}`;
-  await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
   try {
+    // Inside the try: a failed write can leave a partial file behind
+    await FileSystem.writeAsStringAsync(uri, csv, { encoding: FileSystem.EncodingType.UTF8 });
     await Sharing.shareAsync(uri, {
       mimeType: 'text/csv',
       UTI: 'public.comma-separated-values-text',
