@@ -57,6 +57,7 @@ function mockScreen(label: string) {
 
 import App from '../App';
 import { api } from '../services/api';
+import { queryClient } from '../services/queryClient';
 
 const user = { id: 'u1', email: 'demo@sfgov.org' };
 const session = { access_token: 't', user };
@@ -66,7 +67,10 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  queryClient.clear();
+});
 
 it('a failed sign-in blocks the app with Retry, and Retry opens the tabs', async () => {
   mockAutoLogin.mockResolvedValueOnce({ error: new Error('Invalid login credentials') });
@@ -96,6 +100,16 @@ it('after the worker signs out the app stays signed out until they sign in again
   fireEvent.press(screen.getByText('Sign In'));
   await waitFor(() => screen.getByText('Record screen'));
   expect(mockAutoLogin).toHaveBeenCalledTimes(2);
+});
+
+it('Sign Out clears cached case data from memory (H2-6.6)', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  queryClient.setQueryData(['individual', 'p1'], { name: 'Ann Lee' });
+  fireEvent.press(screen.getByText('Profile'));
+  await act(async () => { fireEvent.press(await screen.findByText('Profile Sign Out')); });
+  await waitFor(() => expect(queryClient.getQueryData(['individual', 'p1'])).toBeUndefined());
 });
 
 // Fix round 1: another phone signing out (or a failed refresh) emits SIGNED_OUT

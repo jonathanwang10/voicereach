@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
@@ -8,6 +8,9 @@ import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'rea
 import Toast from 'react-native-toast-message';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CategoryProvider } from './contexts/CategoryContext';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient, wireQueryManagers } from './services/queryClient';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Import screens
 import { ModernRecordScreen } from './screens/ModernRecordScreen';
@@ -63,6 +66,13 @@ function SearchStack() {
 
 function AppContent() {
   const { user, loading, error, retry } = useAuth();
+
+  // Refetch on foreground and on reconnect (H2-6.6)
+  useEffect(() => wireQueryManagers(), []);
+  // Signed out: no person from this session may come back from the memory cache
+  useEffect(() => {
+    if (!user) queryClient.clear();
+  }, [user]);
 
   if (loading) {
     return (
@@ -156,10 +166,14 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-      <Toast />
-    </AuthProvider>
+    <ErrorBoundary onReset={() => queryClient.clear()}>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AppContent />
+          <Toast />
+        </AuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

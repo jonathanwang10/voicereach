@@ -606,7 +606,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `AppContent` runs `useEffect(() => wireQueryManagers(), [])`.
   - It calls `queryClient.clear()` whenever `user` becomes null (Sign Out).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // services/__tests__/queryClient.test.ts
@@ -657,27 +657,27 @@ it('Sign Out clears cached case data from memory', async () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest services/__tests__/queryClient.test.ts components/__tests__/ErrorBoundary.test.tsx __tests__/App.test.tsx`
 Expected: FAIL (missing modules).
 
-- [ ] **Step 3: Install and implement.**
+- [x] **Step 3: Install and implement.**
   - `cd mobile && npm install @tanstack/react-query@^5.90.5 && npx expo install @react-native-community/netinfo` (expect `11.4.1`).
   - Add to `test/setup.js`: `jest.mock('@react-native-community/netinfo', () => require('@react-native-community/netinfo/jest/netinfo-mock.js'))`.
   - Add `@tanstack/.*` to the `transformIgnorePatterns` allowlist.
   - Write the four files and wire `App.tsx` as in Interfaces.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest`
 Expected: PASS, including the existing App tests (`a failed sign-in blocks the app with Retry...`).
 
-- [ ] **Step 5: Docs and device check.**
+- [x] **Step 5: Docs and device check.**
   - README **On the phone**: "Server data is cached by TanStack Query in memory only. There is no persister, so nothing about a person is written to the phone's storage. The cache is cleared on Sign Out. It refetches when the app returns to the foreground and when the network comes back."
   - CLAUDE.md "App structure": add "Server state: TanStack Query, memory only (`mobile/services/queryClient.ts`, keys in `services/queries.ts`); never add a persister."
   - Manual steps:
     > (H2-6.6) Open Search. Background the app, change a person's urgency override from another phone, and return. Expect: the list updates without pulling. Turn Airplane Mode on, then off, on the profile screen. Expect: the profile refetches once the connection is back. Offline at launch, Search shows "Couldn't load — tap to retry", not an endless spinner.
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/App.tsx mobile/services mobile/components/ErrorBoundary.tsx mobile/components/__tests__/ErrorBoundary.test.tsx mobile/test mobile/__tests__ mobile/package.json mobile/package-lock.json README.md CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "feat(mobile): TanStack Query in memory with focus/online refetch and a root ErrorBoundary (H2-6.6, H2-6.7)

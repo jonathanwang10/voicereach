@@ -75,7 +75,8 @@ Every request carries the signed-in user's Supabase access token (see
 [Auth](#auth)). All app data access goes through these backend routes
 (`mobile/services/api.ts`): the Search list, the manual urgency override and
 delete included. The app's Supabase client is used only to sign in, and the
-backend reads and writes the tables with the service key.
+backend reads and writes the tables with the service key. On the phone, server data
+is cached by TanStack Query in memory only (`mobile/services/queryClient.ts`).
 
 **Deleting a person** (profile screen, trash icon) has a short undo window. The
 person disappears from Search at once and a "Tap to undo" toast shows for about
@@ -633,6 +634,10 @@ out of those.
   iOS Keychain (this device only, not in iCloud Keychain or backups;
   `mobile/services/secureSessionStorage.ts`). A plaintext session left by an older
   build is encrypted in place on first read.
+- Server data is cached by TanStack Query in memory only. There is no persister,
+  so nothing about a person is written to the phone's storage. The cache is
+  cleared on Sign Out. It refetches when the app returns to the foreground and
+  when the network comes back.
 
 ## Testing
 

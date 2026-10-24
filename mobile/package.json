@@ -11,11 +11,13 @@
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
     "@react-native-async-storage/async-storage": "2.1.2",
+    "@react-native-community/netinfo": "11.4.1",
     "@react-native-community/slider": "^4.5.6",
     "@react-navigation/bottom-tabs": "^7.4.4",
     "@react-navigation/native": "^7.1.16",
     "@react-navigation/stack": "^7.4.4",
     "@supabase/supabase-js": "^2.53.0",
+    "@tanstack/react-query": "^5.104.5",
     "aes-js": "^3.1.2",
     "expo": "~53.0.27",
     "expo-audio": "~0.4.9",
@@ -54,7 +56,7 @@
       "<rootDir>/test/setup.js"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|isows|@supabase/.*|ws))"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|isows|@supabase/.*|@tanstack/.*|ws))"
     ]
   }
 }

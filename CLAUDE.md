@@ -125,7 +125,9 @@ Categories, Profile. API client: `mobile/services/api.ts`. All data access goes
 through the backend; the app's Supabase client is for auth only (never call
 `supabase.from` in mobile/). Delete is delayed for an undo window
 (`mobile/utils/delayedDelete.ts`). Only `mobile/services/audioSession.ts` changes the
-audio session; the Assistant streams the mic over the proxy (no upload).
+audio session; the Assistant streams the mic over the proxy (no upload). Server
+state: TanStack Query, memory only (`mobile/services/queryClient.ts`, keys in
+`services/queries.ts`); never add a persister.
 
 ## Git
 

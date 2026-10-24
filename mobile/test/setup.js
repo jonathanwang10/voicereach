@@ -24,6 +24,9 @@ if (!globalThis.crypto?.getRandomValues) {
   Object.defineProperty(globalThis, 'crypto', { value: require('crypto').webcrypto, configurable: true });
 }
 
+// H2-6.6: NetInfo's own mock (isConnected true, addEventListener a jest.fn)
+jest.mock('@react-native-community/netinfo', () => require('@react-native-community/netinfo/jest/netinfo-mock.js'));
+
 // expo-crypto is a native module; Node's crypto gives the same v4 UUIDs.
 jest.mock('expo-crypto', () => ({ randomUUID: () => require('crypto').randomUUID() }));
 
