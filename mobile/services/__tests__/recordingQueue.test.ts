@@ -25,6 +25,11 @@ jest.mock('expo-file-system', () => ({
   moveAsync: jest.fn(async () => undefined),
   deleteAsync: jest.fn(async () => undefined),
 }));
+// The real api module imports supabase-js, whose WebSocket shim throws on Node 20 (no
+// global WebSocket): only ApiError is wanted from it
+jest.mock('../supabase', () => ({
+  supabase: { auth: {} }, autoLogin: jest.fn(), isSignedOutByUser: () => false,
+}));
 jest.mock('../api', () => {
   const actual = jest.requireActual('../api');
   return { ApiError: actual.ApiError, api: { uploadRecording: jest.fn() } };
