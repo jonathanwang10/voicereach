@@ -18,7 +18,10 @@
         "NSLocationWhenInUseUsageDescription": "This app needs access to location to capture GPS coordinates when recording interactions with homeless individuals.",
         "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice notes about interactions with homeless individuals for documentation purposes."
       },
-      "bundleIdentifier": "com.anonymous.sf-homeless-outreach"
+      "bundleIdentifier": "com.anonymous.sf-homeless-outreach",
+      "entitlements": {
+        "com.apple.developer.default-data-protection": "NSFileProtectionComplete"
+      }
     },
     "android": {
       "adaptiveIcon": {

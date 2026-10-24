@@ -664,6 +664,18 @@ out of those.
 - When the app leaves the foreground, an opaque VoiceReach screen covers it
   (modals included), so the app switcher's snapshot shows no case data.
 
+**Audio at rest** (H2-7.8)
+
+- On the phone: every file the app writes (the queued audio, Expo's multipart
+  upload copy, the queue's SQLite database) has iOS Data Protection Complete, so
+  it can't be read while the phone is locked. The queued file and Expo's copy are
+  deleted once the server answers 202.
+- On the server: the audio is in the private `recordings` bucket only until it is
+  transcribed, then deleted; `recordings` rows are purged after 7 days.
+- A deliberate trade-off: `documentDirectory` is included in device backups, so a
+  backup taken while a recording is still queued contains it. The cache was
+  rejected because iOS may clear it before an offline note is uploaded.
+
 ## Testing
 
 ```bash

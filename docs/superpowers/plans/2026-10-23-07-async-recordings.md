@@ -1114,7 +1114,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `expo.ios.entitlements = { "com.apple.developer.default-data-protection": "NSFileProtectionComplete" }`. It applies to every file the app creates: the queued audio, Expo's `Caches/uploads` copy and the SQLite database.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import appJson from '../app.json';
@@ -1123,19 +1123,19 @@ it('gives every app file iOS Data Protection Complete (H2-7.8)', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd mobile && npx jest __tests__/appConfig.test.ts`
 Expected: FAIL (`entitlements` undefined).
 
-- [ ] **Step 3: Add the entitlement to `app.json`**
+- [x] **Step 3: Add the entitlement to `app.json`**
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `cd mobile && npx jest __tests__/appConfig.test.ts && npx tsc --noEmit`
 Expected: PASS. If `resolveJsonModule` isn't on, read the file with `fs` instead of importing it.
 
-- [ ] **Step 5: README**
+- [x] **Step 5: README**
 
 In the privacy section, add a short "Audio at rest" paragraph:
 - on the phone: Data Protection Complete, which makes the files unreadable while the phone is locked; the queue file and Expo's multipart copy are deleted on a 202;
@@ -1144,7 +1144,7 @@ In the privacy section, add a short "Audio at rest" paragraph:
 
 Remove "No offline support" from Shortcuts if Task 8 hasn't already.
 
-- [ ] **Step 6: Append to the manual steps**
+- [x] **Step 6: Append to the manual steps**
 
 Under **Owner actions outside code**: "Enable the Data Protection capability for the App ID (Apple Developer → Identifiers; needs the paid account), then `cd mobile && npx expo prebuild --platform ios` and check that `ios/SFHomelessOutreach/SFHomelessOutreach.entitlements` has `com.apple.developer.default-data-protection = NSFileProtectionComplete` and that `CODE_SIGN_ENTITLEMENTS` points at it; commit the `ios/` diff."
 
@@ -1157,7 +1157,7 @@ Under **Device checks** (physical iPhone, dev build):
 - **P7-6 No audio left behind.** After P7-1, Xcode → Devices → the app → Download Container. Expected: `Documents/recordings/` and `Library/Caches/uploads/` are empty. In Supabase Storage, the `recordings` bucket has no object for a transcribed recording.
 - **P7-7 Save and discard clean up.** Save one draft and discard another. Expected: both rows are gone from `recordings` and the badge drops to 0.
 
-- [ ] **Step 7: Run the full checks and commit**
+- [x] **Step 7: Run the full checks and commit**
 
 Run: `python -m pytest -q && ruff check backend --select F,E9 && (cd mobile && npx tsc --noEmit && npx jest)`
 Expected: all pass.
