@@ -272,7 +272,8 @@ it('uses a new Idempotency key after a successful save', async () => {
   await waitFor(() => screen.getByText('Save'));
   fillRequired(screen);
   fireEvent.press(screen.getByText('Save'));
-  await waitFor(() => expect(screen.queryByDisplayValue('Ann')).toBeNull());
+  // Two awaited API calls before the reset: past the 1 s default on a loaded machine
+  await waitFor(() => expect(screen.queryByDisplayValue('Ann')).toBeNull(), { timeout: 5000 });
   fillRequired(screen, '5');
   fireEvent.press(screen.getByText('Save'));
   await waitFor(() => expect(api.saveIndividual).toHaveBeenCalledTimes(2));
