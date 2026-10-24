@@ -23,7 +23,6 @@ from db.models import (
 from services.urgency_calculator import calculate_urgency_score, get_display_urgency_score
 from services.field_registry import normalize_individual_data
 from services.search_matching import MATCH_TIER, match_individual
-from services import context_service
 from db.client import fetch_all, run_db
 
 
@@ -116,7 +115,6 @@ def rescore_all_individuals(supabase: Client) -> int:
       (never `urgency_override`), and skips a row whose version changed since the
       read, so a save in between is never overwritten. The `updated_at` trigger
       bumps each re-scored row.
-    - Clears the assistant's context cache if anything changed.
     Returns the number of rows the database updated.
     """
     individuals = fetch_all(lambda: supabase.table("individuals")
@@ -133,8 +131,6 @@ def rescore_all_individuals(supabase: Client) -> int:
     for start in range(0, len(changed), RESCORE_BATCH_SIZE):
         batch = changed[start:start + RESCORE_BATCH_SIZE]
         updated += supabase.rpc("rescore_batch", {"p_rows": batch}).execute().data or 0
-    if updated:
-        context_service.invalidate_context_cache()
     return updated
 
 

@@ -66,8 +66,6 @@ def test_signatures_match_the_roadmap():
                                                        retrieval.recent_interactions, retrieval.most_urgent))
 
 
-def test_retrieval_imports_nothing_from_context_service():
-    assert "context_service" not in inspect.getsource(retrieval)
 
 
 def test_search_people_returns_compact_summaries_without_sensitive_facts(patched, monkeypatch):

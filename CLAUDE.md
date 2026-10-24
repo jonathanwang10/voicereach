@@ -99,8 +99,9 @@ only after `npx expo prebuild --platform ios`.
   the proxy releases the slot in `finally`).
   Large bodies are capped in `BODY_LIMITS` (`backend/main.py`).
   The proxy forwards only the client events in `services/realtime_guard.py`; database
-  text goes to the model only as a delimited `user` item (`build_context_item`), never
-  as a `system` message.
+  text goes to the model only as a delimited tool output (`delimit_reference_data`),
+  produced on the server by the four read-only tools in `services/assistant_tools.py`;
+  the client can never send `function_call_output`, and nothing goes as a `system` message.
 - **Search** (`search_individuals_hybrid`): reciprocal rank fusion (k = 60) of trigram
   name, full-text (values, never keys) and pgvector cosine legs; an exact name match is
   always first; no semantic leg under 3 characters.

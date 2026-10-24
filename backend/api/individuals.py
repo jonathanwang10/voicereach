@@ -27,7 +27,6 @@ from services.individual_service import (IndividualNotFound, IndividualService, 
                                          VersionConflictError)
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
-from services.context_service import invalidate_context_cache
 from services import model_config
 from services.audit import record_audit
 from services.duplicate_decisions import record_duplicate_decision
@@ -144,8 +143,6 @@ async def save_individual(
             expected_version=request.expected_version,
             client_request_id=request_id,
         )
-
-        invalidate_context_cache()
 
         decision = request.duplicate_decision
         if decision is not None:
@@ -319,7 +316,6 @@ async def update_urgency_override(
                 detail=f"Individual not found: {individual_id}"
             )
 
-        invalidate_context_cache()
         await run_db(lambda: record_audit(
             supabase, user_id=user_id, device_id=device_id, action="override_urgency",
             entity_type="individual", entity_id=str(individual_id),
@@ -340,8 +336,7 @@ async def delete_individual(
     device_id: Optional[str] = Depends(get_device_id),
 ):
     """
-    Delete an individual. FK cascades remove their interactions and embeddings;
-    the voice-assistant context cache is invalidated so it stops serving them.
+    Delete an individual. FK cascades remove their interactions and embeddings.
     404 if there is no such individual.
     """
     try:
@@ -354,7 +349,6 @@ async def delete_individual(
                 detail=f"Individual not found: {individual_id}"
             )
 
-        invalidate_context_cache()
         await run_db(lambda: record_audit(supabase, user_id=user_id, device_id=device_id, action="delete_individual",
                                           entity_type="individual", entity_id=str(individual_id)))
         return DeleteIndividualResponse(id=individual_id, deleted=True)

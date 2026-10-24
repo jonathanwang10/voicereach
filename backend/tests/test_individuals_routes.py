@@ -117,14 +117,6 @@ def test_without_location_the_visit_has_none():
     assert r.json()["interaction"]["has_transcription"] is False
 
 
-def test_save_invalidates_the_assistant_cache():
-    sb = _db(existing=None)
-    with patch("api.individuals.invalidate_context_cache") as invalidate:
-        r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70, "weight": 150}})
-    assert r.status_code == 200, r.text
-    invalidate.assert_called_once_with()
-
-
 def test_missing_required_field_is_422_and_writes_nothing():
     sb = _db(existing=None)
     r = _call(sb, "POST", "/api/individuals", json={"data": {"name": "Bo", "height": 70}})
@@ -245,11 +237,9 @@ def _db_rpc_error(error, existing=EXISTING):
 
 def test_version_conflict_is_409_with_the_exact_message():
     sb = _db_rpc_error(pg_error("P0409"))
-    with patch("api.individuals.invalidate_context_cache") as invalidate:
-        r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150}, expected_version=1)
+    r = _merge(sb, {"name": "Ann Lee", "height": 70, "weight": 150}, expected_version=1)
     assert r.status_code == 409
     assert r.json() == {"detail": "This person was changed by someone else. Reload and try again."}
-    invalidate.assert_not_called()
 
 
 def test_target_deleted_before_the_rpc_is_404():       # P0002 from the function
@@ -420,36 +410,32 @@ def test_history_row_without_changes_shows_an_empty_dict():
 # --- PUT /api/individuals/{id}/urgency-override -----------------------------------------
 
 def _override(sb, value):
-    with patch("api.individuals.invalidate_context_cache") as invalidate:
-        r = _call(sb, "PUT", f"/api/individuals/{ID}/urgency-override", json={"urgency_override": value})
-    return r, invalidate
+    return _call(sb, "PUT", f"/api/individuals/{ID}/urgency-override", json={"urgency_override": value})
 
 
 @pytest.mark.parametrize("value,display", [(85, 85), (0, 0), (100, 100), (None, 45)])
 def test_override_writes_only_the_override_and_returns_the_stored_scores(value, display):
     sb = FakeSupabase().on("individuals", "update", data=lambda call: [
         {"id": ID, "urgency_score": 45, **call.payload}])
-    r, invalidate = _override(sb, value)
+    r = _override(sb, value)
     assert r.status_code == 200, r.text
     [update] = sb.calls_to("individuals", "update")
     assert update.payload == {"urgency_override": value}
     assert update.mod("eq") == (("id", ID), {})
     assert r.json() == {"urgency_score": 45, "urgency_override": value, "display_score": display}
-    invalidate.assert_called_once_with()
 
 
 def test_override_for_someone_who_does_not_exist_is_404():
     sb = FakeSupabase().on("individuals", "update", data=[])
-    r, invalidate = _override(sb, 50)
+    r = _override(sb, 50)
     assert r.status_code == 404
     assert r.json() == {"detail": f"Individual not found: {ID}"}
-    invalidate.assert_not_called()
 
 
 @pytest.mark.parametrize("value", [-1, 101])
 def test_override_out_of_range_is_422_without_touching_the_database(value):
     sb = FakeSupabase()
-    r, _ = _override(sb, value)
+    r = _override(sb, value)
     assert r.status_code == 422
     assert sb.calls == []
 

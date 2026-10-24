@@ -40,7 +40,7 @@ Environment variables (`backend/.env`):
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 | `REALTIME_MAX_SESSIONS_PER_USER`, `REALTIME_MAX_SESSIONS_TOTAL` | Optional caps on open realtime sessions per phone (default 2) and per process (default 20) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |
-| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL`, `DUPLICATE_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime`, `text-embedding-3-large`, `gpt-4o-mini`; `services/model_config.py`) |
+| `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL`, `DUPLICATE_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime-2.1`, `text-embedding-3-large`, `gpt-4o-mini`; `services/model_config.py`) |
 
 Then: API at `http://localhost:8001`, health check at `/health`. The interactive
 docs (`/docs`, `/redoc`, `/openapi.json`) are off unless `ENABLE_API_DOCS=1`. `backend/.env` is loaded once at startup (`load_dotenv()` never
@@ -67,7 +67,7 @@ services/
   urgency_calculator.py         Urgency score and display score
   validation_helper.py          Normalise, then check required fields
   embedding_service.py          text-embedding-3-large, the text hash and the query cache
-  context_service.py            Name extraction and DB context for the assistant
+  assistant_tools.py            Read-only retrieval tools the realtime proxy runs
 db/models.py         Pydantic request/response models
 scripts/backfill_embeddings.py  Embed every individual
 scripts/rescore_urgency.py      Re-score every individual (run after upgrading)
@@ -180,7 +180,7 @@ Supabase's API row limit (1000 by default).
 `supabase/schema.sql`) sets it on every update.
 
 **`DELETE /api/individuals/{id}`** — Deletes the person (FK cascades remove their
-interactions and embeddings) and clears the assistant context cache. Returns
+interactions and embeddings). Returns
 `{"id", "deleted": true}`; 404 if absent, 422 for a bad UUID.
 
 **`POST /api/individuals/check-duplicates`** — Body: the same field dictionary as
@@ -216,9 +216,8 @@ A category with `urgency_weight > 0` or `auto_trigger` changes everyone's
 urgency (every weighted category is in the denominator), so after the insert
 `rescore_all_individuals` (`services/individual_service.py`) recomputes every
 stored `urgency_score` and writes only the rows that changed (the `updated_at`
-trigger bumps them; `urgency_override` is never touched), then clears the
-assistant's context cache. It reads up to Supabase's API row limit (1000 by
-default). If the re-score fails, the error type is logged and the 201 stands;
+trigger bumps them; `urgency_override` is never touched). It reads every row
+in pages (`fetch_all`). If the re-score fails, the error type is logged and the 201 stands;
 `scripts/rescore_urgency.py` runs the same function, and is also the step to
 run after upgrading a database (next to `scripts/backfill_embeddings.py`).
 
@@ -267,17 +266,17 @@ vector of the wrong length is rejected, not stored.
 ### Voice assistant
 
 - **`WS /api/voice-assistant/realtime/ws`** (in `main.py`) — Proxy to OpenAI's
-  `gpt-realtime`. The server sets the session once; client frames pass through
+  `REALTIME_MODEL` (default `gpt-realtime-2.1`). The server sets the session once; client frames pass through
   the allowlist in `services/realtime_guard.py` (others get an `event_not_allowed`
-  error event). A text message that names someone in the database is preceded by
-  a `user` item with id `ctx_<24 hex>` holding their records as JSON, fenced as
-  REFERENCE DATA (never a `system` message). Close codes after `accept()`: 1000
+  error event). The session declares four read-only tools (`search_people`,
+  `get_person`, `recent_interactions`, `most_urgent`; `services/assistant_tools.py`);
+  the proxy runs the model's calls on the server and sends each result back as a
+  `function_call_output` fenced as REFERENCE DATA (never a `system` message).
+  A client can't send `function_call_output` itself. Close codes after `accept()`: 1000
   normal, 1008 session time limit or too many connects, 1011 upstream or Auth
   outage.
 - **`POST /api/voice-assistant/transcribe`** — Multipart field `audio` (≤ 3 MB,
   else 413); returns `{"transcription", "status"}`. Whisper only.
-- **`POST /api/voice-assistant/context`** — `{"message"}`; returns `context`,
-  `individuals_found` and `names_detected`.
 - **`GET /api/voice-assistant/guidelines`** — Static safety guidance.
 
 The pipeline end to end is in [`docs/VOICE_PIPELINE.md`](../docs/VOICE_PIPELINE.md).
@@ -316,7 +315,7 @@ The suite is offline: OpenAI is mocked, Supabase is faked (`tests/helpers.py`:
 the strict `FakeSupabase` raises on any query a test didn't script and records
 every insert/update payload), and a fake user stands in for token verification
 except in tests marked `real_auth`. `tests/conftest.py` resets rate limits, the
-assistant context cache, the token cache and `app.dependency_overrides` around
+token cache, the shared clients and `app.dependency_overrides` around
 every test. Tests are named by subject (`test_individuals_routes.py`,
 `test_transcribe_route.py`, `test_schema_contract.py`, ...).
 
@@ -359,10 +358,6 @@ request; a missing or invalid value uses the default:
 | `RATE_LIMIT_DUPLICATE_CHECK_PER_MIN` | 30 | `POST /api/individuals/check-duplicates` |
 | `RATE_LIMIT_WS_CONNECT_PER_MIN` | 10 | the realtime WebSocket (close 1008) |
 
-The assistant's context lookup (`services/context_service.py`) reads at most the
-first 2,000 characters of a message, looks up at most 3 names and keeps at most
-3 people per name, with its database calls in a worker thread.
-
 ## Notes
 
 - CORS: browser origins come from `CORS_ALLOW_ORIGINS` (comma-separated; unset
@@ -376,7 +371,7 @@ first 2,000 characters of a message, looks up at most 3 names and keeps at most
 - Audio is not stored by the backend: it arrives inline, goes to a temp file for
   Whisper and the file is deleted on every path (`openai_service.temp_audio_file`).
   It does leave the system: the audio goes to OpenAI, and so do transcripts,
-  duplicate candidates' records and the assistant's context. The transcript is
+  duplicate candidates' records and the assistant's tool results. The transcript is
   saved with the interaction. See "Data leaving the system" in the root README.
 - Logging: Python `logging` at `LOG_LEVEL` (default `INFO`), configured in
   `main.configure_logging`. Logs carry lifecycle events, counts, ids and error

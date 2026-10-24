@@ -65,7 +65,7 @@ requirements.txt  Backend dependencies (pinned); requirements-dev.txt adds test 
                   │                                          │
    3. ask         │  WS /api/voice-assistant/realtime/ws     │
                   │    └─ proxy to OpenAI Realtime API,      │
-                  │       primed with DB context             │
+                  │       with read-only retrieval tools     │
                   └───────────────┬──────────────────────────┘
                                   ▼
                            Supabase Postgres
@@ -99,7 +99,7 @@ Three separate AI capabilities, easy to confuse:
 | Transcribe + extract fields | `gpt-transcribe` (`TRANSCRIBE_MODEL`, with a fixed SF place/street vocabulary prompt, no person names) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
 | Score duplicate candidates | `gpt-4o-mini` (`DUPLICATE_MODEL`) | `services/duplicate_detection_service.py` |
 | Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
-| Live spoken assistant | `gpt-realtime` (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
+| Live spoken assistant | `gpt-realtime-2.1` with server-side read-only retrieval tools (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
 
 The model names live in `backend/services/model_config.py`; each env var
 overrides its default (blank or unset = the default).
@@ -255,7 +255,7 @@ python -m pip install -r requirements.txt        # add -r requirements-dev.txt f
 cp backend/.env.example backend/.env             # fill in the values below
 
 # Run from inside backend/ -- its modules import each other absolutely
-# (e.g. `from services.context_service import ...`), so backend/ must be on
+# (e.g. `from services.retrieval import ...`), so backend/ must be on
 # sys.path. The root main.py shim exists for Railway, not for local dev.
 cd backend && python -m uvicorn main:app --reload --port 8001
 # On a physical phone, start with --host 0.0.0.0 so the device can reach it:
@@ -391,7 +391,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory over the whole table (demo scale; see [Search](#search)) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
 | `GET` | `/api/individuals/{id}/interactions` | Encounter history |
-| `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings, clears the assistant cache); 404 if absent |
+| `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings); 404 if absent |
 | `PUT` | `/api/individuals/{id}/urgency-override` | Set or clear (`null`) the manual urgency override |
 | `POST` | `/api/individuals/check-duplicates` | Duplicate candidates for manually entered data |
 | `GET` / `POST` | `/api/categories` | Read / define collected fields |
@@ -402,7 +402,6 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `POST` | `/api/embeddings/generate-all` | Embed every stale person and visit (as `backfill_embeddings.py --stale`) |
 | `WS` | `/api/voice-assistant/realtime/ws` | Realtime assistant proxy (defined in `main.py`) |
 | `POST` | `/api/voice-assistant/transcribe` | Whisper-only transcription of an assistant question (multipart `audio`) |
-| `POST` | `/api/voice-assistant/context` | DB context for the names in a message |
 | `GET` | `/api/voice-assistant/guidelines` | Static safety guidelines |
 
 `POST /api/transcribe` takes `{"audio_data": "<base64, data-URL prefix optional>"}`
@@ -592,8 +591,8 @@ is logged.
 | A person's name and labelled fields (`build_embedding_text`); never a sensitive (`is_sensitive`) field | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
 | Each visit's transcript | OpenAI embeddings (`EMBEDDING_MODEL`) | After a save that carried a transcript | Supabase: the vector only, in `interaction_embeddings` (the transcript is already stored with the interaction). It was already sent to OpenAI to be transcribed, so this sends nothing new. |
 | A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
-| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`gpt-realtime`) | Each question | Phone: the recording is deleted from the cache once transcribed, when transcription or stopping fails, or when the screen closes while recording starts (the microphone is stopped too). OpenAI: as above. |
-| Records of the people a question names: up to 3 names × 3 people, labelled fields and urgency, each value cut to 100 characters | The OpenAI Realtime API, as a delimited reference-data item | Each question that names someone in the database | For that assistant session. |
+| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`REALTIME_MODEL`, default `gpt-realtime-2.1`) | Each question | Phone: the recording is deleted from the cache once transcribed, when transcription or stopping fails, or when the screen closes while recording starts (the microphone is stopped too). OpenAI: as above. |
+| Records returned by the assistant's tools (`search_people`, `get_person`, `recent_interactions`, `most_urgent`), each value clipped | The OpenAI Realtime API, as a delimited tool output | Each tool call | For that assistant session. |
 | Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions, their embeddings and their visit embeddings. Once the owner schedules `coarsen_old_locations`, interaction locations older than 30 days are rounded to about 110 m with the house number removed; the newest visit and the person's last location stay exact. |
 | Who did what to which record: user id, device id, action, record id, a count or an override value (`audit_log`) | Supabase (Postgres) | Viewing a profile, export, delete, an urgency override, a merge, a new person, a new category | Kept after the person is deleted (no names or field values; the table is append-only). |
 | The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; the session also on the phone. |
@@ -602,7 +601,7 @@ is logged.
 
 A custom category of type `location` is an ordinary field: its value lives in
 `data`, so it goes to GPT-4o (extraction and duplicate checks), into the
-embedding text and into the assistant's context like any other field. Only the
+embedding text and into the assistant's tool results like any other field. Only the
 encounter's GPS position (`last_location`, the interaction's `location`) is kept
 out of those.
 
@@ -617,8 +616,8 @@ out of those.
     `INFO`/`DEBUG` they log request URLs (PostgREST filters carry names) and
     request bodies.
   - uvicorn's access log drops query strings, so `?search=` terms aren't in it.
-  - `backend/tests/test_no_pii_logs.py` drives the save, transcribe, search,
-    context and WebSocket paths with a sentinel person and fails if any of it
+  - `backend/tests/test_no_pii_logs.py` drives the save, transcribe, search
+    and WebSocket (including a tool call) paths with a sentinel person and fails if any of it
     reaches a log or stdout/stderr.
 - **Not covered.** Anything in front of the backend (a hosting platform's HTTP
   log, a reverse proxy) may record full URLs, including `?search=` terms.
@@ -639,7 +638,7 @@ fakes (`backend/tests/helpers.py`; the strict `FakeSupabase` fails any query a
 test didn't script, so tests assert on what was actually written), and a fake
 user stands in for token verification except in tests marked `real_auth`.
 `backend/tests/conftest.py` resets process-wide state (rate-limit windows, the
-assistant's context cache, the token cache, `app.dependency_overrides`) around
+token cache, the shared clients, `app.dependency_overrides`) around
 every test, so the order tests run in doesn't matter. A test that builds a real
 Supabase client fails (see `pytest.ini`).
 

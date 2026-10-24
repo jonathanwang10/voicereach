@@ -33,25 +33,21 @@ def test_service_delete_returns_false_when_no_row():
     assert asyncio.run(IndividualService(sb).delete_individual(IND_ID)) is False
 
 
-def test_delete_route_deletes_and_invalidates_the_assistant_cache():
+def test_delete_route_deletes():
     with patch("api.individuals.get_supabase"), \
-         patch("api.individuals.IndividualService") as svc, \
-         patch("api.individuals.invalidate_context_cache") as invalidate:
+         patch("api.individuals.IndividualService") as svc:
         svc.return_value.delete_individual = MagicMock(side_effect=lambda _id: _async(True))
         r = _client().delete(f"/api/individuals/{IND_ID}")
     assert r.status_code == 200
     assert r.json() == {"id": IND_ID, "deleted": True}
-    invalidate.assert_called_once()
 
 
-def test_delete_route_404_and_no_cache_invalidation_when_missing():
+def test_delete_route_404_when_missing():
     with patch("api.individuals.get_supabase"), \
-         patch("api.individuals.IndividualService") as svc, \
-         patch("api.individuals.invalidate_context_cache") as invalidate:
+         patch("api.individuals.IndividualService") as svc:
         svc.return_value.delete_individual = MagicMock(side_effect=lambda _id: _async(False))
         r = _client().delete(f"/api/individuals/{IND_ID}")
     assert r.status_code == 404
-    invalidate.assert_not_called()
 
 
 def test_delete_route_rejects_a_bad_uuid():

@@ -16,12 +16,12 @@ def test_defaults(monkeypatch):
     for n in NAMES: monkeypatch.delenv(n, raising=False)
     importlib.reload(model_config)
     assert [getattr(model_config, n) for n in NAMES] == \
-        ["gpt-4o", "gpt-transcribe", "gpt-realtime", "text-embedding-3-large"]   # H2-3.4
+        ["gpt-4o", "gpt-transcribe", "gpt-realtime-2.1", "text-embedding-3-large"]   # H2-3.4
 
 def test_env_overrides_and_blank_means_default(monkeypatch):
     monkeypatch.setenv("CHAT_MODEL", "gpt-test"); monkeypatch.setenv("REALTIME_MODEL", "  ")
     importlib.reload(model_config)
-    assert model_config.CHAT_MODEL == "gpt-test" and model_config.REALTIME_MODEL == "gpt-realtime"
+    assert model_config.CHAT_MODEL == "gpt-test" and model_config.REALTIME_MODEL == "gpt-realtime-2.1"
 
 def _chat_reply(content="{}"):
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])

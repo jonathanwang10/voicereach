@@ -104,15 +104,6 @@ def test_assistant_transcribe_failure_is_generic_500():
     assert "fk_secret_42" not in response.text
 
 
-def test_assistant_context_failure_is_generic_500():
-    ctx = MagicMock()
-    ctx.get_context_for_message = AsyncMock(side_effect=RuntimeError(SECRET))
-    with patch("api.voice_assistant.get_context_service", return_value=ctx):
-        response = _client().post("/api/voice-assistant/context", json={"message": "Is John ok?"})
-    assert response.status_code == 500
-    assert "fk_secret_42" not in response.text
-
-
 # --- client errors keep their status (C-40) -------------------------------------------
 
 def _categories_supabase():

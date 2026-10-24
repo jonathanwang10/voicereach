@@ -15,7 +15,7 @@ CHAT_MODEL = _env("CHAT_MODEL", "gpt-4o")
 # whisper-1, gpt-4o-transcribe and gpt-4o-mini-transcribe shut down 2027-02-26; OpenAI's
 # speech-to-text guide recommends gpt-transcribe for new work (H2-3.4)
 TRANSCRIBE_MODEL = _env("TRANSCRIBE_MODEL", "gpt-transcribe")
-REALTIME_MODEL = _env("REALTIME_MODEL", "gpt-realtime")
+REALTIME_MODEL = _env("REALTIME_MODEL", "gpt-realtime-2.1")
 EMBEDDING_MODEL = _env("EMBEDDING_MODEL", "text-embedding-3-large")
 # Scores duplicate candidates from a few identifying fields; a small model is enough (H2-3.5)
 DUPLICATE_MODEL = _env("DUPLICATE_MODEL", "gpt-4o-mini")

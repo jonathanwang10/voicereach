@@ -225,26 +225,6 @@ def test_semantic_search_logs_no_query_or_names(capture, capsys):
     _assert_clean(capture, capsys)
 
 
-# --- assistant context --------------------------------------------------------------
-
-def test_context_route_logs_no_question_or_names(capture, capsys):
-    from services.context_service import ContextService
-    with patch("api.voice_assistant.get_context_service", return_value=ContextService(FakeDB())):
-        r = _client().post("/api/voice-assistant/context",
-                           json={"message": f"Any notes on {SENTINEL_NAME} before I go over?"})
-    assert r.status_code == 200
-    assert r.json()["individuals_found"]          # the lookup really ran
-    _assert_clean(capture, capsys)
-
-
-def test_failed_context_lookup_logs_no_question(capture, capsys):
-    from services.context_service import ContextService
-    with patch("api.voice_assistant.get_context_service", return_value=ContextService(FakeDB(fail=True))):
-        r = _client().post("/api/voice-assistant/context", json={"message": f"Is {SENTINEL_NAME} safe?"})
-    assert r.status_code == 200
-    _assert_clean(capture, capsys)
-
-
 # --- auth ---------------------------------------------------------------------------
 
 @pytest.mark.real_auth
@@ -284,9 +264,18 @@ class _SecretClient:
 
 
 class _Upstream:
-    """Echoes a transcript event naming the sentinel, then waits until closed."""
+    """Echoes a transcript naming the sentinel, then a search_people call for the
+    sentinel, then waits until closed."""
 
     def __init__(self):
+        args = json.dumps({"query": SENTINEL_NAME})
+        call = {"type": "function_call", "call_id": "c1", "name": "search_people", "arguments": args}
+        self.events = [
+            {"type": "response.output_audio_transcript.delta", "delta": SENTINEL_NAME},
+            {"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "c1",
+             "name": "search_people", "arguments": args},
+            {"type": "response.done", "response": {"id": "r1", "status": "completed", "output": [call]}},
+        ]
         self.sent, self._closed = [], asyncio.Event()
 
     async def __aenter__(self):
@@ -299,9 +288,8 @@ class _Upstream:
         self.sent.append(frame)
 
     async def recv(self):
-        if not getattr(self, "_echoed", False):
-            self._echoed = True
-            return json.dumps({"type": "response.output_audio_transcript.delta", "delta": SENTINEL_NAME})
+        if self.events:
+            return json.dumps(self.events.pop(0))
         await self._closed.wait()
         import websockets
         raise websockets.exceptions.ConnectionClosedOK(None, None)
@@ -311,23 +299,23 @@ class _Upstream:
 
 
 @pytest.mark.parametrize("lookup_fails", [False, True])
-def test_ws_proxy_logs_no_question_context_or_audio(capture, capsys, monkeypatch, lookup_fails):
+def test_ws_proxy_logs_no_question_tool_arguments_or_results(capture, capsys, monkeypatch, lookup_fails):
     import main
-    svc = MagicMock()
     if lookup_fails:
-        svc.get_context_for_message = AsyncMock(side_effect=RuntimeError(f"lookup failed: {SENTINEL_NAME}"))
+        search = AsyncMock(side_effect=RuntimeError(f"lookup failed: {SENTINEL_NAME}"))
     else:
-        svc.get_context_for_message = AsyncMock(return_value={
-            "context": json.dumps(PERSON), "individuals_found": [PERSON], "names_detected": [SENTINEL_NAME]})
+        search = AsyncMock(return_value=[PERSON])
     upstream = _Upstream()
+    monkeypatch.setattr("services.retrieval.search_people", search)
     monkeypatch.setattr(main, "verify_token", lambda token: "user-ws")
     monkeypatch.setattr(main.httpx, "AsyncClient", _SecretClient)
     monkeypatch.setattr(main.websockets, "connect", lambda *a, **k: upstream)
-    monkeypatch.setattr(main, "get_context_service", lambda sb: svc)
 
     with _client().websocket_connect("/api/voice-assistant/realtime/ws",
                                      headers={"Authorization": "Bearer t"}) as ws:
         assert SENTINEL_NAME in ws.receive_text()
+        ws.receive_text()                                     # the call's arguments
+        ws.receive_text()                                     # response.done
         ws.send_text(json.dumps({"type": "input_audio_buffer.append", "audio": "UXVpeGxleQ=="}))
         ws.send_text(json.dumps({"type": "conversation.item.create", "item": {
             "type": "message", "role": "user",
@@ -335,10 +323,12 @@ def test_ws_proxy_logs_no_question_context_or_audio(capture, capsys, monkeypatch
         ws.send_text(json.dumps({"type": "session.update", "session": {"instructions": SENTINEL_NAME}}))
         ws.receive_text()                                     # the error event for session.update
         for _ in range(200):
-            if len(upstream.sent) >= 3:
+            if len(upstream.sent) >= 5:
                 break
             time.sleep(0.01)
-    assert any(SENTINEL_NAME in f for f in upstream.sent)    # the question really went through
+    search.assert_awaited_once()                              # the tool really ran
+    assert any("function_call_output" in f for f in upstream.sent)
+    assert any(f"Is {SENTINEL_NAME}" in f for f in upstream.sent)   # the question really went through
     _assert_clean(capture, capsys)
 
 

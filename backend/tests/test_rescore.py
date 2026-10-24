@@ -74,23 +74,19 @@ def test_rescore_service_updates_only_changed_rows_and_never_the_override():
     assert _updates(sb) == {"id-james": {"urgency_score": 41}, "id-ana": {"urgency_score": 41}}
 
 
-def test_rescore_service_invalidates_the_context_cache_only_when_something_changed():
+def test_rescore_service_sends_only_changed_scores():
     from services import individual_service
     sb = FakeSupabase()
     sb.on("individuals", "select", data=[SAM])
     sb.on("categories", "select", data=CATEGORIES)
-    with patch("services.context_service.invalidate_context_cache") as inv:
-        assert individual_service.rescore_all_individuals(sb) == 0
-    inv.assert_not_called()
+    assert individual_service.rescore_all_individuals(sb) == 0
     assert not sb.rpc_params("rescore_batch")
 
     sb = FakeSupabase()
     sb.on("individuals", "select", data=[{**JAMES, "urgency_score": 10}])
     sb.on("categories", "select", data=CATEGORIES)
     sb.on_rpc("rescore_batch", data=lambda call: len(call.payload["p_rows"]))
-    with patch("services.context_service.invalidate_context_cache") as inv:
-        assert individual_service.rescore_all_individuals(sb) == 1
-    inv.assert_called_once()
+    assert individual_service.rescore_all_individuals(sb) == 1
 
 
 def test_creating_a_weighted_category_rescores_existing_people():
@@ -189,10 +185,8 @@ def test_rescore_returns_what_the_database_updated():
 
 def test_rescore_sends_nothing_when_no_score_changed():
     sb = _service_db([SAM])
-    with patch("services.context_service.invalidate_context_cache") as inv:
-        assert rescore_all_individuals(sb) == 0
+    assert rescore_all_individuals(sb) == 0
     assert sb.rpc_params("rescore_batch") == []
-    inv.assert_not_called()
 
 
 def test_rescore_never_sends_the_override():

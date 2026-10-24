@@ -60,7 +60,6 @@ def _reset_process_state():
     """Reset every piece of process-global state before AND after each test.
 
     - rate-limit windows (services.rate_limit)
-    - the shared ContextService and its cache (services.context_service._context_service)
     - the verified-token cache and the Supabase Auth client (api.auth._cache, _auth_client)
     - the shared service-key Supabase client (db.client._client) and OpenAIService
       (services.openai_service._service)
@@ -69,7 +68,6 @@ def _reset_process_state():
     """
     from main import app
     from api import auth
-    from services import context_service
     from db import client as db_client
     from services import openai_service
     from services import embedding_service
@@ -77,7 +75,6 @@ def _reset_process_state():
 
     def reset():
         reset_rate_limits()
-        context_service._context_service = None
         auth._cache.clear()
         auth._auth_client = None
         db_client._client = None

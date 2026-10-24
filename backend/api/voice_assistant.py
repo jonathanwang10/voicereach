@@ -5,11 +5,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from api.auth import get_current_user
 from api.errors import internal_error
-from pydantic import BaseModel, ValidationError
-from typing import Dict, Any, List
-from db.client import get_supabase
+from pydantic import ValidationError
 from services.openai_service import QUESTION_LIMITS, get_openai_service, temp_audio_file
-from services.context_service import get_context_service
 from services.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -19,14 +16,6 @@ logger = logging.getLogger(__name__)
 MAX_ASSISTANT_AUDIO_BYTES = 3 * 1024 * 1024
 
 router = APIRouter(prefix="/api/voice-assistant")
-
-class ContextRequest(BaseModel):
-    message: str
-
-class ContextResponse(BaseModel):
-    context: str
-    individuals_found: List[Dict[str, Any]]
-    names_detected: List[str]
 
 @router.post("/transcribe")
 async def transcribe_voice_audio(
@@ -109,38 +98,5 @@ async def get_safety_guidelines(user_id: str = Depends(get_current_user)):
         raise
     except Exception as e:
         raise internal_error("Get guidelines", e)
-
-@router.post("/context", response_model=ContextResponse)
-async def get_context_for_message(
-    request: ContextRequest,
-    user_id: str = Depends(get_current_user)
-):
-    """
-    Get individual context for a message containing names
-
-    This endpoint analyzes a user message, extracts potential names,
-    searches the database for matching individuals, and returns
-    formatted context information for the AI assistant.
-    """
-    try:
-        context_service = get_context_service(get_supabase())
-
-        # Get context for the message
-        result = await context_service.get_context_for_message(request.message)
-
-        # Counts only: never the question or the names (R-14)
-        logger.info("Context lookup: %d name(s), %d individual(s)",
-                    len(result["names_detected"]), len(result["individuals_found"]))
-
-        return ContextResponse(
-            context=result["context"],
-            individuals_found=result["individuals_found"],
-            names_detected=result["names_detected"]
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise internal_error("Get context", e)
 
 # WebSocket endpoint moved to main.py to avoid conflicts

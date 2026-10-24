@@ -32,7 +32,7 @@ Each file is idempotent.
 |---|---|---|---|
 | `CHAT_MODEL` | `gpt-4o` | backend | 1 |
 | `TRANSCRIBE_MODEL` | `gpt-transcribe` (Phase 3; was `whisper-1` in Phase 1) | backend | 1, 3 |
-| `REALTIME_MODEL` | `gpt-realtime` | backend | 1 |
+| `REALTIME_MODEL` | `gpt-realtime-2.1` (Phase 5 Task 6; `gpt-realtime` shuts down 2027-01-20) | backend | 1, 5 |
 | `EMBEDDING_MODEL` | `text-embedding-3-large` | backend | 1 |
 | `RATE_LIMIT_SAVE_PER_MIN` | 30 | backend | 1 |
 | `RATE_LIMIT_CATEGORY_CREATE_PER_MIN` | 10 | backend | 1 |
