@@ -2,7 +2,9 @@
 // the whole session), and refreshCategories retries. C-69: one shared sort.
 import React from 'react';
 import { Text } from 'react-native';
-import { render, act, waitFor } from '@testing-library/react-native';
+import { act, waitFor } from '@testing-library/react-native';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { renderWithQuery } from '../../test/renderWithQuery';
 
 jest.mock('../../services/api', () => ({ api: { getCategories: jest.fn() } }));
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
@@ -24,7 +26,7 @@ beforeEach(() => jest.clearAllMocks());
 it('exposes a load failure and recovers on refresh', async () => {
   (api.getCategories as jest.Mock).mockRejectedValueOnce(
     Object.assign(new Error('No connection'), { status: 0, detail: 'No connection', kind: 'network' }));
-  const screen = render(<CategoryProvider><Probe /></CategoryProvider>);
+  const screen = renderWithQuery(<CategoryProvider><Probe /></CategoryProvider>);
   await waitFor(() => screen.getByText('error:No connection'));
   expect(latest.categories).toEqual([]);
 
@@ -36,11 +38,21 @@ it('exposes a load failure and recovers on refresh', async () => {
 
 it('a failed refresh keeps the categories already loaded', async () => {
   (api.getCategories as jest.Mock).mockResolvedValueOnce([cat('name')]);
-  const screen = render(<CategoryProvider><Probe /></CategoryProvider>);
+  const screen = renderWithQuery(<CategoryProvider><Probe /></CategoryProvider>);
   await waitFor(() => screen.getByText('name'));
 
   (api.getCategories as jest.Mock).mockRejectedValueOnce(new Error('boom'));
   await act(async () => { await latest.refreshCategories(); });
   expect(latest.error).toBe('boom');
   expect(latest.categories.map(c => c.name)).toEqual(['name']);
+});
+
+it('keeps the same context value across a re-render (H2-6.9)', async () => {
+  (api.getCategories as jest.Mock).mockResolvedValue([cat('name')]);
+  const seen: any[] = [];
+  const Spy = () => { seen.push(useCategories()); return null; };
+  const screen = renderWithQuery(<CategoryProvider><Spy /></CategoryProvider>);
+  await waitFor(() => expect(seen.at(-1).categories).toHaveLength(1));
+  screen.rerender(<QueryClientProvider client={screen.client}><CategoryProvider><Spy /></CategoryProvider></QueryClientProvider>);
+  expect(seen.at(-1)).toBe(seen.at(-2));
 });

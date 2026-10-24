@@ -24,6 +24,10 @@ if (!globalThis.crypto?.getRandomValues) {
   Object.defineProperty(globalThis, 'crypto', { value: require('crypto').webcrypto, configurable: true });
 }
 
+// TanStack Query batches its notifications on setTimeout(0), which act() doesn't wait
+// for; a microtask lands inside act(async () => ...)
+require('@tanstack/react-query').notifyManager.setScheduler(fn => Promise.resolve().then(fn));
+
 // H2-6.6: NetInfo's own mock (isConnected true, addEventListener a jest.fn)
 jest.mock('@react-native-community/netinfo', () => require('@react-native-community/netinfo/jest/netinfo-mock.js'));
 

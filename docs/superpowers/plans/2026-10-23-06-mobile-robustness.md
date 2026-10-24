@@ -706,7 +706,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `staleTime` is 5 min.
 - Both context values are referentially stable while their inputs don't change.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```tsx
 // AuthContext.test.tsx
@@ -736,20 +736,20 @@ it('keeps typed values when the categories reload', async () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest contexts components/__tests__/TranscriptionResults.test.tsx components/__tests__/ManualEntryForm.test.tsx`
 Expected: FAIL. The values differ, and `getCategories` is called 2 times.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - `ManualEntryForm` fills its form with `useEffect(() => setFormData(prev => ({ ...emptyForm(categories), ...prev })), [categories])`. `resetForm` is unchanged.
   - Both components render `<CategoryLoadError error={error} onRetry={refreshCategories} …/>` when `categories.length === 0`, and a spinner while `isLoading`.
   - `MergeUI` keeps getting `categories` as a prop.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest`
 Expected: PASS. This includes `a failed category load shows the error and Retry reloads the form` and `shows the error with Retry and no Save; Retry loads the fields`.
 
-- [ ] **Step 5: Run the global checks and commit.**
+- [x] **Step 5: Run the global checks and commit.**
 ```bash
 git add mobile/contexts mobile/components mobile/utils/categoryPayload.ts
 git commit -m "refactor(mobile): memoise contexts and read categories only from CategoryContext (H2-6.5, H2-6.9)

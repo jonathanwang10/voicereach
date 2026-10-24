@@ -24,6 +24,7 @@ import { MergeUI } from './MergeUI';
 import { newRequestId } from '../utils/requestId';
 import { isVersionConflict } from '../utils/saveConflict';
 import { CategoryLoadError } from './CategoryLoadError';
+import { useCategories } from '../contexts/CategoryContext';
 
 interface ManualEntryFormProps {
   onSave: (data: Record<string, any>) => void;
@@ -42,10 +43,9 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   const [errors, setErrors] = useState<Record<string, string>>({});
   // The backend's reason when a save is rejected, shown in the form (C-16)
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  // Why the category load failed (C-35); shown with Retry
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // From CategoryContext, the app's one category load (H2-6.5); a failed load is
+  // shown with Retry (C-35)
+  const { categories, isLoading, error: loadError, refreshCategories } = useCategories();
   const [isSaving, setIsSaving] = useState(false);
   // Blocks a second tap on Save that lands before the re-render disables it (C-13)
   const savingRef = useRef(false);
@@ -55,28 +55,15 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   // The check's matches as offered: mergeable, best first, at most 3 (H2-3.5)
   const [shownMatches, setShownMatches] = useState<DuplicateMatch[]>([]);
 
-  // Fetch categories from API on component mount
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
-    try {
-      setIsLoading(true);
-      setLoadError(null);
-      const sortedCategories = sortCategories<Category>((await api.getCategories()) || []);
-      setCategories(sortedCategories);
-      setFormData(emptyForm(sortedCategories));
-    } catch (error) {
-      setLoadError(errorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // One empty value per category field
   const emptyForm = (cats: Category[]): Record<string, any> =>
     Object.fromEntries(cats.map(cat => [cat.name, '']));
+
+  // A key for every category; a reload (e.g. on returning to the app) keeps what
+  // was already typed
+  useEffect(() => {
+    setFormData(prev => ({ ...emptyForm(categories), ...prev }));
+  }, [categories]);
 
   // After a successful save the form starts over, so the same person can't be
   // saved twice by tapping Save again (C-13)
@@ -318,7 +305,7 @@ export const ManualEntryForm: React.FC<ManualEntryFormProps> = ({
   }
 
   if (categories.length === 0) {
-    return <CategoryLoadError error={loadError} onRetry={fetchCategories} />;
+    return <CategoryLoadError error={loadError} onRetry={refreshCategories} />;
   }
 
   // Show MergeUI if there's a medium confidence match

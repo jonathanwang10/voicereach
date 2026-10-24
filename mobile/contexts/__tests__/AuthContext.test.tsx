@@ -130,3 +130,13 @@ it('launch and Retry sign in through signIn, which clears a user sign-out', asyn
   expect(mockSignIn).toHaveBeenCalledTimes(2);
 });
 
+
+it('keeps the same context value across a re-render (H2-6.9)', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const seen: any[] = [];
+  const Spy = () => { seen.push(useAuth()); return null; };
+  const s = render(<AuthProvider><Spy /></AuthProvider>);
+  await waitFor(() => expect(seen.at(-1).loading).toBe(false));
+  s.rerender(<AuthProvider><Spy /></AuthProvider>);
+  expect(seen.at(-1)).toBe(seen.at(-2));
+});

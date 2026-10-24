@@ -29,6 +29,7 @@ import { MergeUI } from './MergeUI';
 import { newRequestId } from '../utils/requestId';
 import { isVersionConflict } from '../utils/saveConflict';
 import { CategoryLoadError } from './CategoryLoadError';
+import { useCategories } from '../contexts/CategoryContext';
 
 interface TranscriptionResultsProps {
   result: TranscriptionResult;
@@ -57,10 +58,9 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   const [categorizedData, setCategorizedData] = useState<Record<string, any>>(result.categorized_data);
   const [showMergeUI, setShowMergeUI] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<DuplicateMatch | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  // Why the category load failed (C-35); shown with Retry instead of a fieldless form
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // From CategoryContext, the app's one category load (H2-6.5). A failed load is
+  // shown with Retry instead of a fieldless form (C-35).
+  const { categories, isLoading, error: loadError, refreshCategories } = useCategories();
   // Per-field problems: the backend's validation_errors from /api/transcribe, then the
   // client-side checks on Save (C-16). Editing a field clears its message.
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>(() =>
@@ -68,23 +68,6 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   );
   // The backend's reason when the save is rejected, shown in the form (C-16)
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  // Fetch categories from API on component mount
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const fetchCategories = async () => {
-    try {
-      setIsLoading(true);
-      setLoadError(null);
-      setCategories(sortCategories<Category>((await api.getCategories()) || []));
-    } catch (error) {
-      setLoadError(errorMessage(error));
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleFieldChange = (fieldName: string, value: any) => {
     setCategorizedData(prev => ({
@@ -369,7 +352,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
     return (
       <View style={styles.container}>
         {transcriptionSection}
-        <CategoryLoadError error={loadError} onRetry={fetchCategories} onCancel={onCancel} />
+        <CategoryLoadError error={loadError} onRetry={refreshCategories} onCancel={onCancel} />
       </View>
     );
   }

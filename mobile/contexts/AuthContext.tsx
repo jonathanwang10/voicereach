@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, autoLogin, signIn as signInAsWorker, signOut } from '../services/supabase';
 import { errorMessage } from '../utils/errors';
@@ -41,7 +41,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Signs in with the demo account (or keeps the stored session). `loading` stays
   // true until this settles, so no screen mounts and starts its own sign-in.
-  const signIn = async () => {
+  const signIn = useCallback(async () => {
     signedOutByUser.current = false;
     setLoading(true);
     setError(null);
@@ -55,7 +55,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setError(errorMessage(result.error));
     }
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     signIn();
@@ -93,7 +93,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     signedOutByUser.current = true;
     const { error: signOutError } = await signOut();
     if (signOutError) {
@@ -103,16 +103,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     setSession(null);
     setError(null);
-  };
+  }, []);
 
-  const value = {
-    user,
-    session,
-    loading,
-    error,
-    retry: signIn,
-    signOut: handleSignOut,
-  };
+  // Stable while nothing changed, so consumers don't re-render for nothing (H2-6.9)
+  const value = useMemo(
+    () => ({ user, session, loading, error, retry: signIn, signOut: handleSignOut }),
+    [user, session, loading, error, signIn, handleSignOut]
+  );
 
   return (
     <AuthContext.Provider value={value}>

@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
+import { queryKeys } from '../services/queries';
 import { errorMessage } from '../utils/errors';
 import { Category } from '../utils/categoryPayload';
 import { sortCategories } from '../utils/categoryDisplay';
 
 // Categories are create-only on the server, so this context only loads them.
 // (Local on/off toggles and a local "edit" used to live here; nothing honoured
-// them, so they were removed: C-36.)
+// them, so they were removed: C-36.) It is the one place the app reads them (H2-6.5).
 interface CategoryContextType {
   categories: Category[];
   isLoading: boolean;
@@ -21,36 +23,32 @@ interface CategoryProviderProps {
   children: ReactNode;
 }
 
+const NO_CATEGORIES: Category[] = [];
+const fetchCategories = async (): Promise<Category[]> => (await api.getCategories()) || [];
+const sortAll = (categories: Category[]) => sortCategories<Category>(categories);
+
 // Mounted by App only once signed in, so the first load never races the sign-in.
 export const CategoryProvider: React.FC<CategoryProviderProps> = ({ children }) => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // A failed refetch keeps the categories already loaded (TanStack keeps `data`)
+  const query = useQuery({
+    queryKey: queryKeys.categories,
+    queryFn: fetchCategories,
+    select: sortAll,
+    staleTime: 5 * 60_000,
+  });
+  const { refetch } = query;
 
-  const fetchCategories = async () => {
-    try {
-      setIsLoading(true);
-      const response: Category[] = (await api.getCategories()) || [];
-      setCategories(sortCategories(response));
-      setError(null);
-    } catch (e) {
-      // Keep what was loaded before; the screen shows the error with Retry
-      setError(errorMessage(e));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const refreshCategories = useCallback(async () => {
+    await refetch();
+  }, [refetch]);
 
-  useEffect(() => {
-    fetchCategories();
-  }, []);
-
-  const value: CategoryContextType = {
-    categories,
-    isLoading,
-    error,
-    refreshCategories: fetchCategories,
-  };
+  // Stable while nothing changed, so consumers don't re-render for nothing (H2-6.9)
+  const categories = query.data ?? NO_CATEGORIES;
+  const error = query.error ? errorMessage(query.error) : null;
+  const value = useMemo<CategoryContextType>(
+    () => ({ categories, isLoading: query.isPending, error, refreshCategories }),
+    [categories, query.isPending, error, refreshCategories]
+  );
 
   return (
     <CategoryContext.Provider value={value}>

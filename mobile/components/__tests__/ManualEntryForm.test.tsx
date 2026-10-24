@@ -3,7 +3,7 @@
 // rejection is shown in the form.
 import React from 'react';
 import { Alert } from 'react-native';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 jest.mock('../../utils/delayedDelete', () => ({ isPendingDelete: jest.fn(() => false) }));
@@ -28,8 +28,27 @@ jest.mock('../../services/api', () => ({
 
 import Toast from 'react-native-toast-message';
 import { ManualEntryForm } from '../ManualEntryForm';
+import { CategoryProvider } from '../../contexts/CategoryContext';
+import { renderWithQuery } from '../../test/renderWithQuery';
+
+// Categories come from CategoryContext (H2-6.5): each form renders inside it
+const render = (ui: React.ReactElement) => renderWithQuery(<CategoryProvider>{ui}</CategoryProvider>);
 import { api } from '../../services/api';
 import { isPendingDelete } from '../../utils/delayedDelete';
+
+it('reads categories from CategoryContext and fetches none of its own (H2-6.5)', async () => {
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  await screen.findByPlaceholderText('Enter name');
+  expect(api.getCategories).toHaveBeenCalledTimes(1);   // the provider's one load
+});
+
+it('keeps typed values when the categories reload', async () => {
+  const screen = render(<ManualEntryForm onSave={jest.fn()} onCancel={jest.fn()} />);
+  fireEvent.changeText(await screen.findByPlaceholderText('Enter name'), 'Ann');
+  await act(() => screen.client.invalidateQueries({ queryKey: ['categories'] }));
+  expect(screen.getByDisplayValue('Ann')).toBeTruthy();
+  expect(api.getCategories).toHaveBeenCalledTimes(2);
+});
 
 const MATCH_ID = '550e8400-e29b-41d4-a716-446655440000';
 const outage = Object.assign(new Error('Server error. Please try again.'),
