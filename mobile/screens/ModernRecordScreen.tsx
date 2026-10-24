@@ -20,7 +20,7 @@ import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { api, TranscriptionResult } from '../services/api';
-import { ErrorHandler, errorMessage } from '../utils/errorHandler';
+import { errorMessage } from '../utils/errors';
 import { theme } from '../theme';
 import Toast from 'react-native-toast-message';
 import * as FileSystem from 'expo-file-system';

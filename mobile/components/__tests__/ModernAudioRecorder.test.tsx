@@ -1,5 +1,6 @@
 import React from 'react';
 import { Alert, StyleSheet } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { render, fireEvent, act } from '@testing-library/react-native';
 
 // A fake expo-audio recorder whose status the test drives: record()/stop() flip
@@ -28,6 +29,7 @@ jest.mock('expo-audio', () => {
     AudioQuality: { MIN: 0, LOW: 32, MEDIUM: 64, HIGH: 96, MAX: 127 },
   };
 });
+jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
 const mockRelease = jest.fn(async () => {});
 jest.mock('../../services/audioSession', () => ({ acquireRecording: jest.fn(async () => mockRelease) }));
 jest.mock('expo-file-system', () => ({ deleteAsync: jest.fn(async () => {}) }));
@@ -91,6 +93,15 @@ it('acquires the recording session before preparing, and releases it on stop', a
   await at(6_000);
   await press(screen); // stop
   expect(mockRelease).toHaveBeenCalledTimes(1);
+});
+
+it('a failed start shows one "Recording failed" toast with a plain message', async () => {
+  mockRecorder.prepareToRecordAsync.mockRejectedValueOnce(new Error('Only one Recording object can be prepared'));
+  const screen = render(<ModernAudioRecorder onRecordingComplete={jest.fn()} />);
+  await press(screen);
+  expect(Toast.show).toHaveBeenCalledTimes(1);
+  expect((Toast.show as jest.Mock).mock.calls[0][0]).toMatchObject({
+    text1: 'Recording failed', text2: 'Could not record audio. Please try again.' });
 });
 
 it('releases the session when starting fails', async () => {

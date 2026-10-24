@@ -20,7 +20,7 @@ import { Input } from '../components/ui/Input';
 import { FadeInView } from '../components/ui/AnimatedView';
 import { theme } from '../theme';
 import { formatLastSeen, getUrgencyLevel, UrgencyLevel, URGENCY_BADGE_VARIANT, URGENCY_LABELS } from '../utils/urgencyScore';
-import { errorMessage, showApiError } from '../utils/errorHandler';
+import { errorMessage, showApiError } from '../utils/errors';
 import { hasPendingDeletes, isPendingDelete, subscribePendingDeletes } from '../utils/delayedDelete';
 
 // The backend's display score: the override if set, else the calculated score

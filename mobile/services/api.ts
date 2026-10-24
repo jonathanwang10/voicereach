@@ -8,7 +8,7 @@ import type { Category, CreateCategoryPayload } from '../utils/categoryPayload';
 // The one error type every backend call throws (C-16). `detail` is the backend's
 // `detail` (a FastAPI 422 list is joined as "field: msg; field: msg"), or a generic
 // message when there is none.
-// Callers show it once (utils/errorHandler.showApiError); the transport never toasts.
+// Callers show it once (utils/errors.showApiError); the transport never toasts.
 export class ApiError extends Error {
   status: number; // HTTP status; 0 = network failure, timeout or no session
   detail: string;

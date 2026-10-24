@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { api, DuplicateMatch } from '../services/api';
-import { errorMessage, showApiError } from '../utils/errorHandler';
+import { errorMessage, showApiError } from '../utils/errors';
 import { confirmSaveAsNew, topMatches } from '../utils/duplicateMatches';
 import {
   coerceFieldData,

@@ -115,7 +115,7 @@
   - `showApiError(e: unknown, title?: string): void`, moved unchanged from `errorHandler.ts:217-227`;
   - `RECORDING_FAILED = 'Could not record audio. Please try again.'`.
 
-- [ ] **Step 1: Write the failing tests.** Move the `errorMessage`/`showApiError` cases from `errorHandler.test.ts` into `errors.test.ts`, importing from `../errors`. Drop the `ErrorHandler.handleError` cases. Add to `ModernAudioRecorder.test.tsx`:
+- [x] **Step 1: Write the failing tests.** Move the `errorMessage`/`showApiError` cases from `errorHandler.test.ts` into `errors.test.ts`, importing from `../errors`. Drop the `ErrorHandler.handleError` cases. Add to `ModernAudioRecorder.test.tsx`:
 
 ```tsx
 it('a failed start shows one "Recording failed" toast with a plain message', async () => {
@@ -129,22 +129,22 @@ it('a failed start shows one "Recording failed" toast with a plain message', asy
 ```
 (Add `jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }))` and `import Toast from 'react-native-toast-message'` to the file.)
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest utils/__tests__/errors.test.ts components/__tests__/ModernAudioRecorder.test.tsx`
 Expected: FAIL. `Cannot find module '../errors'`, and the toast has `text1: 'Error'`.
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - Create `utils/errors.ts` with the two functions and the constant.
   - Point every listed import at `../utils/errors` (or `./errors`).
   - In the recorder, replace each `ErrorHandler.handleRecordingError(...)`/`showError` pair with `showApiError(RECORDING_FAILED, 'Recording failed')`. Leave the mount-time permission effect (lines 120-134) as it is for now, calling `showApiError('Allow microphone access to record.', 'Microphone')`; Task 5 replaces it.
   - Delete `errorHandler.ts` and its test.
   - `grep -rn "errorHandler\|ErrorHandler" mobile --include='*.ts*' --exclude-dir=node_modules --exclude-dir=ios` must print nothing. If Phase 5 has already rewritten the recorder, replace whatever `ErrorHandler` calls remain in the same way.
 
-- [ ] **Step 4: Run the checks.**
+- [x] **Step 4: Run the checks.**
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 ```bash
 git add -A mobile/utils mobile/contexts mobile/screens mobile/components mobile/services/api.ts
 git commit -m "refactor(mobile): remove the legacy ErrorHandler in favour of showApiError (H2-6.16)

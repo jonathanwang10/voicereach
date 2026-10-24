@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
-import { errorMessage } from '../utils/errorHandler';
+import { errorMessage } from '../utils/errors';
 import { shareCsvExport } from '../utils/csvExport';
 import { useCategories } from '../contexts/CategoryContext';
 

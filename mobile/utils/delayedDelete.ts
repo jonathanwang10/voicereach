@@ -8,7 +8,7 @@
 // The pending state lives in memory only: if the app is killed before the window
 // expires, the DELETE never runs and the person simply is not deleted.
 import { api } from '../services/api';
-import { showApiError } from './errorHandler';
+import { showApiError } from './errors';
 
 export const DELETE_UNDO_MS = 5000;
 

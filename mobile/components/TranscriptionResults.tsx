@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { TranscriptionResult, DuplicateMatch, DuplicateDecision, api } from '../services/api';
-import { errorMessage, showApiError } from '../utils/errorHandler';
+import { errorMessage, showApiError } from '../utils/errors';
 import {
   confidenceColor,
   confirmSaveAsNew,

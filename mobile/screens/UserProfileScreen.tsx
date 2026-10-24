@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { errorMessage } from '../utils/errorHandler';
+import { errorMessage } from '../utils/errors';
 
 // The signed-in Supabase account (OD-4). There is no worker profile behind it, so
 // nothing else (name, role, organisation) is shown.

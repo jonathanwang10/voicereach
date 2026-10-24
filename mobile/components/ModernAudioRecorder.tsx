@@ -20,7 +20,7 @@ import * as FileSystem from 'expo-file-system';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { acquireRecording } from '../services/audioSession';
-import { ErrorHandler } from '../utils/errorHandler';
+import { RECORDING_FAILED, showApiError } from '../utils/errors';
 import { formatGeocodedAddress } from '../utils/location';
 import { theme } from '../theme';
 
@@ -160,13 +160,9 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     (async () => {
       try {
         const { granted } = await requestRecordingPermissionsAsync();
-        if (!granted) {
-          const error = ErrorHandler.handleRecordingError(new Error('Recording permission denied'));
-          ErrorHandler.showError(error);
-        }
-      } catch (error) {
-        const appError = ErrorHandler.handleError(error, 'Audio Permission Request');
-        ErrorHandler.showError(appError);
+        if (!granted) showApiError('Allow microphone access to record.', 'Microphone');
+      } catch {
+        showApiError('Allow microphone access to record.', 'Microphone');
       }
     })();
   }, []);
@@ -263,8 +259,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     } catch (err) {
       if (__DEV__) console.error('Failed to start recording', err);
       await releaseSession();
-      const error = ErrorHandler.handleRecordingError(err);
-      ErrorHandler.showError(error);
+      showApiError(RECORDING_FAILED, 'Recording failed');
     } finally {
       startingRef.current = false;
     }
@@ -306,8 +301,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       await releaseSession();
       // Never leave the UI stuck on the stop button (C-61)
       resetState();
-      const error = ErrorHandler.handleRecordingError(err);
-      ErrorHandler.showError(error);
+      showApiError(RECORDING_FAILED, 'Recording failed');
     }
   };
 

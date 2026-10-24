@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '../services/api';
-import { errorMessage } from '../utils/errorHandler';
+import { errorMessage } from '../utils/errors';
 import { Category } from '../utils/categoryPayload';
 import { sortCategories } from '../utils/categoryDisplay';
 

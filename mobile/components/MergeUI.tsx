@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { api } from '../services/api';
-import { showApiError } from '../utils/errorHandler';
+import { showApiError } from '../utils/errors';
 import { isVersionConflict } from '../utils/saveConflict';
 import { FieldCategory, fieldLabel, formatFieldValue, isEmptyValue } from '../utils/fieldValues';
 import { confidenceColor } from '../utils/duplicateMatches';

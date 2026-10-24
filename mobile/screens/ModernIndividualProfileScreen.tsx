@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { IndividualProfile } from '../types';
 import { api } from '../services/api';
-import { errorMessage, showApiError } from '../utils/errorHandler';
+import { errorMessage, showApiError } from '../utils/errors';
 import {
   getUrgencyScoreColor,
   getDisplayUrgencyScore,

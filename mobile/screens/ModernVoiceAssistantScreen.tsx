@@ -20,7 +20,7 @@ import { createReplyPlayer, ReplyPlayer } from '../services/replyPlayer';
 import { acquireConversation, acquirePlayback, onChange } from '../services/audioSession';
 import { MicStream, startMicStream } from '../services/micStream';
 import { AudioProcessor } from '../utils/audioProcessor';
-import { errorMessage } from '../utils/errorHandler';
+import { errorMessage } from '../utils/errors';
 import {
   Message,
   SPEAKING_PLACEHOLDER,
