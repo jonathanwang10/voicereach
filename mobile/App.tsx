@@ -8,9 +8,11 @@ import { StyleSheet, Text, View, ActivityIndicator, TouchableOpacity } from 'rea
 import Toast from 'react-native-toast-message';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CategoryProvider } from './contexts/CategoryContext';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { queryClient, wireQueryManagers } from './services/queryClient';
 import { useEvictCommittedDeletes } from './services/queries';
+import { startRecordingQueue, subscribe } from './services/recordingQueue';
+import { recordingKeys, useReadyDraftCount } from './services/recordingQueries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PrivacyOverlay } from './components/PrivacyOverlay';
 
@@ -89,66 +91,94 @@ function AppContent() {
     );
   }
 
-  // Categories load only once signed in (no race with the sign-in)
+  // Categories, drafts and the recording queue only once signed in (no race with
+  // the sign-in); signing out unmounts them
   return (
     <CategoryProvider>
-      <NavigationContainer>
-        <Tab.Navigator
-          initialRouteName="Record"
-          screenOptions={({ route }) => ({
-            tabBarIcon: ({ focused, color, size }) => {
-              let iconName: keyof typeof Ionicons.glyphMap;
-
-              if (route.name === 'Record') {
-                iconName = focused ? 'camera' : 'camera-outline';
-              } else if (route.name === 'Search') {
-                iconName = focused ? 'search' : 'search-outline';
-              } else if (route.name === 'VoiceAssistant') {
-                iconName = focused ? 'mic' : 'mic-outline';
-              } else if (route.name === 'Categories') {
-                iconName = focused ? 'settings' : 'settings-outline';
-              } else if (route.name === 'Profile') {
-                iconName = focused ? 'person' : 'person-outline';
-              } else {
-                iconName = 'help-outline';
-              }
-
-              return <Ionicons name={iconName} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: '#007AFF',
-            tabBarInactiveTintColor: 'gray',
-            headerShown: true,
-          })}
-        >
-          <Tab.Screen
-            name="Record"
-            component={ModernRecordScreen}
-            options={{ title: 'Record' }}
-          />
-          <Tab.Screen
-            name="Search"
-            component={SearchStack}
-            options={{ title: 'Search', headerShown: false, freezeOnBlur: frozen('Search') }}
-          />
-          <Tab.Screen
-            name="VoiceAssistant"
-            component={ModernVoiceAssistantScreen}
-            options={{ title: 'Assistant' }}
-          />
-          <Tab.Screen 
-            name="Categories" 
-            component={CategoriesScreen}
-            options={{ title: 'Categories', freezeOnBlur: frozen('Categories') }}
-          />
-          <Tab.Screen 
-            name="Profile" 
-            component={UserProfileScreen}
-            options={{ title: 'Profile', freezeOnBlur: frozen('Profile') }}
-          />
-        </Tab.Navigator>
-        <StatusBar style="auto" />
-      </NavigationContainer>
+      <MainTabs />
     </CategoryProvider>
+  );
+}
+
+// The signed-in app: the tabs, the Record tab's badge of drafts ready to review, and
+// the recording queue (H2-7.6, H2-7.7)
+function MainTabs() {
+  const queryClient = useQueryClient();
+  const readyCount = useReadyDraftCount();
+
+  useEffect(() => {
+    const stop = startRecordingQueue();
+    const off = subscribe(event => {
+      if (event.type === 'uploaded') queryClient.invalidateQueries({ queryKey: recordingKeys.all });
+    });
+    return () => {
+      off();
+      stop();
+    };
+  }, [queryClient]);
+
+  return (
+    <NavigationContainer>
+      <Tab.Navigator
+        initialRouteName="Record"
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName: keyof typeof Ionicons.glyphMap;
+
+            if (route.name === 'Record') {
+              iconName = focused ? 'camera' : 'camera-outline';
+            } else if (route.name === 'Search') {
+              iconName = focused ? 'search' : 'search-outline';
+            } else if (route.name === 'VoiceAssistant') {
+              iconName = focused ? 'mic' : 'mic-outline';
+            } else if (route.name === 'Categories') {
+              iconName = focused ? 'settings' : 'settings-outline';
+            } else if (route.name === 'Profile') {
+              iconName = focused ? 'person' : 'person-outline';
+            } else {
+              iconName = 'help-outline';
+            }
+
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
+          tabBarActiveTintColor: '#007AFF',
+          tabBarInactiveTintColor: 'gray',
+          headerShown: true,
+        })}
+      >
+        <Tab.Screen
+          name="Record"
+          component={ModernRecordScreen}
+          options={{
+            title: 'Record',
+            tabBarBadge: readyCount > 0 ? readyCount : undefined,
+            // This version has no badge label option: the tab's label carries the count
+            tabBarAccessibilityLabel: readyCount > 0 ? `Record, ${readyCount} drafts ready to review` : undefined,
+          }}
+        />
+        <Tab.Screen
+          name="Search"
+          component={SearchStack}
+          options={{ title: 'Search', headerShown: false, freezeOnBlur: frozen('Search') }}
+        />
+        <Tab.Screen
+          name="VoiceAssistant"
+          component={ModernVoiceAssistantScreen}
+          options={{ title: 'Assistant' }}
+        />
+        <Tab.Screen 
+          name="Categories" 
+          component={CategoriesScreen}
+          options={{ title: 'Categories', freezeOnBlur: frozen('Categories') }}
+        />
+        <Tab.Screen 
+          name="Profile" 
+          component={UserProfileScreen}
+          options={{ title: 'Profile', freezeOnBlur: frozen('Profile') }}
+        />
+      </Tab.Navigator>
+      <StatusBar style="auto" />
+    </NavigationContainer>
   );
 }
 

@@ -81,6 +81,13 @@ These are the names the earlier phase plans define (checked across plans on 2026
     The deprecation test reads the route from `api.transcription.router`: the app includes routers
     lazily (see `test_security_routes._http_routes`), so `app.routes` doesn't list it by path.
 
+14. **(Task 8, during execution) The tabs move into `MainTabs`, mounted only when signed in.** The
+    badge's `useReadyDraftCount` and the queue start live there, so neither runs before the
+    sign-in, and signing out unmounts them, which stops the queue (the plan's `[user]` effect,
+    by mounting instead). `@react-navigation/bottom-tabs` 7.4 has no
+    `tabBarBadgeAccessibilityLabel`: the tab's `tabBarAccessibilityLabel` reads
+    "Record, <n> drafts ready to review" instead (the badge itself is hidden from VoiceOver).
+
 ## Review Focus
 
 1. **Two queued recordings of the same new person.** Both are processed before either is saved, so the second draft's `potential_matches` can't contain the first. Expected: Save on a draft re-checks duplicates and offers the first person. Test: Task 7, `re-checks unedited data when recheckDuplicates is set (a draft reviewed later)`.
@@ -1050,7 +1057,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - A `ready` row is a button that calls `onReview(id)`. `failed` and `rejected` rows have a **Discard** button.
   - The header reads `Drafts (n)`. Nothing renders when there are no rows.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `DraftsList.test.tsx` (wrap in a `QueryClientProvider`; mock the queue and the API):
 
@@ -1072,21 +1079,21 @@ it('starts the recording queue once signed in and stops it on sign-out', ...);
 it('refreshes the drafts when the queue reports an upload', ...);   // emit {type:'uploaded'} -> listRecordings called again
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd mobile && npx jest components/__tests__/DraftsList.test.tsx __tests__/App.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `AppContent`, inside Phase 6's `QueryClientProvider`, add `useEffect(() => { if (!user) return; const stop = startRecordingQueue(); const off = subscribe(e => { if (e.type === 'uploaded') queryClient.invalidateQueries({ queryKey: recordingKeys.all }); }); return () => { off(); stop(); }; }, [user])`. The Record tab gets `tabBarBadge: readyCount > 0 ? readyCount : undefined` and `tabBarBadgeAccessibilityLabel` reading `"<n> drafts ready to review"`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd mobile && npx jest && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mobile/ README.md

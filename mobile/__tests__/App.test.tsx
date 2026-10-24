@@ -23,7 +23,17 @@ jest.mock('../services/supabase', () => ({
     return { error: null };
   }),
 }));
-jest.mock('../services/api', () => ({ api: { getCategories: jest.fn(async () => []) } }));
+jest.mock('../services/api', () => ({
+  api: { getCategories: jest.fn(async () => []), listRecordings: jest.fn(async () => []) },
+}));
+// The recording queue (H2-7.6): started once signed in; `mockQueueEmit` plays its events
+const mockQueueStop = jest.fn();
+const mockQueueOff = jest.fn();
+let mockQueueEmit: (e: any) => void = () => {};
+jest.mock('../services/recordingQueue', () => ({
+  startRecordingQueue: jest.fn(() => mockQueueStop),
+  subscribe: jest.fn((listener: any) => { mockQueueEmit = listener; return mockQueueOff; }),
+}));
 jest.mock('react-native-toast-message', () => {
   const Toast = () => null;
   Toast.show = jest.fn();
@@ -58,6 +68,7 @@ function mockScreen(label: string) {
 import App, { FROZEN_TABS } from '../App';
 import { api } from '../services/api';
 import { queryClient } from '../services/queryClient';
+import { startRecordingQueue } from '../services/recordingQueue';
 
 const user = { id: 'u1', email: 'demo@sfgov.org' };
 const session = { access_token: 't', user };
@@ -70,6 +81,7 @@ beforeEach(() => {
 afterEach(() => {
   jest.restoreAllMocks();
   queryClient.clear();
+  (api.listRecordings as jest.Mock).mockResolvedValue([]);
 });
 
 it('a failed sign-in blocks the app with Retry, and Retry opens the tabs', async () => {
@@ -122,6 +134,42 @@ it('the Search tab renders its stack', async () => {
   await waitFor(() => screen.getByText('Record screen'));
   fireEvent.press(screen.getByText('Search'));
   expect(await screen.findByText('Search screen')).toBeTruthy();
+});
+
+// --- H2-7.7: drafts --------------------------------------------------------------
+
+const draft = (id: string, status: string) =>
+  ({ id, status, error: null, name: null, duration_ms: 6000, created_at: '2026-11-07T10:00:00Z' });
+
+it('badges the Record tab with the number of ready drafts', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  (api.listRecordings as jest.Mock).mockResolvedValue([draft('r1', 'ready'), draft('r2', 'ready'), draft('r3', 'failed')]);
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  expect(await screen.findByText('2')).toBeTruthy();
+  expect(screen.getByLabelText(/2 drafts ready to review/)).toBeTruthy();
+});
+
+it('starts the recording queue once signed in and stops it on sign-out', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  expect(startRecordingQueue).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByText('Profile'));
+  await act(async () => { fireEvent.press(await screen.findByText('Profile Sign Out')); });
+  await waitFor(() => screen.getByText('Signed out'));
+  expect(mockQueueStop).toHaveBeenCalled();
+  expect(mockQueueOff).toHaveBeenCalled();
+});
+
+it('refreshes the drafts when the queue reports an upload', async () => {
+  mockAutoLogin.mockResolvedValue({ user, session });
+  const screen = render(<App />);
+  await waitFor(() => screen.getByText('Record screen'));
+  await waitFor(() => expect(api.listRecordings).toHaveBeenCalled());
+  const calls = (api.listRecordings as jest.Mock).mock.calls.length;
+  await act(async () => { mockQueueEmit({ type: 'uploaded', clientRecordingId: 'c1', recordingId: 'r1' }); });
+  await waitFor(() => expect((api.listRecordings as jest.Mock).mock.calls.length).toBeGreaterThan(calls));
 });
 
 // Fix round 1: another phone signing out (or a failed refresh) emits SIGNED_OUT

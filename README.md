@@ -150,6 +150,15 @@ kept, and a person saved meanwhile is skipped rather than overwritten). Every ca
 included, becomes an export column, part of each person's semantic-search text,
 and a field the voice assistant is shown (`services/field_registry.py`).
 
+**Drafts** (Record tab). A finished recording is queued on the phone and uploaded
+in the background; the Record tab follows it ("Queued: no connection",
+"Uploading", "Transcribing", "Ready to review"), and the recorder is free again at
+once. Every recording not yet saved or discarded is listed under **Drafts** with
+its time, length, extracted name and status; a ready one opens its review, and a
+failed one can be discarded. The Record tab's badge counts the drafts ready to
+review. Reviewing a draft re-checks duplicates on Save (its matches may be hours
+old), and the save uses the recording's id as its `Idempotency-Key`.
+
 **Export CSV** (Categories tab) asks first, naming the fields marked sensitive,
 then writes the file to the app's cache and opens the share sheet, so the worker
 chooses where it goes; the cached copy is deleted when the sheet closes or when
@@ -808,4 +817,4 @@ Listed explicitly so nobody mistakes them for finished work:
   `X-Device-Id` header the app sends.
   Sign Out (Profile tab) ends the session on the device, but the next launch
   signs in again automatically, so it is not a lock on a shared or lost phone.
-- **No offline support.** The app requires connectivity throughout.
+- **Offline is recording-only.** A voice note recorded without a connection is queued on the phone and uploaded when the connection returns; search, profiles, the assistant and saving still need a connection.

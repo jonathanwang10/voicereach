@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ModernAudioRecorder, RecordingLocation } from '../components/ModernAudioRecorder';
 import { TranscriptionResults } from '../components/TranscriptionResults';
 import { ManualEntryForm } from '../components/ManualEntryForm';
+import { DraftsList } from '../components/DraftsList';
 import { LocationPicker } from '../components/LocationPicker';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -121,6 +122,19 @@ export const ModernRecordScreen: React.FC = () => {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: () => { void deleteRecording(recordingId); } },
     ]);
+  };
+
+  // A draft from the Drafts list: open its review once it is ready
+  const openDraft = async (recordingId: string) => {
+    try {
+      const rec = await queryClient.fetchQuery({
+        queryKey: recordingKeys.detail(recordingId),
+        queryFn: () => api.getRecording(recordingId),
+      });
+      if (rec.status === 'ready') setReview(rec);
+    } catch (error) {
+      showApiError(error, "Couldn't open the draft");
+    }
   };
 
   const discardRejected = async (clientRecordingId: string) => {
@@ -290,6 +304,11 @@ export const ModernRecordScreen: React.FC = () => {
                   )}
 
                   {renderStatus()}
+
+                  <DraftsList
+                    excludeIds={current?.recordingId ? [current.recordingId] : []}
+                    onReview={recordingId => { void openDraft(recordingId); }}
+                  />
                 </>
               )}
             </>

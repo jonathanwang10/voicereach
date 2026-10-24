@@ -74,6 +74,16 @@ jest.mock('../../components/TranscriptionResults', () => {
     ),
   };
 });
+jest.mock('../../components/DraftsList', () => {
+  const { Text, TouchableOpacity } = require('react-native');
+  return {
+    DraftsList: ({ onReview, excludeIds }: any) => (
+      <TouchableOpacity onPress={() => onReview('r9')}>
+        <Text>Stub Drafts excluding {excludeIds.join(',') || 'none'}</Text>
+      </TouchableOpacity>
+    ),
+  };
+});
 jest.mock('../../components/ManualEntryForm', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
@@ -271,6 +281,22 @@ describe('processing and review (H2-7.7)', () => {
     expect(screen.getByText('Audio must be at least 5 seconds long')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Discard')); });
     expect(api.deleteRecording).toHaveBeenCalledWith('r1');
+  });
+});
+
+describe('drafts (H2-7.7)', () => {
+  it('a draft from the list opens its review', async () => {
+    (api.getRecording as jest.Mock).mockResolvedValue(detail('ready', { id: 'r9' }));
+    const screen = render();
+    await act(async () => { fireEvent.press(screen.getByText('Stub Drafts excluding none')); });
+    expect(await screen.findByText('Key: r9')).toBeTruthy();
+    expect(api.getRecording).toHaveBeenCalledWith('r9');
+  });
+
+  it('the list leaves out the recording the status card shows', async () => {
+    const screen = render();
+    await recordAndUpload(screen);
+    expect(await screen.findByText('Stub Drafts excluding r1')).toBeTruthy();
   });
 });
 
