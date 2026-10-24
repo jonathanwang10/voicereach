@@ -221,22 +221,6 @@ describe('raw-fetch helpers use the shared transport', () => {
     expect((api as any).transcribeForAssistant).toBeUndefined();
   });
 
-  it('transcribe uses a 120 s timeout', async () => {
-    const timeouts = jest.spyOn(global, 'setTimeout');
-    const blob = { size: 1 };
-    (global as any).FileReader = class {
-      result = 'data:audio/m4a;base64,AAAA';
-      onloadend: any;
-      readAsDataURL() { this.onloadend(); }
-    };
-    (global as any).fetch = jest.fn()
-      .mockResolvedValueOnce({ blob: async () => blob })
-      .mockResolvedValueOnce(jsonResponse(200, { transcription: 't', categorized_data: {}, missing_required: [], potential_matches: [], validation_errors: [] }));
-    await api.transcribe('file:///a.m4a');
-    expect(timeouts.mock.calls.some(c => c[1] === 120_000)).toBe(true);
-    timeouts.mockRestore();
-  });
-
   it('exportCSV surfaces the backend detail', async () => {
     (global as any).fetch = jest.fn(async () => jsonResponse(404, { detail: 'No individuals found to export' }));
     await expect(api.exportCSV()).rejects.toMatchObject({ status: 404, detail: 'No individuals found to export' });

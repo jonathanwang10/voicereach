@@ -30,34 +30,50 @@ question. File paths are relative to the repo root.
   The Record screen uses each recording's own fix unless the worker picked a
   location by hand (the picker opens at the current location, else the GPS fix,
   else a San Francisco default). Both are cleared after a save or discard.
-- **Retry:** if transcription fails, "Try Again" re-sends the same recording;
-  "Record again" discards it. The recording is deleted from the app's cache once
-  the record is saved or discarded, a new recording replaces it, or the Record
-  screen unmounts (`holdRecording`).
+- **Queue:** a finished recording is moved to `documentDirectory/recordings/` and
+  listed in SQLite (`mobile/services/recordingQueue.ts`, H2-7.6): its path,
+  location and upload state, never a transcript. The recorder is free again at
+  once. The Record tab shows "Queued: no connection" or "Uploading", then
+  "Transcribing", then "Ready to review" (with Review now / Later), or why it
+  couldn't be uploaded or processed (with Discard).
 
 ## 2. Upload (app → backend)
 
-`api.transcribe` in `mobile/services/api.ts` reads the recorded file, encodes it
-as a base64 data URL and posts it inline:
+The queue uploads each recording with `FileSystem.uploadAsync` (multipart, a
+background session, so it carries on while the app is suspended) when there is a
+connection: at start, when the network comes back, when the app returns to the
+foreground, and after a failure on a 5 s / 30 s / 120 s / 600 s backoff. A 4xx
+other than 408 or 429 rejects the item (never retried).
 
 ```
-POST /api/transcribe
+POST /api/recordings            (multipart)
 Authorization: Bearer <access token>
-{"audio_data": "data:audio/...;base64,...."}
+X-Device-Id: <device id>
+audio=<m4a>  client_recording_id=<uuid>  duration_ms=<int>  location=<json, optional>
+→ 202 {"id": "<recording id>", "status": "queued"}
 ```
 
-There is no Storage upload. The backend strips the optional `data:` prefix. The
-body is capped at 8 MB (413), and each account may transcribe 30 times a minute
-(429; `RATE_LIMIT_TRANSCRIBE_PER_MIN`; every phone on the shared demo account
-counts against the same budget). It also accepts `{"audio_url": ...}`, but only
-on the same host as `SUPABASE_URL` (400 otherwise) and at most 5 MB (413); a
-redirect is not followed and the request fails with a 500. The app never uses
-that path. The route answers within 110 s (504 after that), before
-the app's 120 s timeout.
+The server checks the file is an M4A of 5 s to 125 s (400 before any storage or
+database work), stores it in the private `recordings` bucket and queues a
+`recordings` row. A repeated `client_recording_id` returns the same recording, so
+an upload repeated after the app was killed mid-upload is safe. The body is capped
+at 8 MB (413) and shares the 30-a-minute `RATE_LIMIT_TRANSCRIBE_PER_MIN` budget.
+After the 202 the phone deletes its copy (and Expo's multipart copy) and polls
+`GET /api/recordings/{id}` every 2 s while the job runs.
+
+`POST /api/transcribe` (base64 audio inline, answered within 110 s) is deprecated
+and kept for one release; it runs the same stages.
 
 ## 3. Backend processing
 
-`backend/api/transcription.py`, using `backend/services/`.
+The worker (`backend/services/recording_worker.py`, started by the FastAPI
+lifespan) claims a job with `claim_recording_job()` (`FOR UPDATE SKIP LOCKED`) and
+runs the stage functions in `backend/services/recording_pipeline.py`, the same
+ones `/api/transcribe` calls. The transcript is saved as soon as it exists, and the
+stored audio is deleted then, so a retry never pays for transcription again. A
+transient failure is retried (at most 3 attempts, after `attempts * 30 s`); a stale
+job (5 minutes without progress) is reclaimed. The result is stored on the row
+until the draft is saved or discarded; rows older than 7 days are purged hourly.
 
 1. **Load categories.** Every row of `categories` defines a field to extract,
    with its type, options and whether it is required.

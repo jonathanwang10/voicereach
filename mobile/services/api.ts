@@ -27,7 +27,6 @@ export class ApiError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const TRANSCRIBE_TIMEOUT_MS = 120_000;
 const NETWORK_RETRY_DELAY_MS = 500;
 const NOT_SIGNED_IN = 'Not signed in. Check that the demo user exists in Supabase (see README setup).';
 const SIGNED_OUT = 'You signed out. Sign in again to continue.';
@@ -279,24 +278,6 @@ export interface SaveIndividualRequest {
 
 // Every backend call the app makes. Each throws ApiError; the caller shows it once.
 export const api = {
-  // Transcribe a recording (Whisper + field extraction + duplicate check)
-  transcribe: async (audioUri: string): Promise<TranscriptionResult> => {
-    // Read the local recording and send it inline as base64
-    const response = await fetch(audioUri);
-    const blob = await response.blob();
-    const base64Audio = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(blob);
-    });
-
-    // Whisper + GPT-4o + the duplicate check run in one request, so allow longer
-    return apiRequest<TranscriptionResult>('/api/transcribe', {
-      method: 'POST',
-      body: JSON.stringify({ audio_data: base64Audio }),
-    }, { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
-  },
-
   // Save a new person, or merge into `merge_with_id`. `data` holds category fields
   // only; it is never destructured, so a category called "location" or "id" is just
   // a field. Empty values are stripped so nothing is stored or shown as null (C-09).

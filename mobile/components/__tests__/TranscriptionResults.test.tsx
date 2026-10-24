@@ -188,6 +188,29 @@ it('re-checks duplicates when the worker corrects the name, and offers the match
   expect(api.saveIndividual).not.toHaveBeenCalled();
 });
 
+it('re-checks unedited data when recheckDuplicates is set (a draft reviewed later)', async () => {
+  (api.checkDuplicates as jest.Mock).mockResolvedValueOnce([{ id: MATCH_ID, name: 'Anne Lee', confidence: 90 }]);
+  const { getByText, findByText } = render(
+    <TranscriptionResults result={baseResult({ categorized_data: { name: 'Ann', height: 70, weight: 150 } })}
+      onSave={jest.fn()} onCancel={jest.fn()} recheckDuplicates />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await findByText('Potential Duplicate Found');
+  expect(api.checkDuplicates).toHaveBeenCalledTimes(1);
+  expect(api.checkDuplicates).toHaveBeenCalledWith({ name: 'Ann', height: 70, weight: 150 });
+  expect(api.saveIndividual).not.toHaveBeenCalled();
+});
+
+it("uses the given idempotencyKey as the save's Idempotency-Key", async () => {
+  const { getByText } = render(
+    <TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} idempotencyKey="rec-1" />
+  );
+  await waitFor(() => getByText('Save'));
+  fireEvent.press(getByText('Save'));
+  await waitFor(() => expect(api.saveIndividual).toHaveBeenCalledWith(expect.objectContaining({ idempotency_key: 'rec-1' })));
+});
+
 it('does not re-check unedited data: the transcribe result already holds the check', async () => {
   const { getByText } = render(
     <TranscriptionResults result={baseResult()} onSave={jest.fn()} onCancel={jest.fn()} />

@@ -54,7 +54,10 @@ only after `npx expo prebuild --platform ios`.
   `mobile/utils/location.ts`) at stop; a fix under 2 minutes old is used at once; a
   failed address lookup keeps the coordinates as 'Unknown Address'
   (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
-  own fix unless the worker picked a location by hand. The server re-checks the
+  own fix unless the worker picked a location by hand. A finished recording is
+  queued (`mobile/services/recordingQueue.ts`) and uploaded to `POST /api/recordings`;
+  the backend's lifespan worker (`services/recording_worker.py`) processes it and the
+  app reviews it as a draft; `/api/transcribe` is deprecated. The server re-checks the
   length with mutagen: 400 under 5 s or over 125 s (2:00 plus 5 s slack)
   (`services/openai_service.py`, `RECORDING_LIMITS`).
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and

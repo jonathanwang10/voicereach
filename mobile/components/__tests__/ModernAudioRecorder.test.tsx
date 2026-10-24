@@ -182,7 +182,7 @@ it('an interruption stops the recording, keeps the audio and says so', async () 
     'Recording was interrupted at 0:42. You can keep what was recorded or record again.',
     [expect.objectContaining({ text: 'Record again' }), expect.objectContaining({ text: 'Keep' })]);
   await act(async () => { lastAlert()[2].find((b: any) => b.text === 'Keep').onPress(); });
-  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined);
+  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined, 42000);
   expect(screen.getByText('Tap to start recording')).toBeTruthy();
 });
 
@@ -233,7 +233,7 @@ it('auto-stops at 2:00 and reports the recording', async () => {
   await press(screen);
   await at(120_000);
   expect(mockRecorder.stop).toHaveBeenCalled();
-  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined);
+  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined, 120000);
 });
 
 // C-39: the worker starts talking on tap, so the recording must not wait for GPS
@@ -257,7 +257,7 @@ it('reports the location captured while recording', async () => {
   await press(screen); // stop
   expect(onComplete).toHaveBeenCalledWith('file://a.m4a', {
     location: { latitude: 37.7, longitude: -122.4, address: '5th St San Francisco CA' },
-  });
+  }, 6000);
 });
 
 // C-39: a slow fix delays the hand-over by at most LOCATION_WAIT_MS, then it goes without
@@ -271,7 +271,7 @@ it('waits only a short time for a pending fix at stop', async () => {
   await press(screen); // stop
   expect(onComplete).not.toHaveBeenCalled();
   await tick(LOCATION_WAIT_MS);
-  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined);
+  expect(onComplete).toHaveBeenCalledWith('file://a.m4a', undefined, 6000);
 });
 
 // C-39: a second tap while the recorder is still starting is ignored

@@ -54,10 +54,12 @@ requirements.txt  Backend dependencies (pinned); requirements-dev.txt adds test 
                   ┌──────────────────────────────────────────┐
    Expo app ─────▶│ FastAPI (backend/)                       │
                   │                                          │
-   1. record m4a  │  POST /api/transcribe   (base64 audio)   │
-                  │    ├─ Whisper        → transcript        │
-                  │    ├─ GPT-4o         → structured fields │
-                  │    └─ GPT-4o         → duplicate check   │
+   1. record m4a  │  POST /api/recordings (multipart) → 202  │
+      (queued on  │  worker (in-process, Postgres queue):    │
+      the phone   │    ├─ transcribe     → transcript        │
+      until there │    ├─ GPT-4o         → structured fields │
+      is signal)  │    └─ duplicate check                    │
+                  │  GET /api/recordings/{id} (poll) → draft │
                   │                                          │
    2. save        │  POST /api/individuals                   │
                   │    ├─ urgency score  → computed          │
@@ -597,7 +599,7 @@ is logged.
 
 | What | Goes to | When | Kept |
 |---|---|---|---|
-| A recording: M4A audio (16 kHz mono AAC) of the worker describing the person | The backend, then OpenAI transcription (`TRANSCRIBE_MODEL`, default `gpt-transcribe`), with a fixed prompt of SF place and street names (no person names) | Each recording (`POST /api/transcribe`) | Backend: only as a temp file, deleted on every path (`openai_service.temp_audio_file`). Phone: in the app's cache until the record is saved or discarded, a new recording replaces it, or the Record screen goes away (kept until then so "Try Again" can resend it). OpenAI: under its API data policy and your account's retention settings. |
+| A recording: M4A audio (16 kHz mono AAC) of the worker describing the person | The backend, then OpenAI transcription (`TRANSCRIBE_MODEL`, default `gpt-transcribe`), with a fixed prompt of SF place and street names (no person names) | Each recording (`POST /api/recordings`) | Phone: in `documentDirectory/recordings/` (and SQLite holds its path, location and upload state) until the server answers 202; then the file and Expo's multipart copy are deleted. Backend: in the private `recordings` bucket until the transcription is saved, then deleted; the transcript and extracted result stay in the `recordings` table until the draft is saved or discarded, or at most 7 days (the worker purges hourly). OpenAI: under its API data policy and your account's retention settings. |
 | The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
 | The new person's name, aka, age, height, weight, gender and the street part of the last location, with the same for up to 8 existing candidates; never medical or sensitive fields | OpenAI `DUPLICATE_MODEL` (default `gpt-4o-mini`) | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
 | A person's name and labelled fields (`build_embedding_text`); never a sensitive (`is_sensitive`) field | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |

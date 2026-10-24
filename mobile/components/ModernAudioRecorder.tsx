@@ -30,7 +30,8 @@ export { LOCATION_WAIT_MS } from '../utils/location';
 export type { RecordingLocation } from '../utils/location';
 
 interface AudioRecorderProps {
-  onRecordingComplete: (uri: string, location?: RecordingLocation) => void;
+  // durationMs: the recorder's own length at the stop (H2-7.2)
+  onRecordingComplete: (uri: string, location: RecordingLocation | undefined, durationMs: number) => void;
 }
 
 export interface AudioRecorderRef {
@@ -85,6 +86,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   const sawRecordingRef = useRef(false);
   const warnedRef = useRef(false);
   const durationRef = useRef(0);
+  const durationMsRef = useRef(0);
   const releaseRef = useRef<(() => Promise<void>) | null>(null);
   // Set from the first tap until the recording has started: later taps are ignored (C-39)
   const startingRef = useRef(false);
@@ -107,6 +109,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     activeRef.current = false;
     locationRef.current = null;
     durationRef.current = 0;
+    durationMsRef.current = 0;
     stopAnimations();
     setIsRecording(false);
     setIsFinishing(false);
@@ -161,7 +164,8 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       handleInterruption();
       return;
     }
-    const seconds = Math.floor((recorderState.durationMillis ?? 0) / 1000);
+    durationMsRef.current = recorderState.durationMillis ?? 0;
+    const seconds = Math.floor(durationMsRef.current / 1000);
     durationRef.current = seconds;
     setDuration(seconds);
     if (seconds >= 120) {
@@ -210,6 +214,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       sawRecordingRef.current = false;
       warnedRef.current = false;
       durationRef.current = 0;
+      durationMsRef.current = 0;
       locationRef.current = captureLocation();
       setIsRecording(true);
       setDuration(0);
@@ -241,6 +246,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
 
     // Taken first, so a second tap or the 2:00 auto-stop is a no-op from here on
     activeRef.current = false;
+    const durationMs = durationMsRef.current;
     const pendingLocation = locationRef.current;
     stopAnimations();
     setIsFinishing(true);
@@ -252,7 +258,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
       const location = await awaitLocation(pendingLocation);
       resetState();
       if (uri) {
-        onRecordingComplete(uri, location);
+        onRecordingComplete(uri, location, durationMs);
       }
     } catch (err) {
       if (__DEV__) console.error('Failed to stop recording', err);
@@ -269,6 +275,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
   const handleInterruption = async () => {
     activeRef.current = false;
     const seconds = durationRef.current;
+    const durationMs = durationMsRef.current;
     const pendingLocation = locationRef.current;
     stopAnimations();
     setIsFinishing(true);
@@ -287,7 +294,7 @@ export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderPro
     const keep = {
       text: 'Keep',
       onPress: () => {
-        if (uri) onRecordingComplete(uri, location);
+        if (uri) onRecordingComplete(uri, location, durationMs);
       },
     };
     Alert.alert('Recording interrupted', INTERRUPTED_MESSAGE(formatDuration(seconds)),

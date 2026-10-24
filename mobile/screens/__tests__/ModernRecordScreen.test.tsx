@@ -1,18 +1,36 @@
-// C-13: no second recording while one is being transcribed, and one success toast per save.
+// H2-7.7: a finished recording is queued, uploaded in the background and reviewed as a
+// draft once the server has processed it.
 // C-02: each recording carries its own location unless one was picked by hand.
 // C-04: the picker opens at the location the screen already has.
-// C-38: "Try Again" re-transcribes the same recording; "Record again" discards it.
-// C-65: the recording leaves the app's cache once it is saved or discarded.
 import React from 'react';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { fireEvent, waitFor, act } from '@testing-library/react-native';
 
 let mockNextFix: any;
-let mockNextUri = 'file:///clip.m4a';
+// Every queue subscriber (the screen and useQueuedRecordings) hears each event
+const mockQueueListeners = new Set<(e: any) => void>();
+const mockQueueListener = (e: any) => mockQueueListeners.forEach(l => l(e));
+const mockQueued: any[] = [];
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
-// No AuthContext mock: the screen no longer reads auth (App only mounts it signed in),
-// so rendering it without an AuthProvider must work.
-jest.mock('../../services/api', () => ({ api: { transcribe: jest.fn() } }));
-jest.mock('expo-file-system', () => ({ deleteAsync: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../services/recordingQueue', () => ({
+  enqueueRecording: jest.fn(async (fileUri: string, durationMs: number, location: any) => {
+    const item = { clientRecordingId: `c${mockQueued.length + 1}`, fileUri, durationMs, location,
+                   createdAt: '2026-11-07T10:00:00.000Z', state: 'pending', attempts: 0, nextAttemptAt: 0, lastError: null };
+    mockQueued.push(item);
+    return item;
+  }),
+  flushQueue: jest.fn(async () => undefined),
+  subscribe: jest.fn((listener: any) => {
+    mockQueueListeners.add(listener);
+    return () => { mockQueueListeners.delete(listener); };
+  }),
+  listQueued: jest.fn(async () => mockQueued.map(i => ({ ...i }))),
+  removeQueued: jest.fn(async () => undefined),
+  isOnlineState: jest.requireActual('../../services/recordingQueue').isOnlineState,
+}));
+jest.mock('../../services/api', () => ({
+  api: { getRecording: jest.fn(), deleteRecording: jest.fn(async () => undefined), listRecordings: jest.fn(async () => []) },
+}));
 jest.mock('../../components/LocationPicker', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
@@ -35,7 +53,7 @@ jest.mock('../../components/ModernAudioRecorder', () => {
   const { Text, TouchableOpacity } = require('react-native');
   return {
     ModernAudioRecorder: React.forwardRef(({ onRecordingComplete }: any, _ref: any) => (
-      <TouchableOpacity onPress={() => onRecordingComplete(mockNextUri, mockNextFix)}>
+      <TouchableOpacity onPress={() => onRecordingComplete('file:///clip.m4a', mockNextFix, 61000)}>
         <Text>Stub Recorder</Text>
       </TouchableOpacity>
     )),
@@ -44,12 +62,14 @@ jest.mock('../../components/ModernAudioRecorder', () => {
 jest.mock('../../components/TranscriptionResults', () => {
   const { Text, TouchableOpacity, View } = require('react-native');
   return {
-    TranscriptionResults: ({ onSave, location }: any) => (
+    TranscriptionResults: ({ onSave, onCancel, location, idempotencyKey, recheckDuplicates, result }: any) => (
       <View>
+        <Text>Draft: {result.transcription}</Text>
         <Text>Loc: {location?.address ?? 'none'}</Text>
-        <TouchableOpacity onPress={() => onSave({ name: 'Ann' })}>
-          <Text>Stub Save</Text>
-        </TouchableOpacity>
+        <Text>Key: {idempotencyKey ?? 'none'}</Text>
+        <Text>Recheck: {recheckDuplicates ? 'yes' : 'no'}</Text>
+        <TouchableOpacity onPress={() => onSave({ name: 'Ann' })}><Text>Stub Save</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => onCancel()}><Text>Stub Cancel</Text></TouchableOpacity>
       </View>
     ),
   };
@@ -69,241 +89,252 @@ jest.mock('../../components/ManualEntryForm', () => {
 });
 
 import Toast from 'react-native-toast-message';
+import NetInfo from '@react-native-community/netinfo';
 import { ModernRecordScreen } from '../ModernRecordScreen';
 import { api } from '../../services/api';
-import * as FileSystem from 'expo-file-system';
+import { enqueueRecording, flushQueue, removeQueued } from '../../services/recordingQueue';
+import { renderWithQuery } from '../../test/renderWithQuery';
 
 const RESULT = {
-  transcription: 't', categorized_data: {}, missing_required: [], potential_matches: [], validation_errors: [],
+  transcription: 'Met Ann', categorized_data: { name: 'Ann' }, missing_required: [], potential_matches: [],
+  validation_errors: [],
 };
 const fix = (address: string, latitude = 37.1, longitude = -122.1) => ({ location: { latitude, longitude, address } });
+const detail = (status: string, extra: any = {}) => ({
+  id: 'r1', status, error: null, result: status === 'ready' ? RESULT : null, location: null,
+  duration_ms: 61000, created_at: '2026-11-07T10:00:00Z', ...extra,
+});
+const ONLINE = { isConnected: true, isInternetReachable: true };
+
+const render = () => renderWithQuery(<ModernRecordScreen />);
+
+// Record, then let the queue report the upload's 202
+async function recordAndUpload(screen: any, recordingId = 'r1') {
+  fireEvent.press(screen.getByText('Stub Recorder'));
+  await waitFor(() => expect(flushQueue).toHaveBeenCalled());
+  const item = mockQueued[mockQueued.length - 1];
+  await act(async () => {
+    mockQueued.splice(mockQueued.indexOf(item), 1);
+    mockQueueListener({ type: 'uploaded', clientRecordingId: item.clientRecordingId, recordingId });
+    mockQueueListener({ type: 'changed' });
+  });
+}
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockNextFix = undefined;
-  mockNextUri = 'file:///clip.m4a';
-  (api.transcribe as jest.Mock).mockResolvedValue(RESULT);
+  mockQueued.length = 0;
+  (NetInfo.useNetInfo as jest.Mock).mockReturnValue(ONLINE);
+  (api.getRecording as jest.Mock).mockResolvedValue(detail('ready'));
 });
 
-describe('H2-6.3 one Transcribing state with the real reason', () => {
-  it('shows "Transcribing..." while the recording is processed', async () => {
-    (api.transcribe as jest.Mock).mockReturnValue(new Promise(() => {}));
-    const screen = render(<ModernRecordScreen />);
+describe('queueing (H2-7.6)', () => {
+  it('queues the recording with its own fix, then starts the upload', async () => {
+    mockNextFix = fix('First St');
+    const screen = render();
     fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Transcribing...');
-    expect(screen.queryByText('Uploading audio...')).toBeNull();
+    await waitFor(() => expect(flushQueue).toHaveBeenCalled());
+    expect(enqueueRecording).toHaveBeenCalledWith('file:///clip.m4a', 61000, fix('First St').location);
+    expect((enqueueRecording as jest.Mock).mock.invocationCallOrder[0])
+      .toBeLessThan((flushQueue as jest.Mock).mock.invocationCallOrder[0]);
   });
 
-  it("shows the backend's reason on the error card", async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(
-      Object.assign(new Error('File is not in M4A format'), { detail: 'File is not in M4A format', status: 400 }));
-    const screen = render(<ModernRecordScreen />);
+  it('shows the recorder again as soon as a recording is queued', async () => {
+    const screen = render();
     fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('File is not in M4A format');
-    expect(screen.getByText('Try Again')).toBeTruthy();
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalled());
+    expect(screen.getByText('Stub Recorder')).toBeTruthy();
   });
 
-  it('shows one toast per failure, not two', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('The server took too long to respond. Please try again.'));
-    const screen = render(<ModernRecordScreen />);
+  it('shows "Queued: no connection" while offline', async () => {
+    (NetInfo.useNetInfo as jest.Mock).mockReturnValue({ isConnected: false, isInternetReachable: false });
+    const screen = render();
     fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Try Again');
-    const toasts = (Toast.show as jest.Mock).mock.calls.map(c => c[0]);
-    expect(toasts.filter(t => t.type === 'error')).toHaveLength(1);
-    expect(toasts.filter(t => t.type === 'info')).toHaveLength(0);
+    expect(await screen.findByText('Queued: no connection')).toBeTruthy();
+  });
+
+  it('shows "Uploading" while the queued recording is sent', async () => {
+    const screen = render();
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    expect(await screen.findByText('Uploading')).toBeTruthy();
+  });
+
+  it("a rejected upload shows the server's reason and can be discarded", async () => {
+    const screen = render();
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await waitFor(() => expect(flushQueue).toHaveBeenCalled());
+    await act(async () => {
+      Object.assign(mockQueued[0], { state: 'rejected', lastError: 'File is not in M4A format' });
+      mockQueueListener({ type: 'changed' });
+    });
+    expect(await screen.findByText("Couldn't upload this recording")).toBeTruthy();
+    expect(screen.getByText('File is not in M4A format')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    expect(removeQueued).toHaveBeenCalledWith('c1');
   });
 });
 
-it('hides the recorder while a recording is being transcribed', async () => {
-  let finish: (r: any) => void = () => {};
-  (api.transcribe as jest.Mock).mockReturnValue(new Promise(r => { finish = r; }));
-  const { getByText, queryByText, findByText } = render(<ModernRecordScreen />);
+describe('processing and review (H2-7.7)', () => {
+  it('polls the recording every 2 s while it is transcribing', async () => {
+    (api.getRecording as jest.Mock).mockResolvedValue(detail('transcribing'));
+    jest.useFakeTimers();
+    try {
+      const screen = render();
+      await recordAndUpload(screen);
+      await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+      expect(screen.getByText('Transcribing')).toBeTruthy();
+      expect(api.getRecording).toHaveBeenCalledTimes(1);
+      await act(async () => { await jest.advanceTimersByTimeAsync(2000); });
+      expect(api.getRecording).toHaveBeenCalledTimes(2);
+      expect(api.getRecording).toHaveBeenLastCalledWith('r1');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
-  fireEvent.press(getByText('Stub Recorder'));
-  await waitFor(() => expect(api.transcribe).toHaveBeenCalled());
-  expect(queryByText('Stub Recorder')).toBeNull();
+  it('shows "Ready to review" and stops polling once ready', async () => {
+    jest.useFakeTimers();
+    try {
+      const screen = render();
+      await recordAndUpload(screen);
+      await act(async () => { await jest.advanceTimersByTimeAsync(0); });
+      expect(screen.getByText('Ready to review')).toBeTruthy();
+      await act(async () => { await jest.advanceTimersByTimeAsync(10_000); });
+      expect(api.getRecording).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
-  await act(async () => finish(RESULT));
-  await findByText('Stub Save');
-});
+  it('Review now opens the stored result with the recording location', async () => {
+    (api.getRecording as jest.Mock).mockResolvedValue(detail('ready', { location: fix('Gps St').location }));
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
+    expect(screen.getByText('Draft: Met Ann')).toBeTruthy();
+    expect(screen.getByText('Loc: Gps St')).toBeTruthy();
+    expect(screen.getByText('Recheck: yes')).toBeTruthy();
+    expect(screen.queryByText('Stub Recorder')).toBeNull();
+  });
 
-it('leaves the save toast to the form: the screen adds none', async () => {
-  const { getByText, findByText } = render(<ModernRecordScreen />);
-  fireEvent.press(getByText('Stub Recorder'));
-  fireEvent.press(await findByText('Stub Save'));
+  it('saving a draft passes its recording id as the idempotency key and deletes the recording', async () => {
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
+    expect(screen.getByText('Key: r1')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Stub Save')); });
+    expect(api.deleteRecording).toHaveBeenCalledWith('r1');
+    expect(await screen.findByText('Stub Recorder')).toBeTruthy();
+    expect(screen.queryByText('Ready to review')).toBeNull();
+  });
 
-  const saveToasts = (Toast.show as jest.Mock).mock.calls
-    .map(c => c[0])
-    .filter(t => t.type === 'success' && /saved|recorded/i.test(t.text2 ?? ''));
-  expect(saveToasts).toEqual([]);
-  // and the screen is back to a fresh recorder
-  await findByText('Stub Recorder');
+  it("a draft saved but not deleted says so, and leaves it in Drafts", async () => {
+    (api.deleteRecording as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
+    await act(async () => { fireEvent.press(screen.getByText('Stub Save')); });
+    expect((Toast.show as jest.Mock).mock.calls.map(c => c[0].text1)).toContain("Saved. Couldn't remove the draft.");
+    expect(await screen.findByText('Stub Recorder')).toBeTruthy();
+  });
+
+  it('Later keeps the recording for Drafts without deleting it', async () => {
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Later'));
+    expect(screen.queryByText('Ready to review')).toBeNull();
+    expect(api.deleteRecording).not.toHaveBeenCalled();
+  });
+
+  it('discarding asks first, then deletes the recording', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
+    fireEvent.press(screen.getByText('Stub Cancel'));
+    expect(alert).toHaveBeenCalledWith('Discard this recording?', 'The audio and its transcript will be deleted.',
+      expect.any(Array));
+    expect(api.deleteRecording).not.toHaveBeenCalled();
+    const discard = alert.mock.calls[0][2]!.find(b => b.text === 'Discard')!;
+    await act(async () => { discard.onPress!(); });
+    expect(api.deleteRecording).toHaveBeenCalledWith('r1');
+    expect(await screen.findByText('Stub Recorder')).toBeTruthy();
+    alert.mockRestore();
+  });
+
+  it('a failed recording shows its error and can be discarded', async () => {
+    (api.getRecording as jest.Mock).mockResolvedValue(
+      detail('failed', { error: 'Audio must be at least 5 seconds long' }));
+    const screen = render();
+    await recordAndUpload(screen);
+    expect(await screen.findByText("Couldn't process this recording")).toBeTruthy();
+    expect(screen.getByText('Audio must be at least 5 seconds long')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    expect(api.deleteRecording).toHaveBeenCalledWith('r1');
+  });
 });
 
 describe('location (C-02, C-04)', () => {
-  it("stamps each recording with its own fix, not the first one's", async () => {
-    const screen = render(<ModernRecordScreen />);
+  it("does not reuse the previous recording's fix", async () => {
+    const screen = render();
     mockNextFix = fix('First St');
     fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: First St');
-    fireEvent.press(screen.getByText('Stub Save'));
-
-    mockNextFix = fix('Second St');
-    fireEvent.press(await screen.findByText('Stub Recorder'));
-    await screen.findByText('Loc: Second St');
-  });
-
-  it('does not reuse the previous fix when a recording has none', async () => {
-    const screen = render(<ModernRecordScreen />);
-    mockNextFix = fix('First St');
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: First St');
-    fireEvent.press(screen.getByText('Stub Save'));
-
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalledTimes(1));
     mockNextFix = undefined;
-    fireEvent.press(await screen.findByText('Stub Recorder'));
-    await screen.findByText('Loc: none');
-    expect(screen.queryByText('Location Set')).toBeNull();
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalledTimes(2));
+    expect((enqueueRecording as jest.Mock).mock.calls[1][2]).toBeNull();
   });
 
   it("uses a hand-picked location over the recording's fix", async () => {
-    const screen = render(<ModernRecordScreen />);
+    const screen = render();
     fireEvent.press(screen.getByText('Set Location'));
     fireEvent.press(screen.getByText('Stub Pick'));
-
     mockNextFix = fix('Gps St');
     fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: Picked St');
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalled());
+    expect((enqueueRecording as jest.Mock).mock.calls[0][2]).toEqual({ latitude: 1, longitude: 2, address: 'Picked St' });
+  });
+
+  it('does not carry a hand-picked location over to the next recording', async () => {
+    const screen = render();
+    fireEvent.press(screen.getByText('Set Location'));
+    fireEvent.press(screen.getByText('Stub Pick'));
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalledTimes(1));
+    mockNextFix = fix('Second St');
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await waitFor(() => expect(enqueueRecording).toHaveBeenCalledTimes(2));
+    expect((enqueueRecording as jest.Mock).mock.calls[1][2]).toEqual(fix('Second St').location);
+    expect(screen.queryByText('Location Set')).toBeNull();
   });
 
   it('opens the picker at the current location', async () => {
-    const screen = render(<ModernRecordScreen />);
-    mockNextFix = fix('Gps St', 37.5, -122.5);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: Gps St');
-
+    (api.getRecording as jest.Mock).mockResolvedValue(detail('ready', { location: fix('Gps St', 37.5, -122.5).location }));
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
     fireEvent.press(screen.getByText('Change location'));
     expect(screen.getByText('Picker initial: 37.5,-122.5')).toBeTruthy();
   });
 
-  // Fix round 1 (#1): a manual save must not wipe a voice result's pending location
-  it('keeps a pending voice result\'s location when a manual entry is saved', async () => {
-    const screen = render(<ModernRecordScreen />);
-    mockNextFix = fix('First St');
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: First St');
-
-    fireEvent.press(screen.getByText('Manual Entry'));
-    fireEvent.press(screen.getByText('Stub Manual Save'));
-    fireEvent.press(screen.getByText('Voice Recording'));
-    expect(screen.getByText('Loc: First St')).toBeTruthy();
-  });
-
-  // Fix round 1 (#5): a hand-picked location belongs to one record only
-  it('does not carry a hand-picked location over to the next recording', async () => {
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Set Location'));
+  it('a location picked during a review is the one the review saves with', async () => {
+    (api.getRecording as jest.Mock).mockResolvedValue(detail('ready', { location: fix('Gps St').location }));
+    const screen = render();
+    await recordAndUpload(screen);
+    fireEvent.press(await screen.findByText('Review now'));
+    fireEvent.press(screen.getByText('Change location'));
     fireEvent.press(screen.getByText('Stub Pick'));
-    mockNextFix = fix('First St');
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Loc: Picked St');
-    fireEvent.press(screen.getByText('Stub Save'));
-
-    mockNextFix = fix('Second St');
-    fireEvent.press(await screen.findByText('Stub Recorder'));
-    await screen.findByText('Loc: Second St');
+    expect(screen.getByText('Loc: Picked St')).toBeTruthy();
   });
 
   it('clears the location after a manual save', async () => {
-    const screen = render(<ModernRecordScreen />);
+    const screen = render();
     fireEvent.press(screen.getByText('Set Location'));
     fireEvent.press(screen.getByText('Stub Pick'));
     fireEvent.press(screen.getByText('Manual Entry'));
     expect(screen.getByText('Manual loc: Picked St')).toBeTruthy();
-
     fireEvent.press(screen.getByText('Stub Manual Save'));
     expect(screen.getByText('Manual loc: none')).toBeTruthy();
-  });
-});
-
-describe('after a failed transcription (C-38)', () => {
-  it('"Try Again" re-transcribes the same recording', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    fireEvent.press(await screen.findByText('Try Again'));
-
-    await screen.findByText('Stub Save');
-    expect(api.transcribe).toHaveBeenCalledTimes(2);
-    expect((api.transcribe as jest.Mock).mock.calls[1][0]).toBe('file:///clip.m4a');
-  });
-
-  // Fix round 1 (#5): the retry keeps the recording's own location
-  it('"Try Again" keeps the recording\'s location', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    mockNextFix = fix('First St');
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    fireEvent.press(await screen.findByText('Try Again'));
-    await screen.findByText('Loc: First St');
-  });
-
-  it('"Record again" discards the recording', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    fireEvent.press(await screen.findByText('Record again'));
-
-    expect(screen.queryByText('Try Again')).toBeNull();
-    expect(screen.getByText('Stub Recorder')).toBeTruthy();
-    expect(api.transcribe).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('C-65 recorded audio', () => {
-  it('is deleted from the cache once the record is saved', async () => {
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    fireEvent.press(await screen.findByText('Stub Save'));
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
-  });
-
-  it('is deleted when it is discarded with "Record again"', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    fireEvent.press(await screen.findByText('Record again'));
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
-  });
-
-  it('is kept while "Try Again" may still need it', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Try Again');
-    expect(FileSystem.deleteAsync).not.toHaveBeenCalled();
-  });
-});
-
-describe('C-65 recorded audio: no leftovers (T14 fix round 1)', () => {
-  it('recording again after a failed transcription deletes the earlier file', async () => {
-    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('network down'));
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Try Again');
-
-    mockNextUri = 'file:///clip2.m4a';
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Stub Save');
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
-    expect(FileSystem.deleteAsync).not.toHaveBeenCalledWith('file:///clip2.m4a', expect.anything());
-  });
-
-  it('leaving the screen deletes the current recording', async () => {
-    const screen = render(<ModernRecordScreen />);
-    fireEvent.press(screen.getByText('Stub Recorder'));
-    await screen.findByText('Stub Save');
-    screen.unmount();
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///clip.m4a', { idempotent: true });
   });
 });

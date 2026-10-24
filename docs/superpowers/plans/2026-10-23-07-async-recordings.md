@@ -963,7 +963,7 @@ Screen behaviour:
 - `openDraft(id: string)` (used by Task 8) runs `queryClient.fetchQuery(detail(id))` and opens the review when the status is `ready`.
 - Removed: `holdRecording`, the cache-file cleanup, `uploadAudioFile`/`transcribeAudio` and their toasts, `retryTranscription`. The queue now owns the file, and retrying is automatic.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `recordingStatus.test.ts`: one `it` per table row, asserting `recordingStatusView(...)` equals `{label, tone, detail?}` exactly. Plus `recordingPollInterval`: `'transcribing'` → 2000, `undefined` → 2000, `'ready'` → `false`, `'failed'` → `false`.
 
@@ -1001,28 +1001,28 @@ it('a failed recording shows its error and can be discarded', ...);
 it('shows the recorder again as soon as a recording is queued', ...);      // replaces the C-13 "hides the recorder" case
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd mobile && npx jest utils/__tests__/recordingStatus.test.ts screens/__tests__/ModernRecordScreen.test.tsx components/__tests__/TranscriptionResults.test.tsx components/__tests__/ModernAudioRecorder.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Write the helpers, the query hooks, the screen changes, the two `TranscriptionResults` props and the recorder's third argument. Remove `api.transcribe`. Status card text needs `accessibilityLiveRegion="polite"` and `accessibilityRole` on the buttons (Phase 6 a11y rules).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd mobile && npx jest && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Docs (the upload format changed)**
+- [x] **Step 5: Docs (the upload format changed)**
 
 - README "How it works": step 1 becomes `POST /api/recordings (multipart m4a) → 202`, with a worker box (transcribe → extract → duplicate check), then a `GET /api/recordings/{id}` poll.
 - "Data leaving the system", first row: the phone keeps the audio in `documentDirectory/recordings/` until the server answers 202. The server keeps it in the private `recordings` bucket until the transcription is saved. The transcript and result live in `recordings` until the draft is saved or discarded, or for at most 7 days.
 - `docs/VOICE_PIPELINE.md` §1 Retry and §2 Upload are rewritten for the queue and the worker, and §3 says the stages are shared (`services/recording_pipeline.py`).
 - CLAUDE.md, under "Recording": "A finished recording is queued (`mobile/services/recordingQueue.ts`) and uploaded to `POST /api/recordings`; the backend's lifespan worker processes it; `/api/transcribe` is deprecated."
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add mobile/ README.md CLAUDE.md docs/VOICE_PIPELINE.md

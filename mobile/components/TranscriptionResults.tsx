@@ -40,6 +40,11 @@ interface TranscriptionResultsProps {
     longitude: number;
     address: string;
   } | null;
+  // A draft's recording id (H2-7.7): a second save after a failed draft delete must
+  // return the first save, not create a second person
+  idempotencyKey?: string;
+  // A draft reviewed later: its matches are stale, so Save always re-checks
+  recheckDuplicates?: boolean;
 }
 
 // Same fields with the same values (key order ignored)
@@ -54,6 +59,8 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
   onSave,
   onCancel,
   location,
+  idempotencyKey: givenKey,
+  recheckDuplicates = false,
 }) => {
   const [categorizedData, setCategorizedData] = useState<Record<string, any>>(result.categorized_data);
   const [showMergeUI, setShowMergeUI] = useState(false);
@@ -101,7 +108,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
 
   // One Idempotency-Key for this review: every save attempt (new, merge, Create New)
   // sends it, so a retry after a lost response can't save the person twice (H2-2.4)
-  const idempotencyKey = useRef(newRequestId()).current;
+  const idempotencyKey = useRef(givenKey ?? newRequestId()).current;
 
   const save = (fields: Record<string, any>, mergeWithId?: string, expectedVersion?: number,
                 decision?: DuplicateDecision) =>
@@ -157,7 +164,7 @@ export const TranscriptionResults: React.FC<TranscriptionResultsProps> = ({
       // Only real, live people count (no mock ids, no pending deletes).
       const fields = toFields(categorizedData);
       let matches = topMatches(result.potential_matches);
-      if (result.duplicate_check_failed || !sameFields(fields, toFields(result.categorized_data))) {
+      if (recheckDuplicates || result.duplicate_check_failed || !sameFields(fields, toFields(result.categorized_data))) {
         try {
           matches = topMatches(await api.checkDuplicates(fields), result.potential_matches);
         } catch {
