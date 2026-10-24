@@ -74,6 +74,13 @@ These are the names the earlier phase plans define (checked across plans on 2026
 11. **`NSFileProtectionComplete` and background uploads conflict while the phone is locked.** iOS can't read a Complete-class file while the phone is locked, so an upload that is still running when the worker locks the phone may fail. The roadmap's stronger class is kept. A failed upload is retried on the next foreground, and Device check P7-4 confirms nothing is lost.
 12. **Reviewing a draft always re-checks duplicates on Save, and uses the recording id as the save's `Idempotency-Key`.** A draft can be reviewed hours later, so its matches are stale. A save whose `DELETE /api/recordings/{id}` then fails leaves the draft listed, and saving it again must return the first save (Phase 2), not create a second person.
 
+13. **(Task 2, during execution) Small fallout.** The four other test files that patched
+    `services.duplicate_detection_service.DuplicateDetectionService` for `/api/transcribe`
+    (`test_error_contract`, `test_normalised_paths`, `test_no_pii_logs`, `test_duplicate_service_unit`)
+    now patch `services.recording_pipeline.DuplicateDetectionService`, where the stage looks it up.
+    The deprecation test reads the route from `api.transcription.router`: the app includes routers
+    lazily (see `test_security_routes._http_routes`), so `app.routes` doesn't list it by path.
+
 ## Review Focus
 
 1. **Two queued recordings of the same new person.** Both are processed before either is saved, so the second draft's `potential_matches` can't contain the first. Expected: Save on a draft re-checks duplicates and offers the first person. Test: Task 7, `re-checks unedited data when recheckDuplicates is set (a draft reviewed later)`.
@@ -309,7 +316,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - `def build_transcribe_response(transcription: str, validation: ValidationResult, matches: list[dict], duplicate_check_failed: bool) -> TranscribeResponse`
 - `db/models.py: TranscribeResponse`, with the same fields as today. `api/transcription.py` re-imports it, so `from api.transcription import TranscribeResponse` keeps working.
 
-- [ ] **Step 1: Write the failing stage tests** (`test_recording_pipeline.py`)
+- [x] **Step 1: Write the failing stage tests** (`test_recording_pipeline.py`)
 
 ```python
 def test_load_categories_formats_rows_for_the_extractor():
@@ -358,21 +365,21 @@ def test_transcribe_route_is_marked_deprecated():
 
 Every existing test in the file must still pass unchanged in its assertions. That is what proves the refactor kept the behaviour.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_recording_pipeline.py backend/tests/test_transcribe_route.py -q`
 Expected: FAIL with `ModuleNotFoundError: services.recording_pipeline`.
 
-- [ ] **Step 3: Implement the stages and rewire `_transcribe`**
+- [x] **Step 3: Implement the stages and rewire `_transcribe`**
 
 Move the code out of `_transcribe` without changing what it does. `_transcribe` becomes: `load_categories` → the audio branch (base64 into `temp_audio_file` → `transcribe_stage`; `audio_url` → `openai_service.transcribe_audio`) → `extract_stage` → `duplicate_stage(..., categories=categories)` (as Phase 3's route passes them; no location) → `build_transcribe_response`. Map `NoCategories` to the same 500 detail as today, and keep the `AudioTooLarge` / `ValueError` / `pydantic.ValidationError` mapping exactly as Phase 1 left it. If Phase 1 put the duration check inside `OpenAIService.transcribe_audio_file`, `transcribe_stage` doesn't call it again. Add `deprecated=True` to `@router.post("/api/transcribe", ...)`, with a comment: `# Deprecated (H2-7.5): the app uses POST /api/recordings; kept for one release.`
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `python -m pytest backend/tests/test_recording_pipeline.py backend/tests/test_transcribe_route.py backend/tests/test_normalised_paths.py backend/tests/test_request_limits.py backend/tests/test_no_pii_logs.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full checks and commit**
+- [x] **Step 5: Run the full checks and commit**
 
 ```bash
 git add backend/services/recording_pipeline.py backend/api/transcription.py backend/db/models.py backend/tests/

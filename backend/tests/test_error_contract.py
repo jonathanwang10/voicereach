@@ -281,7 +281,7 @@ def test_bad_match_shape_on_transcribe_is_a_generic_500_that_echoes_nothing():
     dup.return_value.find_duplicates = AsyncMock(return_value=["SECRET-MATCH"])
     with patch("api.transcription.get_supabase", return_value=sb), \
          patch("api.transcription.get_openai_service", return_value=openai), \
-         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+         patch("services.recording_pipeline.DuplicateDetectionService", dup):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
     assert (r.status_code, r.json()) == (500, {"detail": "Transcription failed"})
     assert "SECRET" not in r.text

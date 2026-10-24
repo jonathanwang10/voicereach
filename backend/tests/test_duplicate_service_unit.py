@@ -279,7 +279,7 @@ def _transcribe_with(find_duplicates):
     dup.return_value.find_duplicates = find_duplicates
     with patch("api.transcription.get_openai_service", return_value=openai_mock), \
          patch("api.transcription.get_supabase", return_value=supabase), \
-         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+         patch("services.recording_pipeline.DuplicateDetectionService", dup):
         return TestClient(app).post("/api/transcribe", json={"audio_data": "AAAA"})
 
 

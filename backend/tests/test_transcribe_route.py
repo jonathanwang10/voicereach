@@ -39,7 +39,7 @@ def _run(body, categorized=None, categories=CATEGORIES, openai=None, matches=(MA
     dup.return_value.find_duplicates = AsyncMock(return_value=list(matches))
     with patch("api.transcription.get_openai_service", return_value=openai), \
          patch("api.transcription.get_supabase", return_value=sb), \
-         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+         patch("services.recording_pipeline.DuplicateDetectionService", dup):
         response = TestClient(app).post("/api/transcribe", json=body)
     return response, openai, sb, dup.return_value.find_duplicates
 
@@ -142,3 +142,9 @@ def test_no_categories_is_a_500_before_any_openai_call():
     assert r.status_code == 500
     assert "No categories found" in r.json()["detail"]
     openai.transcribe_audio.assert_not_called()
+
+
+def test_transcribe_route_is_marked_deprecated():
+    from api.transcription import router
+    route = next(r for r in router.routes if getattr(r, "path", "") == "/api/transcribe")
+    assert route.deprecated is True

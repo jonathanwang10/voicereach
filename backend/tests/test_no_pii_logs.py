@@ -173,7 +173,7 @@ def test_transcribe_path_logs_no_transcript(capture, capsys):
     dup.return_value.find_duplicates = AsyncMock(side_effect=RuntimeError(f"no match for {SENTINEL_NAME}"))
     with patch("api.transcription.get_openai_service", return_value=openai_mock), \
          patch("api.transcription.get_supabase", return_value=FakeDB()), \
-         patch("services.duplicate_detection_service.DuplicateDetectionService", dup):
+         patch("services.recording_pipeline.DuplicateDetectionService", dup):
         r = _client().post("/api/transcribe", json={"audio_data": "AAAA"})
     assert r.status_code == 200, r.text
     assert r.json()["duplicate_check_failed"] is True

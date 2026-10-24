@@ -6,13 +6,15 @@ import base64
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, ValidationError
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from api.errors import internal_error
-from db.client import get_supabase, run_db
+from db.client import get_supabase
+from db.models import TranscribeResponse  # noqa: F401 (also importable from here)
 from services.openai_service import AudioTooLarge, get_openai_service, temp_audio_file
 from services.rate_limit import rate_limit
-from services.validation_helper import validate_categorized_data
+from services.recording_pipeline import (NoCategories, build_transcribe_response, duplicate_stage, extract_stage,
+                                         load_categories, transcribe_stage)
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +32,8 @@ class TranscribeRequest(BaseModel):
     audio_data: Optional[str] = None  # Base64 encoded audio data
 
 
-class TranscribeResponse(BaseModel):
-    transcription: str
-    categorized_data: Dict[str, Any]
-    missing_required: List[str]
-    potential_matches: List[Dict[str, Any]]
-    validation_errors: List[Dict[str, str]] = []
-    # True when the duplicate check itself failed (e.g. the database was unreachable),
-    # so an empty potential_matches means "unknown", not "no match" (C-08). The app
-    # re-checks before saving.
-    duplicate_check_failed: bool = False
-
-
-@router.post("/api/transcribe", response_model=TranscribeResponse)
+# Deprecated (H2-7.5): the app uses POST /api/recordings; kept for one release.
+@router.post("/api/transcribe", response_model=TranscribeResponse, deprecated=True)
 async def transcribe_audio_endpoint(
     request: TranscribeRequest,
     user_id: str = Depends(rate_limit("transcribe", "RATE_LIMIT_TRANSCRIBE_PER_MIN", 30)),
@@ -56,93 +47,41 @@ async def transcribe_audio_endpoint(
 
 async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
     """
-    Transcribe audio and extract categorized data
-    
-    Process:
-    1. Fetch all categories from database
-    2. Transcribe audio using Whisper
-    3. Categorize transcription using GPT-4o
-    4. Validate required fields
-    5. Find potential duplicates
-    6. Return complete results (no streaming)
+    Transcribe audio and extract categorized data: categories, transcription,
+    extraction and validation, duplicate check (services/recording_pipeline.py).
     """
     try:
-        # Initialize services
         openai_service = get_openai_service()
         supabase = get_supabase()
-        
-        # 1. Fetch all categories from database
-        categories_response = await run_db(lambda: supabase.table("categories").select("*").order("created_at").execute())
-        
-        if not categories_response.data:
-            raise HTTPException(
-                status_code=500, 
-                detail="No categories found in database. Please ensure categories are properly configured."
-            )
-        
-        # Format categories for GPT-4o
-        categories = []
-        for cat in categories_response.data:
-            category_data = {
-                "name": cat["name"],
-                "display_name": cat.get("display_name"),   # the schema's field descriptions
-                "type": cat["type"],
-                "is_required": cat["is_required"],
-                "is_sensitive": cat.get("is_sensitive", False),   # kept out of the compare prompt (H2-3.8)
-                "options": cat.get("options", None)
-            }
-            categories.append(category_data)
-        
+
+        # 1. Categories (the stages are shared with the recordings worker, H2-7.3)
+        try:
+            categories = await load_categories(supabase)
+        except NoCategories as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
         # 2. Transcribe audio
         if request.audio_data:
             # Base64 audio (an optional data-URL prefix is stripped). The temp file is
             # removed on every path, including a failed write (C-65).
             audio_data = base64.b64decode(request.audio_data.split(',', 1)[-1])
             with temp_audio_file(audio_data) as temp_file_path:
-                transcription = await openai_service.transcribe_audio_file(temp_file_path)
+                transcription = await transcribe_stage(temp_file_path, openai_service)
         elif request.audio_url:
-            # Handle audio URL
             transcription = await openai_service.transcribe_audio(request.audio_url)
         else:
             raise HTTPException(status_code=400, detail="Either audio_url or audio_data must be provided")
-        
-        # 3. Categorize transcription
-        categorized_data = await openai_service.categorize_transcription(transcription, categories)
-        
-        # 4. Normalise and validate categorized data. From here on only the
-        # normalised dict is used (no None / "" values, canonical labels).
-        validation_result = validate_categorized_data(categorized_data, categories)
-        categorized_data = validation_result.normalized_data
-        missing_required = validation_result.missing_required
-        
-        # 5. Find potential duplicates using real database search and LLM comparison
-        potential_matches = []
 
-        # Import and initialize duplicate detection service
-        from services.duplicate_detection_service import DuplicateDetectionService
+        # 3-4. Categorize, normalise and validate
+        validation = await extract_stage(transcription, categories, openai_service)
 
-        duplicate_service = DuplicateDetectionService(supabase, openai_service)
+        # 5. Potential duplicates; a failed check is reported, never shown as "no match"
+        matches, duplicate_check_failed = await duplicate_stage(
+            validation.normalized_data, supabase, openai_service, categories=categories)
 
-        # Find potential duplicates. A failure doesn't fail the transcription (the
-        # worker keeps the transcript), but it is reported, never shown as "no match".
-        duplicate_check_failed = False
-        try:
-            potential_matches = await duplicate_service.find_duplicates(categorized_data, categories=categories)
-        except Exception as e:
-            logger.warning("Duplicate detection failed: %s", type(e).__name__)
-            potential_matches = []
-            duplicate_check_failed = True
-        
         # 6. Return complete results
-        return TranscribeResponse(
-            transcription=transcription,
-            categorized_data=categorized_data,
-            missing_required=missing_required,
-            potential_matches=potential_matches,
-            validation_errors=validation_result.validation_errors,
-            duplicate_check_failed=duplicate_check_failed,
-        )
-        
+        return build_transcribe_response(transcription, validation, matches, duplicate_check_failed)
+
     except HTTPException:
         raise
     except AudioTooLarge as e:

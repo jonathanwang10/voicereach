@@ -286,3 +286,15 @@ class CategoryResponse(BaseModel):
     is_sensitive: bool = False
     created_at: datetime
     updated_at: datetime
+
+class TranscribeResponse(BaseModel):
+    """POST /api/transcribe's answer, and a ready recording's `result` (H2-7.3)."""
+    transcription: str
+    categorized_data: Dict[str, Any]
+    missing_required: List[str]
+    potential_matches: List[Dict[str, Any]]
+    validation_errors: List[Dict[str, str]] = []
+    # True when the duplicate check itself failed (e.g. the database was unreachable),
+    # so an empty potential_matches means "unknown", not "no match" (C-08). The app
+    # re-checks before saving.
+    duplicate_check_failed: bool = False
