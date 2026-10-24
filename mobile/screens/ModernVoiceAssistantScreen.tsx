@@ -33,6 +33,8 @@ import {
   addUserSpeechMessage,
   bargeInEvents,
   isIgnorableServerError,
+  reconnectDelay,
+  AUTH_REFUSED,
   appendAssistantText,
   audioAppendEvent,
   finalizeAssistantText,
@@ -269,6 +271,12 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const startingListenRef = useRef(false); // a second tap while the mic starts is ignored
   // Between the server's speech_started and speech_stopped: stopping now sends what was said
   const speechItemRef = useRef<string | null>(null);
+  // Reconnect (H2-5.9): the next try's index, its timer, a connect still in flight, and
+  // whether the app went to the background since the socket last opened
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectingRef = useRef(false);
+  const wasBackgroundedRef = useRef(false);
   // I-2: bottom tabs keep this screen mounted with its socket open. While another tab is
   // focused (e.g. Record is recording a field note), a reply shows as text only: it doesn't
   // even ask audioSession for playback, so it can't touch the shared iOS audio session.
@@ -367,6 +375,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       isMountedRef.current = false;
       detachAndClose(wsRef.current);
       wsRef.current = null;
+      cancelReconnect();
       stopListening(false);
       resetStreams();
       playerRef.current?.close();
@@ -378,6 +387,14 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   useEffect(() => {
     const appState = AppState.addEventListener('change', state => {
       if (state === 'background' || state === 'inactive') stopListening(false);
+      if (state === 'background') wasBackgroundedRef.current = true;
+      // Back in the foreground with no open socket: reconnect quietly (H2-5.9)
+      const ws = wsRef.current;
+      const inFlight = connectingRef.current || ws?.readyState === 0;
+      if (state === 'active' && !isSocketOpen(ws) && !inFlight && !reconnectTimerRef.current) {
+        reconnectAttemptRef.current = 0;
+        scheduleReconnect();
+      }
     });
     const unsubscribe = onChange(state => {
       if (state.recordingOwner) stopListening(false);
@@ -503,16 +520,41 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     if (next) stopReply();
   };
 
-  const initializeVoiceAssistant = async () => {
+  const cancelReconnect = () => {
+    if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
+  };
+
+  // The next quiet try, after 1 s, 2 s, then 4 s; false once all three have failed.
+  const scheduleReconnect = (): boolean => {
+    if (reconnectTimerRef.current) return true;
+    const delay = reconnectDelay(reconnectAttemptRef.current);
+    if (delay === null) {
+      reconnectAttemptRef.current = 0;
+      return false;
+    }
+    reconnectAttemptRef.current += 1;
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      if (isMountedRef.current) connect({ quiet: true });
+    }, delay);
+    return true;
+  };
+
+  // A quiet connect (a reconnect try) shows no spinner; neither kind clears the chat.
+  const connect = async ({ quiet }: { quiet: boolean }) => {
     // Detach first so a late close on the old socket can't mark the new one disconnected.
     stopListening(false);
     detachAndClose(wsRef.current);
     wsRef.current = null;
     setIsConnected(false);
     resetStreams();
+    connectingRef.current = true;
     try {
-      setIsLoading(true);
-      setError(null);
+      if (!quiet) {
+        setIsLoading(true);
+        setError(null);
+      }
 
       const backendUrl = API_CONFIG.BASE_URL.replace(/^https?:/, (match) =>
         match === 'https:' ? 'wss:' : 'ws:'
@@ -524,9 +566,30 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       if (!isMountedRef.current) return;
       // React Native's WebSocket accepts headers as a non-standard third argument.
       const ws: WebSocket = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
+      let opened = false;
+      let settled = false; // this socket's failure was already handled (error, then close)
+
+      // A failed try schedules the next one (H2-5.9); so does a close just after a
+      // resume. A refused handshake never retries; after three tries the Retry card shows.
+      const fail = (message: string) => {
+        stopListening(false);
+        setIsConnected(false);
+        if (settled) return;
+        const retry = message !== AUTH_REFUSED && ((quiet && !opened) || wasBackgroundedRef.current);
+        if (retry) {
+          settled = true;
+          if (scheduleReconnect()) return;
+        }
+        setError(message);
+      };
 
       ws.onopen = () => {
-        if (wsRef.current === ws) setIsConnected(true);
+        if (wsRef.current !== ws) return;
+        opened = true;
+        reconnectAttemptRef.current = 0;
+        wasBackgroundedRef.current = false;
+        setError(null);
+        setIsConnected(true);
       };
 
       ws.onmessage = (event: any) => {
@@ -543,25 +606,30 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       // A refused handshake (bad or not-allowed token) arrives here as an HTTP 403.
       ws.onerror = (err: any) => {
         if (wsRef.current !== ws) return;
-        stopListening(false);
-        setError(connectErrorMessage(err));
-        setIsConnected(false);
+        fail(connectErrorMessage(err));
       };
 
-      // No auto-reconnect: explain the close and let the worker tap Retry.
       ws.onclose = (event: any) => {
         if (wsRef.current !== ws || !isMountedRef.current) return;
-        stopListening(false);
-        setIsConnected(false);
-        setError(closeMessage(event?.code, event?.reason));
+        fail(closeMessage(event?.code, event?.reason));
       };
 
       wsRef.current = ws;
     } catch (err) {
-      setError(`Couldn't connect to the voice assistant: ${errorMessage(err)}`);
+      if (!(quiet && scheduleReconnect())) {
+        setError(`Couldn't connect to the voice assistant: ${errorMessage(err)}`);
+      }
     } finally {
+      connectingRef.current = false;
       setIsLoading(false);
     }
+  };
+
+  // Retry, the reconnect button and Clear: a fresh connect that cancels any pending try
+  const initializeVoiceAssistant = () => {
+    cancelReconnect();
+    reconnectAttemptRef.current = 0;
+    return connect({ quiet: false });
   };
 
   const addWelcomeMessage = () => {

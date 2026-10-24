@@ -129,6 +129,9 @@ class MockWebSocket {
     this.readyState = 3;
     this.onclose?.({ code, reason });
   }
+  fail(message: string) {
+    this.onerror?.({ message });
+  }
 }
 
 const realWebSocket = (global as any).WebSocket;
@@ -433,6 +436,114 @@ describe('H2-5.7 barge-in', () => {
     const { ws } = await renderConnected();
     act(() => ws.receive({ type: 'error', error: { code: 'response_cancel_not_active', message: 'No active response' } }));
     expect(Toast.show).not.toHaveBeenCalled();
+  });
+});
+
+// --- H2-5.9 reconnect --------------------------------------------------------------
+
+describe('H2-5.9 reconnect with backoff', () => {
+  afterEach(() => jest.useRealTimers());
+  const advance = (ms: number) => act(async () => { jest.advanceTimersByTime(ms); });
+  const sockets = () => MockWebSocket.instances.length;
+  const latest = () => MockWebSocket.instances[MockWebSocket.instances.length - 1];
+
+  it('returning to the foreground with a closed socket reconnects after 1 s, keeping the chat', async () => {
+    const { screen, ws } = await renderConnected();
+    fireEvent.changeText(screen.getByPlaceholderText('Type your question here...'), 'Hello');
+    fireEvent.press(screen.getByLabelText('Send question'));
+    act(() => ws.serverClose(1011, ''));
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('active'));
+    await advance(999);
+    expect(sockets()).toBe(1);
+    await advance(1);
+    expect(sockets()).toBe(2);
+    expect(screen.getByText('Hello')).toBeTruthy();
+    expect(screen.queryByText('Initializing Voice Assistant...')).toBeNull();
+  });
+
+  it('backs off 1 s, 2 s, 4 s and shows Retry after three failed tries', async () => {
+    const { screen, ws } = await renderConnected();
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('background'));
+    act(() => ws.serverClose(1011, ''));
+    expect(screen.queryByText('Retry')).toBeNull();
+    await advance(1000);
+    expect(sockets()).toBe(2);
+    act(() => latest().serverClose(1011, ''));
+    await advance(1999);
+    expect(sockets()).toBe(2);
+    await advance(1);
+    expect(sockets()).toBe(3);
+    act(() => latest().serverClose(1008, 'Too many connections. Try again in a minute.'));
+    await advance(4000);
+    expect(sockets()).toBe(4);
+    expect(screen.queryByText('Retry')).toBeNull();
+    act(() => latest().serverClose(1011, ''));
+    expect(screen.getByText('Retry')).toBeTruthy();
+    await advance(60_000);
+    expect(sockets()).toBe(4);
+  });
+
+  it('a close that arrives just after resuming from the background reconnects', async () => {
+    const { ws } = await renderConnected();
+    jest.useFakeTimers();
+    act(() => { mockAppStateHandler('background'); mockAppStateHandler('active'); });
+    await advance(5000);
+    expect(sockets()).toBe(1);                // the socket was still open
+    act(() => ws.serverClose(1008, 'Session time limit reached'));
+    await advance(1000);
+    expect(sockets()).toBe(2);
+  });
+
+  it('a successful reconnect resets the tries', async () => {
+    const { ws } = await renderConnected();
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('background'));
+    act(() => ws.serverClose(1011, ''));
+    await advance(1000);
+    act(() => latest().serverClose(1011, ''));
+    await advance(2000);
+    expect(sockets()).toBe(3);
+    act(() => latest().open());
+    act(() => mockAppStateHandler('background'));
+    act(() => latest().serverClose(1011, ''));
+    await advance(1000);                       // back to the first delay
+    expect(sockets()).toBe(4);
+  });
+
+  it('a refused handshake is not retried automatically', async () => {
+    const { screen, ws } = await renderConnected();
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('background'));
+    act(() => {
+      ws.fail("Expected HTTP 101 response but was '403 Forbidden'");
+      ws.serverClose(1006, "Expected HTTP 101 response but was '403 Forbidden'");
+    });
+    await advance(10_000);
+    expect(sockets()).toBe(1);
+    expect(screen.getByText(/not allowed/i)).toBeTruthy();
+  });
+
+  it('Retry cancels a pending reconnect', async () => {
+    const { screen, ws } = await renderConnected();
+    act(() => ws.serverClose(1011, ''));
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('active'));
+    await act(async () => { fireEvent.press(screen.getByText('Retry')); });
+    expect(sockets()).toBe(2);
+    await advance(5000);
+    expect(sockets()).toBe(2);
+  });
+
+  it('unmount clears a pending reconnect', async () => {
+    const { screen, ws } = await renderConnected();
+    act(() => ws.serverClose(1011, ''));
+    jest.useFakeTimers();
+    act(() => mockAppStateHandler('active'));
+    screen.unmount();
+    await advance(5000);
+    expect(sockets()).toBe(1);
   });
 });
 

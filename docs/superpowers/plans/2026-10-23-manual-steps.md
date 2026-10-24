@@ -63,6 +63,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 10. D5.9 (Phase 5, Task 9) Barge-in by voice. During a long reply, say "Stop, a different question: where is the nearest shelter?". Expected: playback stops within about half a second; the next answer is about the shelter; asked "what were you saying?", the assistant doesn't repeat the unheard part. No error toast appears.
 11. D5.10 (Phase 5, Task 9) Barge-in by tap. During a reply, tap the mic. Expected: playback stops at once and listening is on.
 12. D5.11 (Phase 5, Task 9) Record tab while a reply streams. Ask a long question, switch to the Record tab during the reply, start a field note and record 10 s. Expected: the reply stops (its text stays), the recording isn't paused and its length is right.
+13. D5.12 (Phase 5, Task 10) Reconnect. Open the Assistant, ask one question, put the app in the background for longer than `REALTIME_MAX_SESSION_SECONDS` (or turn on airplane mode for 10 s, turn it off, then return). Expected: the chat is still there and the badge returns to Connected within about 7 s without tapping Retry. With the backend stopped, three tries run and then the Retry card shows.
 
 ## Owner actions outside code
 

@@ -21,6 +21,8 @@ import {
   stopListeningEvents,
   bargeInEvents,
   isIgnorableServerError,
+  reconnectDelay,
+  RECONNECT_DELAYS_MS,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -137,6 +139,13 @@ describe('H2-5.7 barge-in', () => {
     expect(isIgnorableServerError({ type: 'error', error: { code: 'event_not_allowed' } })).toBe(false);
     expect(isIgnorableServerError({ type: 'error' })).toBe(false);
     expect(isIgnorableServerError(undefined)).toBe(false);
+  });
+});
+
+describe('H2-5.9 reconnect', () => {
+  it('reconnectDelay backs off 1 s, 2 s, 4 s, then stops', () => {
+    expect([0, 1, 2, 3].map(reconnectDelay)).toEqual([1000, 2000, 4000, null]);
+    expect(RECONNECT_DELAYS_MS).toEqual([1000, 2000, 4000]);
   });
 });
 

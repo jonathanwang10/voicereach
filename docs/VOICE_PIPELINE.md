@@ -273,7 +273,14 @@ is cleared.
      show as a short toast.
    - Close codes get a short message (403 handshake: not signed in or not
      allowed; 1008: the server's reason, e.g. the session time limit; 1011:
-     unavailable). There is no auto-reconnect: the worker taps Retry.
+     unavailable).
+   - **Reconnect** (H2-5.9): when the app comes back to the foreground with no
+     open socket, or a socket closes after the app was in the background (the
+     close iOS delivers right after resume), the screen reconnects quietly after
+     1 s, then 2 s, then 4 s: no spinner, the chat stays, the reply and the mic
+     stop. After the third failed try the error card with Retry shows. A refused
+     handshake (403) is never retried automatically; a 1008 close counts as a
+     failed try. Retry and Clear cancel a pending try.
    - Clear also reconnects, because the app can't delete server-side items, so
      the model forgets the cleared conversation too.
    - The screen no longer requests GPS.

@@ -93,6 +93,13 @@ export function stopListeningEvents(speechInProgress: boolean): object[] {
     : [{ type: 'input_audio_buffer.clear' }];
 }
 
+// Reconnect after a resume (H2-5.9): three quiet tries, then the Retry card
+export const RECONNECT_DELAYS_MS = [1000, 2000, 4000] as const;
+
+export function reconnectDelay(attempt: number): number | null {
+  return RECONNECT_DELAYS_MS[attempt] ?? null;
+}
+
 // Barge-in (H2-5.7): cancel the reply, then cut the assistant item at what the worker
 // actually heard, so the model forgets the rest.
 export function bargeInEvents(itemId: string, playedMs: number): object[] {
@@ -125,10 +132,11 @@ export function userTextEvents(text: string): object[] {
   ];
 }
 
-const AUTH_REFUSED = 'Not signed in or not allowed to use the voice assistant. Sign in again, then tap Retry.';
+export const AUTH_REFUSED = 'Not signed in or not allowed to use the voice assistant. Sign in again, then tap Retry.';
 const mentions403 = (text: unknown) => typeof text === 'string' && /\b403\b/.test(text);
 
-// The error to show when the socket closes unexpectedly. No auto-reconnect: the worker taps Retry.
+// The error to show when the socket closes unexpectedly. After the automatic tries (H2-5.9), the
+// worker taps Retry.
 export function closeMessage(code: number | undefined, reason: string | undefined): string {
   if (mentions403(reason)) return AUTH_REFUSED;
   switch (code) {
