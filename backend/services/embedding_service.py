@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 from db.client import run_db
+from services.request_log import record_usage
 from services import model_config
 from services.field_registry import build_embedding_text
 
@@ -67,6 +68,7 @@ class EmbeddingService:
             otherwise leave rows the halfvec(3072) column can't take)
         """
         response = await self.client.embeddings.create(model=self.model, input=texts)
+        record_usage("embedding", response)   # H2-8.1
         vectors = [item.embedding for item in sorted(response.data, key=lambda item: item.index)]
         for vector in vectors:
             if len(vector) != self.dimensions:

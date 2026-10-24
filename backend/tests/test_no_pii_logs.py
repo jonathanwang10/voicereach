@@ -18,6 +18,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers import FakeSecretClient, FakeUpstream
+
 SENTINEL_NAME = "Zebulon Quixley"
 SENTINEL_TOKEN = "quixley"           # checked case-insensitively: catches partial logging too
 SENTINEL_LAT = 37.7123456
@@ -40,8 +42,11 @@ PERSON = {
 
 
 def _assert_clean(caplog, capsys):
+    from services.request_log import JsonFormatter
     out = capsys.readouterr()
-    everything = "\n".join([caplog.text, out.out, out.err]).lower()
+    # The JSON form too: summary fields ride in `extra=`, which caplog.text leaves out (H2-8.1)
+    formatted = [JsonFormatter().format(r) for r in caplog.records]
+    everything = "\n".join([caplog.text, out.out, out.err, *formatted]).lower()
     assert SENTINEL_TOKEN not in everything
     assert str(SENTINEL_LAT) not in everything
     assert SENTINEL_EMAIL not in everything
@@ -213,6 +218,29 @@ def test_list_search_logs_no_search_term(capture, capsys):
     _assert_clean(capture, capsys)
 
 
+def test_request_summaries_carry_no_person_data(capture, capsys):   # H2-8.1
+    import json as _json
+    from services.request_log import SUMMARY_LOGGER, JsonFormatter
+    openai_mock = MagicMock()
+    openai_mock.transcribe_audio_file = AsyncMock(return_value=f"This is {SENTINEL_NAME}")
+    openai_mock.categorize_transcription = AsyncMock(return_value={"name": SENTINEL_NAME, "height": 70})
+    dup = MagicMock()
+    dup.return_value.find_duplicates = AsyncMock(return_value=[])
+    with patch("api.individuals.get_supabase", return_value=FakeDB()), \
+         patch("api.transcription.get_openai_service", return_value=openai_mock), \
+         patch("api.transcription.get_supabase", return_value=FakeDB()), \
+         patch("services.recording_pipeline.DuplicateDetectionService", dup):
+        assert _client().get("/api/individuals", params={"search": SENTINEL_NAME}).status_code == 200
+        assert _client().post("/api/individuals", json={
+            "data": {"name": SENTINEL_NAME, "height": 70, "weight": 160}}).status_code == 200
+        assert _client().post("/api/transcribe", json={"audio_data": "AAAA"}).status_code == 200
+    lines = [_json.loads(JsonFormatter().format(r)) for r in capture.records if r.name == SUMMARY_LOGGER]
+    assert len(lines) >= 3
+    for line in lines:
+        assert "?" not in line.get("route", "") and SENTINEL_TOKEN not in line.get("route", "").lower()
+    _assert_clean(capture, capsys)
+
+
 def test_semantic_search_logs_no_query_or_names(capture, capsys):
     from services.embedding_service import EmbeddingService
     from tests.helpers import FakeSupabase
@@ -272,56 +300,16 @@ def test_rejected_token_logs_no_error_text(capture, capsys, monkeypatch):
 
 # --- realtime WebSocket -------------------------------------------------------------
 
-class _SecretClient:
-    def __init__(self, *a, **k):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        return False
-
-    async def post(self, *a, **k):
-        r = MagicMock()
-        r.is_success, r.status_code = True, 200
-        r.json.return_value = {"value": "ek_test"}
-        return r
-
-
-class _Upstream:
-    """Echoes a transcript naming the sentinel, then a search_people call for the
-    sentinel, then waits until closed."""
-
-    def __init__(self):
-        args = json.dumps({"query": SENTINEL_NAME})
-        call = {"type": "function_call", "call_id": "c1", "name": "search_people", "arguments": args}
-        self.events = [
-            {"type": "response.output_audio_transcript.delta", "delta": SENTINEL_NAME},
-            {"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "c1",
-             "name": "search_people", "arguments": args},
-            {"type": "response.done", "response": {"id": "r1", "status": "completed", "output": [call]}},
-        ]
-        self.sent, self._closed = [], asyncio.Event()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        return False
-
-    async def send(self, frame):
-        self.sent.append(frame)
-
-    async def recv(self):
-        if self.events:
-            return json.dumps(self.events.pop(0))
-        await self._closed.wait()
-        import websockets
-        raise websockets.exceptions.ConnectionClosedOK(None, None)
-
-    async def close(self):
-        self._closed.set()
+def _upstream():
+    """A transcript naming the sentinel, then a search_people call for the sentinel."""
+    args = json.dumps({"query": SENTINEL_NAME})
+    call = {"type": "function_call", "call_id": "c1", "name": "search_people", "arguments": args}
+    return FakeUpstream([
+        {"type": "response.output_audio_transcript.delta", "delta": SENTINEL_NAME},
+        {"type": "response.function_call_arguments.done", "response_id": "r1", "call_id": "c1",
+         "name": "search_people", "arguments": args},
+        {"type": "response.done", "response": {"id": "r1", "status": "completed", "output": [call]}},
+    ])
 
 
 @pytest.mark.parametrize("lookup_fails", [False, True])
@@ -331,10 +319,10 @@ def test_ws_proxy_logs_no_question_tool_arguments_or_results(capture, capsys, mo
         search = AsyncMock(side_effect=RuntimeError(f"lookup failed: {SENTINEL_NAME}"))
     else:
         search = AsyncMock(return_value=[PERSON])
-    upstream = _Upstream()
+    upstream = _upstream()
     monkeypatch.setattr("services.retrieval.search_people", search)
     monkeypatch.setattr(main, "verify_token", lambda token: "user-ws")
-    monkeypatch.setattr(main.httpx, "AsyncClient", _SecretClient)
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeSecretClient)
     monkeypatch.setattr(main.websockets, "connect", lambda *a, **k: upstream)
 
     with _client().websocket_connect("/api/voice-assistant/realtime/ws",

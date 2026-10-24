@@ -9,6 +9,7 @@ from db.client import run_db
 from db.models import TranscribeResponse
 from services.duplicate_detection_service import DuplicateDetectionService
 from services.openai_service import RECORDING_LIMITS, check_audio_duration, temp_audio_file
+from services.request_log import stage_timer
 from services.validation_helper import ValidationResult, validate_categorized_data
 
 logger = logging.getLogger(__name__)
@@ -56,14 +57,17 @@ def check_upload(data: bytes) -> int:
 
 async def transcribe_stage(audio_path: str, openai_service) -> str:
     """The transcript; transcribe_audio_file checks the format and length first (P1)."""
-    return await openai_service.transcribe_audio_file(audio_path)
+    # "whisper_ms" is the roadmap's name, kept although TRANSCRIBE_MODEL may not be Whisper
+    with stage_timer("whisper_ms"):
+        return await openai_service.transcribe_audio_file(audio_path)
 
 
 async def extract_stage(transcription: str, categories: list[dict], openai_service) -> ValidationResult:
     """Fields from the transcript, normalised and validated. From here on only the
     normalised dict is used (no None / "" values, canonical labels)."""
-    categorized = await openai_service.categorize_transcription(transcription, categories)
-    return validate_categorized_data(categorized, categories)
+    with stage_timer("extract_ms"):
+        categorized = await openai_service.categorize_transcription(transcription, categories)
+        return validate_categorized_data(categorized, categories)
 
 
 async def duplicate_stage(categorized_data: dict, supabase, openai_service, *,
@@ -72,8 +76,9 @@ async def duplicate_stage(categorized_data: dict, supabase, openai_service, *,
     """(matches, duplicate_check_failed). A failure doesn't fail the transcription, but it
     is reported, never shown as "no match" (C-08)."""
     try:
-        matches = await DuplicateDetectionService(supabase, openai_service).find_duplicates(
-            categorized_data, categories=categories, location=location)
+        with stage_timer("dup_ms"):
+            matches = await DuplicateDetectionService(supabase, openai_service).find_duplicates(
+                categorized_data, categories=categories, location=location)
         return matches, False
     except Exception as e:
         logger.warning("Duplicate detection failed: %s", type(e).__name__)

@@ -16,6 +16,7 @@ import openai
 from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
+from services.request_log import record_usage
 from services import model_config
 from services.category_schema import Extraction, build_extraction_schema, parse_extraction
 from services.field_registry import parse_height_inches
@@ -142,6 +143,7 @@ class OpenAIService:
                 response_format="json",   # every transcription model returns .text for json
                 timeout=WHISPER_TIMEOUT_SECONDS,
             )
+        record_usage("transcribe", transcript)   # token counts, when the model reports them (H2-8.1)
         return transcript.text.strip()
 
     async def _download_audio(self, audio_url: str) -> bytes:
@@ -250,6 +252,7 @@ class OpenAIService:
                 response_format={"type": "json_schema", "json_schema": {
                     "name": "extraction", "strict": True, "schema": build_extraction_schema(categories)}},
             )
+            record_usage("extract", response)
             message = response.choices[0].message
             if getattr(message, "refusal", None):
                 logger.warning("Extraction refused by the model")
@@ -312,6 +315,7 @@ class OpenAIService:
                 temperature=0,
                 response_format={"type": "json_object"}  # Force JSON response
             )
+            record_usage("duplicates", response)
 
             # Parse JSON response
             result = response.choices[0].message.content

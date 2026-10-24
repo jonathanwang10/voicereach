@@ -510,3 +510,61 @@ class _ListQuery:
         if self.table == "individual_embeddings":
             return MagicMock(data=self._page(self.sb.embeddings))
         raise AssertionError(f"FakeListDB has no table {self.table!r}")
+
+
+# --- realtime proxy fakes ---------------------------------------------------------
+
+class FakeSecretClient:
+    """Stands in for httpx.AsyncClient when the proxy asks OpenAI for an ephemeral key:
+    post() always succeeds with {"value": "ek_test"}; the posted session is kept on the
+    class as `session`."""
+    session: Any = None
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, headers=None, json=None):
+        FakeSecretClient.session = json
+        r = MagicMock()
+        r.is_success, r.status_code = True, 200
+        r.json.return_value = {"value": "ek_test"}
+        return r
+
+
+class FakeUpstream:
+    """Stands in for the OpenAI realtime socket: recv() returns each of `frames` once (a
+    str, or a dict sent as JSON), then waits until close() and raises ConnectionClosedOK.
+    `close_after_frames=True` closes by itself once the frames are out. Frames the proxy
+    sends are kept in `sent`."""
+
+    def __init__(self, frames=(), close_after_frames: bool = False):
+        self.frames = [f if isinstance(f, str) else json.dumps(f) for f in frames]
+        self.close_after_frames = close_after_frames
+        self.sent: List[str] = []
+        self._closed = asyncio.Event()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def send(self, frame):
+        self.sent.append(frame)
+
+    async def recv(self):
+        if self.frames:
+            return self.frames.pop(0)
+        if not self.close_after_frames:
+            await self._closed.wait()
+        import websockets
+        raise websockets.exceptions.ConnectionClosedOK(None, None)
+
+    async def close(self):
+        self._closed.set()

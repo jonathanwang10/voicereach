@@ -290,6 +290,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `RECORDING_WORKER_CONCURRENCY` | Optional. How many uploaded recordings the in-process worker runs at once (default 2). |
 | `RECORDING_WORKER_ENABLED` | Optional. `0` pauses processing uploaded recordings (they stay queued); default on. |
 | `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
+| `LOG_FORMAT` | Optional. Logs are one JSON object per line by default; `text` gives the old `time LEVEL logger: message` lines (handy locally). |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.
 
@@ -634,6 +635,15 @@ out of those.
   Python `logging` at `LOG_LEVEL` (default `INFO`). Never names, transcripts,
   questions, field values, GPS or a person's urgency. Exception messages aren't
   logged either, because an upstream error can echo the data that was sent.
+  - Logs are JSON, one object per line (`LOG_FORMAT=text` for plain lines). Each
+    request ends with one summary line: `request_id`, method, the route
+    *template* (never the path or query), status, `duration_ms`, the stage
+    timings `whisper_ms` / `extract_ms` / `dup_ms`, and `usage` token counts per
+    kind (`transcribe`, `extract`, `duplicates`, `embedding`). Each recording job
+    (`recording_job`: `job_id`, `job_status`) and realtime session
+    (`realtime_session`: `close_code`, `usage.realtime`) gets the same. Every
+    response carries `X-Request-Id` (a safe incoming one is echoed), so a report
+    can be matched to its line (`services/request_log.py`).
   - The `httpx`, `httpx2`, `httpcore`, `openai`, Supabase-client and
     `websockets` loggers stay at `WARNING` whatever `LOG_LEVEL` says: at
     `INFO`/`DEBUG` they log request URLs (PostgREST filters carry names) and

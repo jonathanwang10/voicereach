@@ -10,12 +10,14 @@ Logs carry recording ids and exception types only, never a transcript or a field
 import asyncio
 import logging
 import os
+import time
 from typing import Optional
 
 from pydantic import ValidationError
 
 from db.client import get_supabase, run_db
 from services.openai_service import get_openai_service, temp_audio_file
+from services.request_log import emit_summary, log_context
 from services.recording_pipeline import (RECORDINGS_BUCKET, build_transcribe_response, duplicate_stage,
                                          extract_stage, load_categories, transcribe_stage)
 
@@ -71,7 +73,17 @@ async def _transcribe(job: dict, supabase, openai_service) -> str:
 
 async def process_job(job: dict, supabase, openai_service) -> None:
     """Run one claimed job to "ready", "queued" (a transient failure, retried later) or
-    "failed". Never raises, except CancelledError."""
+    "failed". Never raises, except CancelledError. Ends with one summary line: the job
+    id, its status, the stage timings and the token usage (H2-8.1)."""
+    started = time.monotonic()
+    with log_context() as log:
+        status = await _run_job(job, supabase, openai_service)
+        emit_summary("recording_job", log, job_id=str(job["id"]), job_status=status,
+                     duration_ms=int((time.monotonic() - started) * 1000))
+
+
+async def _run_job(job: dict, supabase, openai_service) -> str:
+    """The job's final status (the row's, as written)."""
     job_id = job["id"]
     try:
         transcription = job.get("transcription")
@@ -84,16 +96,18 @@ async def process_job(job: dict, supabase, openai_service) -> None:
                                                       categories=categories, location=job.get("location"))
         response = build_transcribe_response(transcription, validation, matches, check_failed)
         await _write(supabase, job_id, {"status": "ready", "result": response.model_dump(), "error": None})
+        return "ready"
     except asyncio.CancelledError:
         raise   # shutdown: the job stays in progress and the 5-minute rule reclaims it
     except _Gone:
         logger.info("Recording job %s was deleted while it ran", job_id)
+        return "deleted"
     except Exception as e:
         logger.warning("Recording job %s failed: %s", job_id, type(e).__name__)
-        await _record_failure(supabase, job, e)
+        return await _record_failure(supabase, job, e)
 
 
-async def _record_failure(supabase, job: dict, error: Exception) -> None:
+async def _record_failure(supabase, job: dict, error: Exception) -> str:
     if isinstance(error, ValueError) and not isinstance(error, ValidationError):
         # The client-safe audio messages ("Audio must be at least 5 seconds long")
         fields = {"status": "failed", "error": str(error)}
@@ -104,10 +118,12 @@ async def _record_failure(supabase, job: dict, error: Exception) -> None:
     try:
         await _write(supabase, job["id"], fields)
     except _Gone:
-        pass
+        return "deleted"
     except Exception as e:
         # The row goes stale and is reclaimed after 5 minutes
         logger.warning("Recording job %s: could not record its failure: %s", job["id"], type(e).__name__)
+        return "unrecorded"
+    return fields["status"]
 
 
 async def run_once(supabase=None, openai_service=None) -> bool:

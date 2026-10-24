@@ -4,6 +4,7 @@ Main FastAPI application for SF Homeless Outreach Voice Transcription App
 import os
 import json
 import asyncio
+import time
 from contextlib import asynccontextmanager
 import logging
 import httpx
@@ -19,6 +20,7 @@ from services.rate_limit import (acquire_session, check_keyed_limit, limit_from_
                                 release_session)
 from services.assistant_tools import TOOL_DEFINITIONS, ToolCallRouter
 from services.recording_worker import start_workers, stop_workers, worker_enabled
+from services.request_log import JsonFormatter, RequestLogMiddleware, emit_summary, log_context, record_usage
 from services.realtime_guard import error_event, sanitize_client_event
 
 # Load environment variables
@@ -35,12 +37,17 @@ QUIET_LIBRARY_LOGGERS = ("httpx", "httpx2", "httpcore", "openai", "postgrest", "
                          "supabase_auth", "gotrue", "websockets", "hpack")
 
 
-def configure_logging(level_name: str | None = None) -> None:
+def configure_logging(level_name: str | None = None, log_format: str | None = None) -> None:
     """Root logging at LOG_LEVEL (default INFO) unless something (uvicorn --log-config,
-    pytest) already configured it; library loggers pinned to WARNING."""
+    pytest) already configured it: one JSON object per line (H2-8.1), or the old text
+    lines with LOG_FORMAT=text. Library loggers pinned to WARNING."""
     level = logging.getLevelName((level_name or "INFO").upper())
-    logging.basicConfig(level=level if isinstance(level, int) else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    handler = logging.StreamHandler()
+    if log_format == "text":
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    else:
+        handler.setFormatter(JsonFormatter())
+    logging.basicConfig(level=level if isinstance(level, int) else logging.INFO, handlers=[handler])
     pin_library_loggers()
 
 
@@ -62,7 +69,7 @@ class DropQueryString(logging.Filter):
         return True
 
 
-configure_logging(os.getenv("LOG_LEVEL"))
+configure_logging(os.getenv("LOG_LEVEL"), os.getenv("LOG_FORMAT"))
 logging.getLogger("uvicorn.access").addFilter(DropQueryString())
 logger = logging.getLogger(__name__)
 
@@ -179,6 +186,9 @@ class BodySizeLimitMiddleware:
 
 
 app.add_middleware(BodySizeLimitMiddleware, limits=BODY_LIMITS)
+# Outermost: every response, a 413 from the size limit included, gets its request id
+# and its summary line (H2-8.1)
+app.add_middleware(RequestLogMiddleware)
 
 @app.get("/health")
 async def health_check():
@@ -287,123 +297,131 @@ async def websocket_realtime_proxy(websocket: WebSocket):
             return
         auth_outage = True
 
-    await websocket.accept()
-    close_code, close_reason = 1000, ""
-    session_key = None  # set once a session slot is held; released in finally
-    try:
-        if auth_outage:
-            close_code, close_reason = 1011, "Auth service unavailable"
-            return
-        device_id = clean_device_id(websocket.headers.get("x-device-id"))
-        if check_keyed_limit("ws_connect", user_id, device_id, "RATE_LIMIT_WS_CONNECT_PER_MIN", 10) is not None:
-            close_code, close_reason = 1008, "Too many connections. Try again in a minute."
-            return
-        # Concurrent sessions per phone (user + device id) and per process (H2-1.7)
-        key = limit_key(user_id, device_id)
-        if not acquire_session(key, limit_from_env("REALTIME_MAX_SESSIONS_PER_USER", 2),
-                               limit_from_env("REALTIME_MAX_SESSIONS_TOTAL", 20)):
-            close_code, close_reason = 1008, "Too many voice sessions open. Close one and try again."
-            return
-        session_key = key
+    # One summary line per session, with its token usage (H2-8.1)
+    with log_context() as session_log:
+        await websocket.accept()
+        close_code, close_reason = 1000, ""
+        started = time.monotonic()
+        session_key = None  # set once a session slot is held; released in finally
+        try:
+            if auth_outage:
+                close_code, close_reason = 1011, "Auth service unavailable"
+                return
+            device_id = clean_device_id(websocket.headers.get("x-device-id"))
+            if check_keyed_limit("ws_connect", user_id, device_id, "RATE_LIMIT_WS_CONNECT_PER_MIN", 10) is not None:
+                close_code, close_reason = 1008, "Too many connections. Try again in a minute."
+                return
+            # Concurrent sessions per phone (user + device id) and per process (H2-1.7)
+            key = limit_key(user_id, device_id)
+            if not acquire_session(key, limit_from_env("REALTIME_MAX_SESSIONS_PER_USER", 2),
+                                   limit_from_env("REALTIME_MAX_SESSIONS_TOTAL", 20)):
+                close_code, close_reason = 1008, "Too many voice sessions open. Close one and try again."
+                return
+            session_key = key
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        session_config = {"session": build_session_config()}
+            api_key = os.getenv("OPENAI_API_KEY")
+            session_config = {"session": build_session_config()}
 
-        async with httpx.AsyncClient() as client:
-            token_response = await client.post(
-                "https://api.openai.com/v1/realtime/client_secrets",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=session_config,
-            )
-            if not token_response.is_success:
-                # Never forward the upstream body: it can echo key fragments (R-13).
-                logger.error("Failed to create realtime client secret: HTTP %s", token_response.status_code)
+            async with httpx.AsyncClient() as client:
+                token_response = await client.post(
+                    "https://api.openai.com/v1/realtime/client_secrets",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=session_config,
+                )
+                if not token_response.is_success:
+                    # Never forward the upstream body: it can echo key fragments (R-13).
+                    logger.error("Failed to create realtime client secret: HTTP %s", token_response.status_code)
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "error": {"message": "Couldn't start the voice assistant session"}
+                    }))
+                    close_code, close_reason = 1011, "Upstream unavailable"
+                    return
+                ephemeral_key = token_response.json()["value"]
+
+            openai_ws_url = f"wss://api.openai.com/v1/realtime?model={model_config.REALTIME_MODEL}"
+            headers = {"Authorization": f"Bearer {ephemeral_key}"}
+
+            async with websockets.connect(openai_ws_url, additional_headers=headers) as openai_ws:
+                # The session config is set here, once; clients can't send session.update.
+                await openai_ws.send(json.dumps({"type": "session.update", "session": session_config["session"]}))
+
+                async def forward_to_openai():
+                    """Returns when the client disconnects."""
+                    while True:
+                        message = await websocket.receive()
+                        if message["type"] == "websocket.disconnect":
+                            return
+                        raw = message.get("text")
+                        if raw is None:
+                            await websocket.send_text(error_event("Binary frames are not supported"))
+                            continue
+                        event, reason = sanitize_client_event(raw)
+                        if event is None:
+                            await websocket.send_text(error_event(reason))
+                            continue
+                        await openai_ws.send(json.dumps(event))
+
+                async def forward_to_client():
+                    """Returns when OpenAI closes the upstream socket."""
+                    router = ToolCallRouter()
+                    try:
+                        while True:
+                            raw = await openai_ws.recv()
+                            await websocket.send_text(raw)
+                            try:
+                                event = json.loads(raw)
+                            except (TypeError, ValueError, RecursionError):
+                                continue
+                            if not isinstance(event, dict):
+                                continue
+                            if event.get("type") == "response.done":
+                                # Token usage per session, in its summary line (H2-8.1)
+                                record_usage("realtime", (event.get("response") or {}).get("usage"))
+                            # The model's tool calls run here, on the server (H2-5.8)
+                            for reply in await router.on_upstream_event(event):
+                                await openai_ws.send(json.dumps(reply))
+                    except websockets.exceptions.ConnectionClosed:
+                        return
+
+                tasks = [asyncio.create_task(forward_to_openai()), asyncio.create_task(forward_to_client())]
+                try:
+                    done, pending = await asyncio.wait(
+                        tasks, timeout=realtime_max_session_seconds(), return_when=asyncio.FIRST_COMPLETED)
+                    await cancel_and_wait(pending)
+                    if not done:
+                        close_code, close_reason = 1008, "Session time limit reached"
+                    elif tasks[1] in done:
+                        close_code, close_reason = 1011, "Voice assistant connection closed"
+                    for task in done:
+                        if task.exception() is not None:
+                            logger.error("Realtime proxy task failed: %s", type(task.exception()).__name__)
+                            close_code, close_reason = 1011, "Voice assistant connection error"
+                finally:
+                    try:
+                        await openai_ws.close()
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            logger.error("WebSocket proxy error: %s", type(e).__name__)
+            close_code, close_reason = 1011, "Voice assistant connection error"
+            try:
                 await websocket.send_text(json.dumps({
                     "type": "error",
-                    "error": {"message": "Couldn't start the voice assistant session"}
+                    "error": {"message": "Voice assistant connection error"}
                 }))
-                close_code, close_reason = 1011, "Upstream unavailable"
-                return
-            ephemeral_key = token_response.json()["value"]
-
-        openai_ws_url = f"wss://api.openai.com/v1/realtime?model={model_config.REALTIME_MODEL}"
-        headers = {"Authorization": f"Bearer {ephemeral_key}"}
-
-        async with websockets.connect(openai_ws_url, additional_headers=headers) as openai_ws:
-            # The session config is set here, once; clients can't send session.update.
-            await openai_ws.send(json.dumps({"type": "session.update", "session": session_config["session"]}))
-
-            async def forward_to_openai():
-                """Returns when the client disconnects."""
-                while True:
-                    message = await websocket.receive()
-                    if message["type"] == "websocket.disconnect":
-                        return
-                    raw = message.get("text")
-                    if raw is None:
-                        await websocket.send_text(error_event("Binary frames are not supported"))
-                        continue
-                    event, reason = sanitize_client_event(raw)
-                    if event is None:
-                        await websocket.send_text(error_event(reason))
-                        continue
-                    await openai_ws.send(json.dumps(event))
-
-            async def forward_to_client():
-                """Returns when OpenAI closes the upstream socket."""
-                router = ToolCallRouter()
-                try:
-                    while True:
-                        raw = await openai_ws.recv()
-                        await websocket.send_text(raw)
-                        try:
-                            event = json.loads(raw)
-                        except (TypeError, ValueError, RecursionError):
-                            continue
-                        if not isinstance(event, dict):
-                            continue
-                        # The model's tool calls run here, on the server (H2-5.8)
-                        for reply in await router.on_upstream_event(event):
-                            await openai_ws.send(json.dumps(reply))
-                except websockets.exceptions.ConnectionClosed:
-                    return
-
-            tasks = [asyncio.create_task(forward_to_openai()), asyncio.create_task(forward_to_client())]
-            try:
-                done, pending = await asyncio.wait(
-                    tasks, timeout=realtime_max_session_seconds(), return_when=asyncio.FIRST_COMPLETED)
-                await cancel_and_wait(pending)
-                if not done:
-                    close_code, close_reason = 1008, "Session time limit reached"
-                elif tasks[1] in done:
-                    close_code, close_reason = 1011, "Voice assistant connection closed"
-                for task in done:
-                    if task.exception() is not None:
-                        logger.error("Realtime proxy task failed: %s", type(task.exception()).__name__)
-                        close_code, close_reason = 1011, "Voice assistant connection error"
-            finally:
-                try:
-                    await openai_ws.close()
-                except Exception:
-                    pass
-
-    except Exception as e:
-        logger.error("WebSocket proxy error: %s", type(e).__name__)
-        close_code, close_reason = 1011, "Voice assistant connection error"
-        try:
-            await websocket.send_text(json.dumps({
-                "type": "error",
-                "error": {"message": "Voice assistant connection error"}
-            }))
-        except Exception:
-            pass
-    finally:
-        if session_key is not None:
-            release_session(session_key)
-        await _close(websocket, close_code, close_reason)
+            except Exception:
+                pass
+        finally:
+            if session_key is not None:
+                release_session(session_key)
+            await _close(websocket, close_code, close_reason)
+            emit_summary("realtime_session", session_log, close_code=close_code,
+                         duration_ms=int((time.monotonic() - started) * 1000))
 
 # Import API routers
 from api import categories, transcription, individuals, embeddings, voice_assistant, recordings

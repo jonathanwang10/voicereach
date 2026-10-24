@@ -13,6 +13,7 @@ from db.client import get_supabase
 from db.models import TranscribeResponse  # noqa: F401 (also importable from here)
 from services.openai_service import AudioTooLarge, get_openai_service, temp_audio_file
 from services.rate_limit import rate_limit
+from services.request_log import stage_timer
 from services.recording_pipeline import (NoCategories, build_transcribe_response, duplicate_stage, extract_stage,
                                          load_categories, transcribe_stage)
 
@@ -68,7 +69,8 @@ async def _transcribe(request: TranscribeRequest) -> TranscribeResponse:
             with temp_audio_file(audio_data) as temp_file_path:
                 transcription = await transcribe_stage(temp_file_path, openai_service)
         elif request.audio_url:
-            transcription = await openai_service.transcribe_audio(request.audio_url)
+            with stage_timer("whisper_ms"):
+                transcription = await openai_service.transcribe_audio(request.audio_url)
         else:
             raise HTTPException(status_code=400, detail="Either audio_url or audio_data must be provided")
 
