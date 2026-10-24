@@ -62,6 +62,7 @@ const SearchResultRow = React.memo(({ item, index, isHighlighted, onPress }: {
         ]}
         variant={isHighlighted ? 'filled' : 'elevated'}
         onPress={() => onPress(item)}
+        testID={`search-result-${index}`}
         accessibilityLabel={`${item.name}, urgency ${Math.round(urgencyScore)}, last seen ${formatLastSeen(item.last_seen_days)}`}
       >
       <View style={styles.resultHeader}>
@@ -303,6 +304,7 @@ export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackPara
       <View style={styles.searchSection}>
         <Input
           placeholder="Search by name, description, or details..."
+          testID="search-input"
           value={searchQuery}
           onChangeText={setSearchQuery}
           leftIcon="search-outline"

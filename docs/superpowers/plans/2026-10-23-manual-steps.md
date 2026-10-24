@@ -90,6 +90,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 28. P7-7 (Phase 7) Save and discard clean up. Save one draft and discard another. Expected: both rows are gone from `recordings` and the badge drops to 0.
 29. D8.1 (Phase 8, Task 3) App Sentry. Release build with `EXPO_PUBLIC_SENTRY_DSN` set: trigger a JS error (temporarily throw in a dev-only button, or use `Sentry.captureException` from the debugger). Expected: the event appears in Sentry with type and stack, an empty message, no breadcrumbs except navigation. Without the DSN, nothing is sent. (`ios/Podfile.lock` already has RNSentry: `pod install` ran on the branch.)
 21. D6.0 (H2-6) (Phase 6, Task 15) Rebuild first. Rebuild the iOS dev client (`cd mobile && npx expo run:ios --device`) before running the Phase 5 and Phase 6 device checks. The branch already carries the regenerated `ios/` (`npx expo prebuild --platform ios --no-install` and `pod install` ran; `Podfile.lock` gains ExpoAudio, RNAudioAPI, ExpoSecureStore, react-native-netinfo, RNFlashList and react-native-get-random-values and loses EXAV). Only the Xcode build and the run on a phone are left, which D5.1 also covers.
+30. D8.2 (Phase 8, Task 9) Maestro flows. Run the backend on 8001 against a database with `seed.sql`, run `cd mobile && npx expo run:ios`, then `maestro test mobile/.maestro/` on the iOS simulator. All five flows pass. Flow 04 needs the realtime assistant to connect (a real OpenAI key).
 
 ## Owner actions outside code
 

@@ -1,0 +1,9 @@
+# Launch: the auto sign-in succeeds and the tabs show (H2-8.6)
+appId: com.anonymous.sf-homeless-outreach
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Record"
+    timeout: 30000   # the auto sign-in
+- assertNotVisible: "Can't sign in"

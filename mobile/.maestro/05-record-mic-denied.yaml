@@ -1,0 +1,13 @@
+# Record with the microphone denied: the Open Settings prompt (H2-8.6)
+appId: com.anonymous.sf-homeless-outreach
+---
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: deny
+- extendedWaitUntil:
+    visible: "Record"
+    timeout: 30000   # the auto sign-in
+- tapOn:
+    id: "record-button"
+- assertVisible: "Open Settings"

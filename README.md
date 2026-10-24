@@ -790,6 +790,24 @@ again.
 |---|---|---|---|---|---|---|---|---|---|
 | | | | | | | | | | |
 
+### End-to-end (Maestro)
+
+`mobile/.maestro/` holds five flows: launch and sign-in, open Search, open a
+profile, a typed Assistant question, and Record with the microphone denied. Each
+flow taps by `testID`, and `mobile/test/releaseConfig.test.ts` fails if a flow names
+a testID the source doesn't have, or an app id that isn't `app.json`'s.
+
+```bash
+curl -fsSL https://get.maestro.mobile.dev | bash
+# the backend on 8001 against a database with supabase/seed.sql, then:
+cd mobile && npx expo run:ios
+maestro test mobile/.maestro/      # from the repo root
+```
+
+There's no CI job for these, on purpose: macOS runners bill at a multiple of
+Linux minutes. Add one if releases come more than monthly or there's a paid CI
+budget. Flow 04 needs the realtime assistant to connect.
+
 ### Evals
 
 `backend/evals/` measures the AI steps on synthetic data (no real people):

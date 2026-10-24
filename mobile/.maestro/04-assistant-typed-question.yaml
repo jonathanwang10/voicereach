@@ -1,0 +1,15 @@
+# Assistant: a typed question shows as the worker's bubble; no dependency on the answer (H2-8.6)
+appId: com.anonymous.sf-homeless-outreach
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Record"
+    timeout: 30000   # the auto sign-in
+- tapOn: "Assistant"
+- tapOn:
+    id: "assistant-input"
+- inputText: "What should I know before an outreach visit?"
+- tapOn:
+    id: "assistant-send"
+- assertVisible: "What should I know before an outreach visit?"

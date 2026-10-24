@@ -907,6 +907,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
             maxLength={500}
             rightIcon="send"
             rightIconAccessibilityLabel="Send question"
+            testID="assistant-input"
+            rightIconTestID="assistant-send"
             onRightIconPress={textInput.trim() && isConnected ? () => { if (sendTextMessage(textInput.trim())) setTextInput(''); } : undefined}
             style={styles.textInput}
           />

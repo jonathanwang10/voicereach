@@ -1,0 +1,15 @@
+# Search: the list loads from the backend (H2-8.6)
+appId: com.anonymous.sf-homeless-outreach
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Record"
+    timeout: 30000   # the auto sign-in
+- tapOn: "Search"
+- assertVisible:
+    id: "search-input"
+- extendedWaitUntil:
+    visible:
+      id: "search-result-0"
+    timeout: 15000   # needs supabase/seed.sql
