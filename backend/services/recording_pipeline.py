@@ -14,6 +14,9 @@ from services.validation_helper import ValidationResult, validate_categorized_da
 logger = logging.getLogger(__name__)
 
 NO_CATEGORIES = "No categories found in database. Please ensure categories are properly configured."
+# The private Storage bucket for uploaded recordings, and the job states still in progress
+RECORDINGS_BUCKET = "recordings"
+IN_PROGRESS = ("queued", "transcribing", "extracting", "checking_duplicates")
 
 
 class NoCategories(RuntimeError):

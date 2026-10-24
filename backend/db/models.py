@@ -298,3 +298,33 @@ class TranscribeResponse(BaseModel):
     # so an empty potential_matches means "unknown", not "no match" (C-08). The app
     # re-checks before saving.
     duplicate_check_failed: bool = False
+
+
+# --- recordings (H2-7.2): an uploaded voice note, from upload to review -------------
+
+class RecordingAccepted(BaseModel):
+    id: str
+    status: str
+
+
+class RecordingDetail(BaseModel):
+    id: str
+    status: str
+    error: Optional[str] = None
+    result: Optional[TranscribeResponse] = None     # set once the status is "ready"
+    location: Optional[dict] = None
+    duration_ms: Optional[int] = None
+    created_at: str
+
+
+class RecordingSummary(BaseModel):
+    id: str
+    status: str
+    error: Optional[str] = None
+    name: Optional[str] = None                      # the extracted name, once there is one
+    duration_ms: Optional[int] = None
+    created_at: str
+
+
+class RecordingsListResponse(BaseModel):
+    recordings: List[RecordingSummary]

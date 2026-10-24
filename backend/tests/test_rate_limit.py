@@ -89,6 +89,9 @@ def test_limits_are_per_user(monkeypatch):
 # before any OpenAI or database work happens.
 PAID_ROUTES = [
     ("RATE_LIMIT_TRANSCRIBE_PER_MIN", "post", "/api/transcribe", {"json": {}}),
+    ("RATE_LIMIT_TRANSCRIBE_PER_MIN", "post", "/api/recordings",
+     {"files": {"audio": ("a.m4a", b"x", "audio/mp4")},
+      "data": {"client_recording_id": "6f1c0d1e-0000-4000-8000-000000000001", "duration_ms": "1000"}}),
     ("RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN", "post", "/api/embeddings/search", {"json": {"query": "x"}}),
     ("RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN", "post", "/api/embeddings/generate",
      {"json": {"individual_id": "11111111-1111-1111-1111-111111111111"}}),
@@ -109,9 +112,9 @@ def test_every_paid_route_is_rate_limited(env_var, method, path, kwargs, monkeyp
          patch("api.categories.get_supabase", side_effect=RuntimeError("no db")):
         first = getattr(_client(), method)(path, **kwargs)
         second = getattr(_client(), method)(path, **kwargs)
-    # the first call gets through to the route (which then fails on the missing database);
-    # only the second is limited
-    assert first.status_code == 500
+    # the first call gets through to the route (which then fails on the missing database,
+    # or on the non-M4A upload); only the second is limited
+    assert first.status_code == (400 if path == "/api/recordings" else 500)
     assert second.status_code == 429
 
 

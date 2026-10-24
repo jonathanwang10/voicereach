@@ -25,7 +25,8 @@ def _http_routes():
         for x in routes:
             for method in sorted(getattr(x, "methods", None) or []):
                 if method != "HEAD":
-                    out.append((method, (prefix + x.path).replace("{individual_id}", SAMPLE_ID)))
+                    path = (prefix + x.path).replace("{individual_id}", SAMPLE_ID)
+                    out.append((method, path.replace("{recording_id}", SAMPLE_ID)))
     return out
 
 

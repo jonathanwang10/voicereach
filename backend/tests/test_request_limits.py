@@ -315,3 +315,14 @@ def test_save_data_over_100_fields_is_422():
     assert SaveIndividualRequest(data=fields)
     r = _client().post("/api/individuals", json={"data": {**fields, "f97": "v"}})
     assert r.status_code == 422 and "at most 100 fields" in r.text
+
+
+CRID = "6f1c0d1e-0000-4000-8000-000000000001"
+
+
+def test_recording_upload_over_8mb_is_413_before_any_work():
+    with patch("api.recordings.get_supabase") as gs:
+        r = _client().post("/api/recordings", files={"audio": ("a.m4a", b"\x00" * (8 * MB + 1), "audio/mp4")},
+                           data={"client_recording_id": CRID, "duration_ms": "1000"})
+    assert r.status_code == 413
+    gs.assert_not_called()

@@ -64,7 +64,6 @@ def _chains():
 CHAINS = list(_chains())
 
 
-@pytest.mark.xfail(strict=True, reason="recordings is queried from Task 3")
 def test_the_source_scan_finds_the_queries():
     assert len(CHAINS) >= 30
     assert {t for _, t, _ in CHAINS} == set(SCHEMA)

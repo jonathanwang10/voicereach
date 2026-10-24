@@ -93,7 +93,9 @@ curl.
 
 ### Transcription
 
-**`POST /api/transcribe`** — Body: `{"audio_data": "<base64>"}` (a `data:` URL
+**`POST /api/transcribe`** — **Deprecated** (kept for one release; the app uploads
+through `POST /api/recordings`). Both run the same stage functions
+(`services/recording_pipeline.py`). Body: `{"audio_data": "<base64>"}` (a `data:` URL
 prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
 same host as `SUPABASE_URL` (other hosts are a 400; the download stops at 5 MB
 and doesn't follow redirects: a 3xx fails like any other download error, with a
@@ -119,6 +121,27 @@ Nothing is saved. `potential_matches` holds at most one match, with confidence
 (e.g. a database error): the transcript is still returned, but an empty
 `potential_matches` then means "unknown", not "no match". An LLM failure is not
 a failed check: a name comparison stands in.
+
+### Recordings (`api/recordings.py`, prefix `/api/recordings`)
+
+- **`POST /api/recordings`** — Multipart: `audio` (an M4A; the body is capped at
+  8 MB), `client_recording_id` (a UUID the phone makes), `duration_ms` (0-125000,
+  bounds-checked only: the server stores its own mutagen measurement) and an
+  optional `location` (a JSON `{latitude, longitude, address}` string, at most 2000
+  characters). The file must be an M4A of 5 s to 125 s (400 otherwise, before any
+  storage or database work). It is stored in the private `recordings` bucket at
+  `<client_recording_id>.m4a` (upsert) and a `recordings` row is queued: **202**
+  `{"id", "status": "queued"}`. A repeated `client_recording_id` returns the existing
+  row (202, no second upload); another user's is a 409. Shares the
+  `RATE_LIMIT_TRANSCRIBE_PER_MIN` budget with `/api/transcribe`.
+- **`GET /api/recordings/{id}`** — `{id, status, error, result, location,
+  duration_ms, created_at}`; `result` is the `/api/transcribe` response once the
+  status is `ready`. 404 if it isn't the caller's.
+- **`GET /api/recordings?status=`** — The caller's recordings (and this phone's
+  only, when `X-Device-Id` is sent), newest first, at most 50, each with the
+  extracted `name` when there is one. An unknown status is a 422.
+- **`DELETE /api/recordings/{id}`** — Removes the stored file (if any), then the
+  row: 204. A failed file removal keeps the row (500), so it can be retried.
 
 ### Individuals (`api/individuals.py`, mounted at `/api/individuals`)
 

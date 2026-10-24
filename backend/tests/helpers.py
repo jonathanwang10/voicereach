@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import MagicMock
 
 import httpx2
@@ -126,6 +126,7 @@ class FakeSupabase:
     def __init__(self):
         self.rules: List[_Rule] = []
         self.calls: List[Call] = []
+        self.storage = FakeStorage()
 
     def on(self, table: str, verb: str, data: Any = None, error: BaseException = None,
            times: Optional[int] = None) -> "FakeSupabase":
@@ -215,6 +216,58 @@ class _Chain:
         if call.verb == "rpc":
             return SimpleNamespace(data=data)
         return SimpleNamespace(data=data if data is not None else [])
+
+
+class FakeStorage:
+    """An in-memory stand-in for supabase-py Storage (`supabase.storage`), strict like
+    FakeSupabase:
+
+        sb.storage.from_("recordings").upload(path, data, file_options={...})
+        assert sb.storage.calls == [("recordings", "upload", path, {...})]
+        assert sb.storage.files[("recordings", path)] == data
+
+    - from_(bucket) gives upload(path, file, file_options=None), download(path) -> bytes
+      and remove(paths) -> list. Any other method is an AttributeError.
+    - Every call is recorded in `calls` as (bucket, verb, path_or_paths, file_options).
+    - Files live in `files[(bucket, path)]`; download of a missing file raises
+      RuntimeError("not found"); remove ignores missing paths, like Storage.
+    - `fail[verb] = exc` makes that verb raise it (after recording the call).
+    - Calls must be made off the event loop (through run_db), like table queries.
+    """
+
+    def __init__(self):
+        self.calls: List[tuple] = []
+        self.files: Dict[tuple, bytes] = {}
+        self.fail: Dict[str, BaseException] = {}
+
+    def from_(self, bucket: str) -> "_Bucket":
+        return _Bucket(self, bucket)
+
+
+class _Bucket:
+    def __init__(self, storage: FakeStorage, bucket: str):
+        self._storage, self._bucket = storage, bucket
+
+    def _record(self, verb: str, target, file_options=None):
+        assert_off_event_loop(f"FakeStorage: from_({self._bucket!r}).{verb}()")
+        self._storage.calls.append((self._bucket, verb, target, file_options))
+        if verb in self._storage.fail:
+            raise self._storage.fail[verb]
+
+    def upload(self, path: str, file: bytes, file_options: Optional[dict] = None):
+        self._record("upload", path, file_options)
+        self._storage.files[(self._bucket, path)] = bytes(file)
+        return SimpleNamespace(path=path)
+
+    def download(self, path: str) -> bytes:
+        self._record("download", path)
+        if (self._bucket, path) not in self._storage.files:
+            raise RuntimeError("not found")
+        return self._storage.files[(self._bucket, path)]
+
+    def remove(self, paths: List[str]) -> list:
+        self._record("remove", list(paths))
+        return [{"name": p} for p in paths if self._storage.files.pop((self._bucket, p), None) is not None]
 
 
 def pg_error(code: str, message: str = "database error"):

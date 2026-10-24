@@ -186,7 +186,7 @@ every user's own token get nothing: a direct `select` returns no rows, and
 inserts, updates and deletes are refused. The app uses Supabase for sign-in
 only.
 
-Audio is sent to the backend inline (base64), so no Storage bucket is needed.
+Recordings are uploaded to the private Storage bucket `recordings`, which the backend reads and writes with the service key (no storage policies). Create it once: see `docs/superpowers/plans/2026-10-23-manual-steps.md` (Owner actions, the `recordings` bucket).
 
 #### Upgrading a database created from an older schema.sql
 
@@ -392,7 +392,11 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 |---|---|---|
 | `GET` | `/health` | Liveness check (public) |
 | `GET` | `/` | API name (public) |
-| `POST` | `/api/transcribe` | Audio → transcript → structured fields → duplicate candidates |
+| `POST` | `/api/transcribe` | **Deprecated** (kept for one release; the app uses `POST /api/recordings`). Audio → transcript → structured fields → duplicate candidates |
+| `POST` | `/api/recordings` | Upload a voice note (multipart `audio`, `client_recording_id`, `duration_ms`, optional `location`) → 202 `{id, status}`; a repeated `client_recording_id` returns the same recording |
+| `GET` | `/api/recordings` | The caller's recordings (this phone's, with `X-Device-Id`), newest first, at most 50; optional `status` |
+| `GET` | `/api/recordings/{id}` | One recording's status, and its result once `ready`; 404 if it isn't the caller's |
+| `DELETE` | `/api/recordings/{id}` | Saved or discarded: deletes the stored audio, then the row (204) |
 | `POST` | `/api/individuals` | Create a person, or merge into one with `merge_with_id` |
 | `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`, and `cursor` from the previous page's `next_cursor`, default list only; keyset on `last_seen, id`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory over the whole table (demo scale; see [Search](#search)) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
@@ -425,6 +429,7 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | Limit | Value | Over it |
 |---|---|---|
 | `POST /api/transcribe` body (base64 audio) | 8 MB | 413 |
+| `POST /api/recordings` body (one M4A, multipart) | 8 MB | 413 |
 | `audio_url` download | 5 MB, same host as `SUPABASE_URL` | 413; another host or a missing file 400; a redirect is not followed and fails like any other download error, with a 500 |
 | Recording length (read from the M4A header with mutagen) | 5 s to 125 s (2:00 plus 5 s slack) | 400 "Audio must be at least 5 seconds long" / "Audio must be less than 2 minutes"; an unreadable M4A is 400 "File is not in M4A format" |
 | Assistant question length | 1 s to 60 s | 400 "Question must be at least 1 second long" / "Question must be under 1 minute" |
@@ -447,7 +452,7 @@ allow the full limit). Set the env var to a positive integer to change one:
 
 | Env var | Default | Route |
 |---|---|---|
-| `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` |
+| `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` and `POST /api/recordings` (one budget) |
 | `RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN` | 60 | `POST /api/embeddings/search` |
 | `RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN` | 30 | `POST /api/embeddings/generate` |
 | `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |

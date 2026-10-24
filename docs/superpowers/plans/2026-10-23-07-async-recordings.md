@@ -417,7 +417,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
     - `DELETE /api/recordings/{recording_id}` → 204. Removes the Storage file (when `storage_path` is set), then the row. 404 if it isn't the caller's.
   - `FakeStorage`: `from_(bucket)` returns an object with `upload(path, file, file_options=None)`, `download(path) -> bytes`, `remove(paths) -> list`. Each call is recorded in `storage.calls` as `(bucket, verb, path_or_paths, file_options)`, and files are kept in `storage.files[(bucket, path)]`. `download` of a missing file raises `RuntimeError("not found")`. `storage.fail[verb] = exc` makes that verb raise. Docstring it like `FakeSupabase`.
 
-- [ ] **Step 1: Write the failing route tests** (`test_recordings_routes.py`)
+- [x] **Step 1: Write the failing route tests** (`test_recordings_routes.py`)
 
 Use a module-level `M4A = b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 64`, `CRID = "6f1c0d1e-0000-4000-8000-000000000001"`, `LOC = {"latitude": 37.78, "longitude": -122.41, "address": "Market St"}`. Patch `api.recordings.get_supabase` to return the fake and `services.recording_pipeline.check_audio_duration` to return `61.5`. Post with `files={"audio": ("a.m4a", M4A, "audio/mp4")}` and `data={"client_recording_id": CRID, "duration_ms": "61000", "location": json.dumps(LOC)}`.
 
@@ -501,12 +501,12 @@ def test_recording_upload_over_8mb_is_413_before_any_work():
 
 In `test_rate_limit.py` `PAID_ROUTES`, add `("RATE_LIMIT_TRANSCRIBE_PER_MIN", "post", "/api/recordings", {"files": {"audio": ("a.m4a", b"x", "audio/mp4")}, "data": {"client_recording_id": CRID, "duration_ms": "1000"}})`, and expect `400` for its first call (the bytes aren't M4A). In `test_security_routes.py`, `_http_routes` also replaces `{recording_id}` with `SAMPLE_ID`, so the four new routes are in `PROTECTED` and get 401 without a token.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_recordings_routes.py backend/tests/test_request_limits.py backend/tests/test_rate_limit.py backend/tests/test_security_routes.py -q`
 Expected: FAIL (404s: no routes yet).
 
-- [ ] **Step 3: Implement `FakeStorage`, the models and `api/recordings.py`; register the router and `BODY_LIMITS["/api/recordings"] = 8 * MB`**
+- [x] **Step 3: Implement `FakeStorage`, the models and `api/recordings.py`; register the router and `BODY_LIMITS["/api/recordings"] = 8 * MB`**
 
 POST order (this is the contract the tests pin):
 1. Read `audio` (8 MB is already enforced by the middleware), then `await run_db(lambda: check_upload(data))`. A `ValueError` (`AudioTooLarge` included) becomes 400 with its message.
@@ -517,16 +517,16 @@ POST order (this is the contract the tests pin):
 
 Take the device id with `device_id: str | None = Depends(get_device_id)` from `api.device` (Phase 1); it is `None` when the header is missing or malformed. Every PostgREST and Storage call goes through `run_db`. Log only ids and exception types.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `python -m pytest backend/tests/test_recordings_routes.py backend/tests/test_request_limits.py backend/tests/test_rate_limit.py backend/tests/test_security_routes.py backend/tests/test_schema_contract.py -q`
 Expected: PASS. The schema contract's static scan now sees `.table("recordings")` chains whose `eq`/`order`/`select` columns all exist, so remove the Task 1 xfail.
 
-- [ ] **Step 5: Document the API**
+- [x] **Step 5: Document the API**
 
 In the README API table, add the four routes. Mark `POST /api/transcribe` as **deprecated** ("kept for one release; the app uses `POST /api/recordings`"). In Limits, add `POST /api/recordings` body 8 MB → 413, sharing `RATE_LIMIT_TRANSCRIBE_PER_MIN`. Change "Audio is sent to the backend inline (base64), so no Storage bucket is needed" (README Setup §1) to name the private `recordings` bucket and point to the manual step. Put the endpoint detail in `backend/README.md`.
 
-- [ ] **Step 6: Run the full checks and commit**
+- [x] **Step 6: Run the full checks and commit**
 
 ```bash
 git add backend/ README.md

@@ -96,6 +96,7 @@ MB = 1024 * 1024
 # Request-body caps (C-12). Bigger bodies get 413 before they are read into memory.
 BODY_LIMITS = {
     "/api/transcribe": 8 * MB,                            # base64 audio
+    "/api/recordings": 8 * MB,                            # one M4A, multipart (H2-7.2)
     "/api/individuals/check-duplicates": 20 * 1024,       # a field dict
     "/api/individuals": 256 * 1024,                       # a save or merge (H2-1.5)
 }
@@ -391,7 +392,7 @@ async def websocket_realtime_proxy(websocket: WebSocket):
         await _close(websocket, close_code, close_reason)
 
 # Import API routers
-from api import categories, transcription, individuals, embeddings, voice_assistant
+from api import categories, transcription, individuals, embeddings, voice_assistant, recordings
 
 # Register routers
 app.include_router(categories.router)
@@ -399,6 +400,7 @@ app.include_router(transcription.router)
 app.include_router(individuals.router, prefix="/api/individuals", tags=["individuals"])
 app.include_router(embeddings.router)
 app.include_router(voice_assistant.router)
+app.include_router(recordings.router)
 
 # The routers import the OpenAI SDK, which may have just applied OPENAI_LOG: pin again.
 pin_library_loggers()
