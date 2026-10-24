@@ -532,7 +532,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 - Consumes `errorMessage` (Task 1).
 - Produces no new exports. State is `isTranscribing: boolean` and `transcriptionError: string | null`; `isUploading`, `uploadError` and `uploadAudioFile` are deleted.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```tsx
 it('shows "Transcribing..." while the recording is processed (H2-6.3)', async () => {
@@ -551,21 +551,21 @@ it("shows the backend's reason on the error card", async () => {
 it('shows one toast per failure, not two', async () => { /* reject; Toast.show error calls === 1 */ });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest screens/__tests__/ModernRecordScreen.test.tsx`
 Expected: FAIL. The screen shows "Uploading audio...", and the card says "Transcription failed".
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - `handleRecordingComplete` and `retryTranscription` call `transcribeAudio(uri)` directly.
   - The "Processing Audio" info toast is dropped: the card says it.
   - `transcriptionError = errorMessage(error)`.
   - The recorder card stays hidden while `isTranscribing` (C-13).
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest screens/__tests__/ModernRecordScreen.test.tsx`
 Expected: PASS, the C-38 and C-65 tests included.
 
-- [ ] **Step 5: Run the global checks and commit.**
+- [x] **Step 5: Run the global checks and commit.**
 ```bash
 git add mobile/screens
 git commit -m "fix(mobile): show Transcribing and the backend's reason on the Record screen (H2-6.3)

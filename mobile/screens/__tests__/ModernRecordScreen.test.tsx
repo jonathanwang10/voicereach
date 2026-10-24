@@ -85,6 +85,35 @@ beforeEach(() => {
   (api.transcribe as jest.Mock).mockResolvedValue(RESULT);
 });
 
+describe('H2-6.3 one Transcribing state with the real reason', () => {
+  it('shows "Transcribing..." while the recording is processed', async () => {
+    (api.transcribe as jest.Mock).mockReturnValue(new Promise(() => {}));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Transcribing...');
+    expect(screen.queryByText('Uploading audio...')).toBeNull();
+  });
+
+  it("shows the backend's reason on the error card", async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(
+      Object.assign(new Error('File is not in M4A format'), { detail: 'File is not in M4A format', status: 400 }));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('File is not in M4A format');
+    expect(screen.getByText('Try Again')).toBeTruthy();
+  });
+
+  it('shows one toast per failure, not two', async () => {
+    (api.transcribe as jest.Mock).mockRejectedValueOnce(new Error('The server took too long to respond. Please try again.'));
+    const screen = render(<ModernRecordScreen />);
+    fireEvent.press(screen.getByText('Stub Recorder'));
+    await screen.findByText('Try Again');
+    const toasts = (Toast.show as jest.Mock).mock.calls.map(c => c[0]);
+    expect(toasts.filter(t => t.type === 'error')).toHaveLength(1);
+    expect(toasts.filter(t => t.type === 'info')).toHaveLength(0);
+  });
+});
+
 it('hides the recorder while a recording is being transcribed', async () => {
   let finish: (r: any) => void = () => {};
   (api.transcribe as jest.Mock).mockReturnValue(new Promise(r => { finish = r; }));

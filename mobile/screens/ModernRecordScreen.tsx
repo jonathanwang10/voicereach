@@ -43,8 +43,7 @@ export const ModernRecordScreen: React.FC = () => {
   useEffect(() => () => {
     if (recordingUriRef.current) FileSystem.deleteAsync(recordingUriRef.current, { idempotent: true }).catch(() => {});
   }, []);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // One state for the one request: the audio goes inline with POST /api/transcribe (H2-6.3)
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null);
   const [transcriptionError, setTranscriptionError] = useState<string | null>(null);
@@ -65,39 +64,11 @@ export const ModernRecordScreen: React.FC = () => {
 
   const handleRecordingComplete = async (uri: string, location?: RecordingLocation) => {
     holdRecording(uri);
-    setUploadError(null);
     setTranscriptionError(null);
     // This recording's own fix, or none: never the previous recording's
     setAutoLocation(location ?? null);
 
-    await uploadAudioFile(uri);
-  };
-
-  const uploadAudioFile = async (uri: string) => {
-    try {
-      setIsUploading(true);
-      setUploadError(null);
-
-      Toast.show({
-        type: 'info',
-        text1: 'Processing Audio',
-        text2: 'Transcribing your recording...',
-        position: 'top',
-      });
-
-      await transcribeAudio(uri);
-    } catch (error) {
-      if (__DEV__) console.error('Upload failed:', error);
-      setUploadError('Upload failed');
-      Toast.show({
-        type: 'error',
-        text1: 'Upload Failed',
-        text2: 'Please try again',
-        position: 'top',
-      });
-    } finally {
-      setIsUploading(false);
-    }
+    await transcribeAudio(uri);
   };
 
   const transcribeAudio = async (audioUrl: string) => {
@@ -117,7 +88,8 @@ export const ModernRecordScreen: React.FC = () => {
       });
     } catch (error) {
       if (__DEV__) console.error('Transcription failed:', error);
-      setTranscriptionError('Transcription failed');
+      // The card carries the backend's reason too, e.g. "File is not in M4A format"
+      setTranscriptionError(errorMessage(error));
       Toast.show({
         type: 'error',
         text1: 'Transcription Failed',
@@ -133,7 +105,6 @@ export const ModernRecordScreen: React.FC = () => {
   // Saved or discarded: the audio has done its job, so it leaves the app's cache (C-65).
   const resetRecording = () => {
     holdRecording(null);
-    setUploadError(null);
     setTranscriptionResult(null);
     setTranscriptionError(null);
     clearLocations();
@@ -143,7 +114,7 @@ export const ModernRecordScreen: React.FC = () => {
   // Re-send the same recording after a failure, instead of making the worker
   // narrate it again (C-38)
   const retryTranscription = () => {
-    if (recordingUri) uploadAudioFile(recordingUri);
+    if (recordingUri) transcribeAudio(recordingUri);
   };
 
   const handleLocationSelect = (location: RecordingLocation) => {
@@ -236,9 +207,9 @@ export const ModernRecordScreen: React.FC = () => {
           {/* Content based on active tab */}
           {activeTab === 'record' ? (
             <>
-              {/* Recording Section. Hidden while a recording is being uploaded or
-                  transcribed, so a second one can't race the first (C-13). */}
-              {!transcriptionResult && !isUploading && !isTranscribing && (
+              {/* Recording Section. Hidden while a recording is being transcribed,
+                  so a second one can't race the first (C-13). */}
+              {!transcriptionResult && !isTranscribing && (
                 <Card style={styles.recorderCard} padding="large">
                   <ModernAudioRecorder
                     ref={audioRecorderRef}
@@ -261,12 +232,10 @@ export const ModernRecordScreen: React.FC = () => {
               )}
 
               {/* Processing States */}
-              {(isUploading || isTranscribing) && (
+              {isTranscribing && (
                 <Card style={styles.processingCard} variant="filled">
                   <ActivityIndicator size="large" color={theme.colors.primary[600]} />
-                  <Text style={styles.processingText}>
-                    {isUploading ? 'Uploading audio...' : 'Transcribing...'}
-                  </Text>
+                  <Text style={styles.processingText}>Transcribing...</Text>
                 </Card>
               )}
 
@@ -293,12 +262,10 @@ export const ModernRecordScreen: React.FC = () => {
               )}
 
               {/* Error Display */}
-              {(uploadError || transcriptionError) && (
+              {transcriptionError && (
                 <Card style={styles.errorCard} variant="outlined">
                   <Ionicons name="alert-circle" size={24} color={theme.colors.danger[600]} />
-                  <Text style={styles.errorText}>
-                    {uploadError || transcriptionError}
-                  </Text>
+                  <Text style={styles.errorText}>{transcriptionError}</Text>
                   <Button
                     variant="danger"
                     size="small"
