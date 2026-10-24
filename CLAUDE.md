@@ -124,7 +124,7 @@ only after `npx expo prebuild --platform ios`.
   ordered by a unique key.
 - **OpenAI clients** are built only by `services/openai_client.make_async_openai`
   (a test enforces it); `VOICEREACH_FAKE_OPENAI=1` gives the load-test fake and is
-  refused when `ENVIRONMENT=production`.
+  refused unless `ENVIRONMENT=loadtest`.
 - **Logs:** ids, counts and error types only, never names, transcripts, field values
   or GPS (`tests/test_no_pii_logs.py`). Each request, recording job and realtime
   session ends with one JSON summary line (`services/request_log.py`). New log fields

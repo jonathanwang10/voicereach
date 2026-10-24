@@ -22,7 +22,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 def fake(monkeypatch):
     monkeypatch.setattr(fake_openai, "FAKE_DELAYS", {k: 0 for k in fake_openai.FAKE_DELAYS})
     monkeypatch.setenv("VOICEREACH_FAKE_OPENAI", "1")
-    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "loadtest")
     return make_async_openai(api_key="k")
 
 
@@ -31,6 +31,17 @@ def test_fake_is_refused_in_production(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "Production")
     with pytest.raises(RuntimeError, match="not allowed"):
         make_async_openai(api_key="k")
+
+
+@pytest.mark.parametrize("environment", [None, "", "development", "staging", "prod"])
+def test_fake_is_refused_unless_the_environment_says_loadtest(monkeypatch, environment):   # review M-1
+    monkeypatch.setenv("VOICEREACH_FAKE_OPENAI", "1")
+    if environment is None:
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+    else:
+        monkeypatch.setenv("ENVIRONMENT", environment)
+    with pytest.raises(RuntimeError, match="ENVIRONMENT=loadtest"):
+        fake_openai_enabled()
 
 
 def test_app_import_fails_fast_when_fake_in_production():

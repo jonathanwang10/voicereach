@@ -785,7 +785,7 @@ again.
   `VOICEREACH_FAKE_OPENAI=1` swaps OpenAI for `services/fake_openai.py`: fixed
   delays (transcribe 2 s, chat 1.5 s, embedding 0.3 s), a fixed synthetic
   transcript, an all-empty extraction and no duplicate match. The backend refuses
-  to start with it when `ENVIRONMENT=production`.
+  to start with it unless `ENVIRONMENT=loadtest`.
 - **Load.** From the repo root:
 
   ```bash

@@ -31,7 +31,7 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
   `text-embedding-3-large`, `gpt-realtime-2.1` with server-side tools
   (`services/model_config.py`). Every client is built by
   `services/openai_client.make_async_openai`, which returns the load-test fake
-  when `VOICEREACH_FAKE_OPENAI=1` (refused in production)
+  when `VOICEREACH_FAKE_OPENAI=1` (refused unless `ENVIRONMENT=loadtest`)
 - **Async work:** an in-process recording worker started by the FastAPI lifespan
   (`services/recording_worker.py`), with Postgres as the queue (`SKIP LOCKED`)
 - **Observability:** one JSON summary line per request, job and realtime session
