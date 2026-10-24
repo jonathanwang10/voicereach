@@ -1,0 +1,2 @@
+# The load test only (H2-8.5); not part of the app or CI
+locust==2.47.0

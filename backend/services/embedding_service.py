@@ -7,10 +7,10 @@ import time
 from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
-from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 from db.client import run_db
+from services.openai_client import make_async_openai
 from services.request_log import record_usage
 from services import model_config
 from services.field_registry import build_embedding_text
@@ -53,7 +53,7 @@ def embedding_text_hash(text: str) -> str:
 class EmbeddingService:
     def __init__(self):
         # Fail fast instead of the SDK defaults (600 s read, 2 retries)
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30, max_retries=1)
+        self.client = make_async_openai(api_key=os.getenv("OPENAI_API_KEY"), timeout=30, max_retries=1)
         self.dimensions = 3072  # text-embedding-3-large dimensions
 
     @property

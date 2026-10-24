@@ -747,6 +747,49 @@ npx supabase@2.122.0 stop --workdir "$SB" --no-backup
 `check_migrations.sh` prints `migrations applied twice: OK` when every migration is
 a no-op on a database that already has it.
 
+### Load test
+
+`backend/loadtest/locustfile.py` simulates outreach workers (H2-8.5). Each one
+lists people, searches, opens profiles, uploads a 6-second recording and waits for
+it to be ready, and saves a person, then deletes the recording and the person
+again.
+
+- **Target.** Use a local Supabase (`npx supabase start` with the schema,
+  migrations, seed and the `recordings` bucket) or a staging project. Never use
+  production: the test writes and deletes rows.
+- **Server.** Start the backend in fake-OpenAI mode with the rate limits out of
+  the way. Each per-process total defaults to 5x its per-device limit, so raising
+  the per-device limits is enough:
+
+  ```bash
+  cd backend && VOICEREACH_FAKE_OPENAI=1 ENVIRONMENT=loadtest \
+    RATE_LIMIT_TRANSCRIBE_PER_MIN=100000 RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN=100000 \
+    RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN=100000 RATE_LIMIT_GENERATE_ALL_PER_MIN=100000 \
+    RATE_LIMIT_DUPLICATE_CHECK_PER_MIN=100000 RATE_LIMIT_WS_CONNECT_PER_MIN=100000 \
+    RATE_LIMIT_SAVE_PER_MIN=100000 RATE_LIMIT_CATEGORY_CREATE_PER_MIN=100000 \
+    RATE_LIMIT_DELETE_PER_MIN=100000 python -m uvicorn main:app --port 8001
+  ```
+
+  `VOICEREACH_FAKE_OPENAI=1` swaps OpenAI for `services/fake_openai.py`: fixed
+  delays (transcribe 2 s, chat 1.5 s, embedding 0.3 s), a fixed synthetic
+  transcript, an all-empty extraction and no duplicate match. The backend refuses
+  to start with it when `ENVIRONMENT=production`.
+- **Load.** From the repo root:
+
+  ```bash
+  python -m pip install -r backend/loadtest/requirements.txt
+  VOICEREACH_LIVE_TOKEN=<token> locust -f backend/loadtest/locustfile.py --host http://localhost:8001 \
+    --headless -u 20 -r 2 -t 3m --csv loadtest
+  ```
+
+  "recording ready" (type `JOB`) is the time from upload until the job is ready,
+  measured end to end.
+- **Coverage.** The realtime assistant WebSocket isn't faked and isn't load-tested.
+
+| Date | Commit | Users | Duration | Req/s | p95 list (ms) | p95 save (ms) | p95 recording ready (ms) | Failures % | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| | | | | | | | | | |
+
 ### Evals
 
 `backend/evals/` measures the AI steps on synthetic data (no real people):

@@ -22,11 +22,14 @@ from services.assistant_tools import TOOL_DEFINITIONS, ToolCallRouter
 from services.recording_worker import start_workers, stop_workers, worker_enabled
 from services.request_log import (QUIET_LIBRARY_LOGGERS, JsonFormatter, RequestLogMiddleware, emit_summary,  # noqa: F401
                                   log_context, record_usage)
+from services.openai_client import fake_openai_enabled
 from services.sentry_setup import init_sentry
 from services.realtime_guard import error_event, sanitize_client_event
 
 # Load environment variables
 load_dotenv()
+# Load tests only; raises (the app doesn't start) when ENVIRONMENT=production (H2-8.5)
+FAKE_OPENAI = fake_openai_enabled()
 # Error reports, only when SENTRY_DSN is set (H2-8.2)
 init_sentry()
 
@@ -74,6 +77,8 @@ class DropQueryString(logging.Filter):
 configure_logging(os.getenv("LOG_LEVEL"), os.getenv("LOG_FORMAT"))
 logging.getLogger("uvicorn.access").addFilter(DropQueryString())
 logger = logging.getLogger(__name__)
+if FAKE_OPENAI:
+    logger.warning("VOICEREACH_FAKE_OPENAI=1: OpenAI calls are faked (load testing only)")
 
 
 

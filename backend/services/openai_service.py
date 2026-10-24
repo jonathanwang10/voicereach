@@ -13,9 +13,9 @@ from typing import Iterator, Optional, Dict
 import mutagen
 import mutagen.mp4
 import openai
-from openai import AsyncOpenAI
 from urllib.parse import urlparse
 
+from services.openai_client import make_async_openai
 from services.request_log import record_usage
 from services import model_config
 from services.category_schema import Extraction, build_extraction_schema, parse_extraction
@@ -124,7 +124,7 @@ def _supabase_host() -> str:
 
 class OpenAIService:
     def __init__(self):
-        self.client = AsyncOpenAI(
+        self.client = make_async_openai(
             api_key=os.getenv("OPENAI_API_KEY"),
             timeout=OPENAI_TIMEOUT_SECONDS,
             max_retries=1,
