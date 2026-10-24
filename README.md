@@ -369,9 +369,15 @@ Embeddings go out in batches of up to 100 texts.
 ### Auth
 
 Every `/api/*` route except `/health` requires
-`Authorization: Bearer <Supabase access token>`. The backend checks the token
-with Supabase Auth (`auth.get_user`) and caches a valid result for 60 seconds
-(`backend/api/auth.py`). There is no fallback user: a missing, empty or invalid
+`Authorization: Bearer <Supabase access token>`. An ES256 or RS256 token (the
+project's asymmetric signing keys) is verified locally against the project's JWKS
+(`/auth/v1/.well-known/jwks.json`: audience `authenticated`, issuer
+`<SUPABASE_URL>/auth/v1`, `exp` required); the keys are cached for 10 minutes and
+re-fetched once for an unknown key id. Any other token (HS256, the legacy shared
+secret) is checked with Supabase Auth (`auth.get_user`), as is every token while the
+JWKS can't be fetched. A valid result is cached for 60 seconds
+(`backend/api/auth.py`). A locally verified token stays valid until it expires, even
+after Sign Out (at most 1 hour with Supabase's default expiry). There is no fallback user: a missing, empty or invalid
 token gets a 401. If `ALLOWED_USER_EMAILS` is set, a valid user whose email is
 not on it gets a 403 `{"detail": "This account is not allowed to use this
 service"}`; the list is checked on every request, cached tokens included. The
@@ -379,7 +385,8 @@ realtime WebSocket checks the same header during the handshake and refuses it if
 the token is missing or invalid, or the user isn't allowed; the client sees that
 as an **HTTP 403** on the upgrade, not a WebSocket close code
 (`websocket_realtime_proxy` in `backend/main.py`). If Supabase Auth itself is
-unreachable, the socket is accepted and closed with 1011.
+unreachable (for a token it can't verify locally), the socket is accepted and
+closed with 1011.
 
 The app signs in as the demo user at launch and shows no tabs until that sign-in
 settles (`AuthContext`). Every sign-in shares one in-flight attempt (`autoLogin`

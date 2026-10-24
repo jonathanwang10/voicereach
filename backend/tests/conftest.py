@@ -62,7 +62,8 @@ def _reset_process_state():
     """Reset every piece of process-global state before AND after each test.
 
     - rate-limit windows (services.rate_limit)
-    - the verified-token cache and the Supabase Auth client (api.auth._cache, _auth_client)
+    - the verified-token cache, the Supabase Auth client and the JWKS client
+      (api.auth._cache, _auth_client, _jwks)
     - the shared service-key Supabase client (db.client._client) and OpenAIService
       (services.openai_service._service)
     - app.dependency_overrides: restored to exactly what it was, so a test that
@@ -79,6 +80,7 @@ def _reset_process_state():
         reset_rate_limits()
         auth._cache.clear()
         auth._auth_client = None
+        auth._jwks = None
         db_client._client = None
         openai_service._service = None
         embedding_service._service = None

@@ -301,6 +301,28 @@ def test_sentry_scrubber_removes_person_data():
 # --- auth ---------------------------------------------------------------------------
 
 @pytest.mark.real_auth
+def test_locally_rejected_token_logs_no_claims(capture, capsys, monkeypatch):   # H2-8.3
+    import os as _os
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import ec
+    import api.auth as auth
+    from fastapi import HTTPException
+    key = ec.generate_private_key(ec.SECP256R1())
+    jwk = {**jwt.algorithms.ECAlgorithm.to_jwk(key.public_key(), as_dict=True), "kid": "k1", "alg": "ES256"}
+    monkeypatch.setattr(jwt.PyJWKClient, "fetch_data", lambda self: {"keys": [jwk]})
+    auth._cache.clear()
+    auth._jwks = None
+    token = jwt.encode({"sub": "u1", "email": SENTINEL_EMAIL, "name": SENTINEL_NAME, "aud": "authenticated",
+                        "iss": _os.environ["SUPABASE_URL"].rstrip("/") + "/auth/v1", "exp": int(time.time()) - 10},
+                       key, algorithm="ES256", headers={"kid": "k1"})
+    with pytest.raises(HTTPException) as exc:
+        auth.verify_token(token)
+    assert exc.value.status_code == 401
+    assert "ExpiredSignatureError" in capture.text
+    _assert_clean(capture, capsys)
+
+
+@pytest.mark.real_auth
 def test_rejected_token_logs_no_error_text(capture, capsys, monkeypatch):
     import api.auth as auth
     from fastapi import HTTPException

@@ -22,7 +22,8 @@ A tour of the VoiceReach codebase. For setup, see the root [README](../README.md
 - **Framework:** FastAPI on Python 3.11 (pinned in `requirements.txt` at the
   repo root)
 - **Database:** Postgres via Supabase, accessed with the service key
-- **Auth:** Supabase Auth. Every `/api/*` route verifies the bearer token with
+- **Auth:** Supabase Auth. Every `/api/*` route verifies the bearer token:
+  ES256/RS256 locally against the project JWKS, anything else with
   `auth.get_user` (`backend/api/auth.py`)
 - **AI:** `whisper-1`, `gpt-4o`, `text-embedding-3-large`, `gpt-realtime`
 - **Tests:** pytest, offline with mocks; one opt-in live smoke test. CI also

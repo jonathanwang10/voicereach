@@ -93,8 +93,9 @@ only after `npx expo prebuild --platform ios`.
   changed by someone else. Reload and try again.`); a save is one `save_individual`
   transaction and `Idempotency-Key` makes it idempotent.
 - **Auth:** every `/api/*` route except `/health`, and the realtime WebSocket,
-  needs `Authorization: Bearer <Supabase access token>` (`backend/api/auth.py`).
-  The app auto-signs in as demo@sfgov.org. An optional `ALLOWED_USER_EMAILS`
+  needs `Authorization: Bearer <Supabase access token>` (`backend/api/auth.py`),
+  verified locally against the project JWKS when the token is ES256/RS256, else
+  with `auth.get_user`. The app auto-signs in as demo@sfgov.org. An optional `ALLOWED_USER_EMAILS`
   allowlist gives other users a 403. Don't add unauthenticated routes.
 - **Paid or heavy endpoints and the realtime proxy:** routes that call OpenAI in the
   request, plus save, category create and delete, take `Depends(rate_limit(...))`
