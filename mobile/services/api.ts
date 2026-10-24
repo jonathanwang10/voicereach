@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import { supabase, autoLogin, isSignedOutByUser } from './supabase';
 import { getApiUrl } from '../config/api';
 import { getDeviceId } from './deviceId';
@@ -30,6 +31,7 @@ const TRANSCRIBE_TIMEOUT_MS = 120_000;
 const NETWORK_RETRY_DELAY_MS = 500;
 const NOT_SIGNED_IN = 'Not signed in. Check that the demo user exists in Supabase (see README setup).';
 const SIGNED_OUT = 'You signed out. Sign in again to continue.';
+const NO_CONNECTION = 'No connection to the server. Check your network and try again.';
 
 // Every backend route needs a signed-in session. After the worker's own Sign Out
 // there is no automatic sign-in: the request fails (Minor 3).
@@ -48,7 +50,7 @@ export const getAuthToken = async (): Promise<string> => {
 
 // After a 401: refresh the session; if that fails (refresh token expired after a long
 // idle), sign in again (C-37).
-const renewAuthToken = async (): Promise<string> => {
+export const renewAuthToken = async (): Promise<string> => {
   try {
     const { data, error } = await supabase.auth.refreshSession();
     if (!error && data?.session?.access_token) return data.session.access_token;
@@ -81,7 +83,7 @@ const fetchWithTimeout = async (url: string, init: RequestInit, timeoutMs: numbe
     if (controller.signal.aborted) {
       throw new ApiError(0, 'The server took too long to respond. Please try again.', 'timeout');
     }
-    throw new ApiError(0, 'No connection to the server. Check your network and try again.', 'network');
+    throw new ApiError(0, NO_CONNECTION, 'network');
   } finally {
     clearTimeout(timer);
   }
@@ -151,16 +153,22 @@ const parseDetail = (detail: unknown): string => {
 };
 
 // Parses the backend's {"detail": ...} and throws one ApiError for a non-2xx response.
-export const throwIfNotOk = async (res: Response): Promise<void> => {
-  if (res.ok) return;
+// The ApiError for a non-2xx answer: the backend's detail, else a generic message
+export const apiErrorFrom = (status: number, bodyText: string): ApiError => {
   let detail = '';
   try {
-    detail = parseDetail(JSON.parse(await res.text())?.detail);
+    detail = parseDetail(JSON.parse(bodyText)?.detail);
   } catch {
     // not JSON (for example a proxy's HTML error page): use the generic message
   }
-  throw new ApiError(res.status, detail || genericMessage(res.status), res.status === 401 ? 'auth' : 'http');
+  return new ApiError(status, detail || genericMessage(status), status === 401 ? 'auth' : 'http');
 };
+
+export const throwIfNotOk = async (res: Response): Promise<void> => {
+  if (res.ok) return;
+  throw apiErrorFrom(res.status, await res.text().catch(() => ''));
+};
+
 
 // authedFetch + throwIfNotOk + JSON. NEVER toasts: callers show the error once.
 export const apiRequest = async <T = any>(
@@ -207,6 +215,36 @@ export interface DuplicateMatch {
 }
 
 // Transcription response types
+// An uploaded recording's job (H2-7.2): queued, processed by the backend worker, then a
+// draft to review
+export type RecordingState = 'queued' | 'transcribing' | 'extracting' | 'checking_duplicates' | 'ready' | 'failed';
+
+export interface RecordingDetail {
+  id: string;
+  status: RecordingState;
+  error: string | null;
+  result: TranscriptionResult | null;
+  location: LocationData | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface RecordingSummary {
+  id: string;
+  status: RecordingState;
+  error: string | null;
+  name: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface RecordingUpload {
+  clientRecordingId: string;
+  fileUri: string;
+  durationMs: number;
+  location: LocationData | null;
+}
+
 export interface TranscriptionResult {
   transcription: string;
   categorized_data: Record<string, any>;
@@ -387,6 +425,56 @@ export const api = {
   getCategories: async (): Promise<any[]> => {
     const result = await apiRequest('/api/categories');
     return result?.categories ?? [];
+  },
+
+  // Upload a queued recording (H2-7.6). A background multipart session: the upload
+  // carries on while the app is suspended. uploadAsync bypasses fetch, so it sends its
+  // own headers and renews the session once after a 401, like authedFetch.
+  uploadRecording: async (u: RecordingUpload): Promise<{ id: string; status: RecordingState }> => {
+    const parameters: Record<string, string> = {
+      client_recording_id: u.clientRecordingId,
+      duration_ms: String(u.durationMs),
+    };
+    if (u.location) parameters.location = JSON.stringify(u.location);
+    const deviceId = await getDeviceId();
+    const send = async (token: string) => {
+      try {
+        return await FileSystem.uploadAsync(getApiUrl('/api/recordings'), u.fileUri, {
+          httpMethod: 'POST',
+          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+          sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+          fieldName: 'audio',
+          mimeType: 'audio/mp4',
+          parameters,
+          headers: { Authorization: `Bearer ${token}`, 'X-Device-Id': deviceId },
+        });
+      } catch {
+        throw new ApiError(0, NO_CONNECTION, 'network');
+      }
+    };
+    let res = await send(await getAuthToken());
+    if (res.status === 401) res = await send(await renewAuthToken());
+    if (res.status < 200 || res.status >= 300) throw apiErrorFrom(res.status, res.body ?? '');
+    return JSON.parse(res.body);
+  },
+
+  getRecording: async (id: string): Promise<RecordingDetail> =>
+    apiRequest<RecordingDetail>(`/api/recordings/${id}`),
+
+  listRecordings: async (status?: RecordingState): Promise<RecordingSummary[]> => {
+    const query = status ? `?${new URLSearchParams({ status }).toString()}` : '';
+    const result = await apiRequest<{ recordings: RecordingSummary[] }>(`/api/recordings${query}`);
+    return result?.recordings ?? [];
+  },
+
+  // Saved or discarded; a recording that is already gone (404) counts as done
+  deleteRecording: async (id: string): Promise<void> => {
+    try {
+      await apiRequest(`/api/recordings/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return;
+      throw e;
+    }
   },
 
   // Export CSV

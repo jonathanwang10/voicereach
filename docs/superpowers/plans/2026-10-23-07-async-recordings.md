@@ -726,7 +726,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   api.deleteRecording(id: string): Promise<void>   // 404 counts as done
   ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Mock `expo-file-system` as `{ uploadAsync: jest.fn(), FileSystemUploadType: { MULTIPART: 1 }, FileSystemSessionType: { BACKGROUND: 0 } }` and `../deviceId` as `{ getDeviceId: async () => 'dev-1' }`. Mock supabase the way `apiRequest.test.ts` does.
 
@@ -750,21 +750,21 @@ it('listRecordings passes the status filter', ...);             // '/api/recordi
 it('deleteRecording treats 404 as done', ...);
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cd mobile && npx jest services/__tests__/recordingsApi.test.ts`
 Expected: FAIL (`api.uploadRecording is not a function`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `uploadRecording` builds its own headers (`uploadAsync` bypasses `authedFetch`). It turns a non-2xx `{status, body}` into an `ApiError` through the same detail parsing `throwIfNotOk` uses (factor out `apiErrorFrom(status: number, bodyText: string): ApiError` and use it in both). It turns a rejected `uploadAsync` into `ApiError(0, 'No connection to the server. Check your network and try again.', 'network')`. Comment why it's a background session (H2-7.6): the upload carries on while the app is suspended.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd mobile && npx jest services/__tests__ && npx tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full checks and commit**
+- [x] **Step 5: Run the full checks and commit**
 
 ```bash
 git add mobile/services/api.ts mobile/services/__tests__/recordingsApi.test.ts
