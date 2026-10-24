@@ -351,7 +351,7 @@ If `npx expo install expo-secure-store` added a `plugins` entry to `app.json`, c
   - `awaitLocation(pending: Promise<RecordingLocation | undefined> | null, waitMs = LOCATION_WAIT_MS)`, moved unchanged.
 - Phase 5 consumes `captureLocation`/`awaitLocation` from here.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // utils/__tests__/location.test.ts (jest.mock('expo-location', ...) with all four functions as jest.fn)
@@ -386,11 +386,11 @@ it('gives the map an initialRegion and animates to a newly picked point instead 
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest utils/__tests__/location.test.ts components/__tests__/LocationPicker.test.tsx`
 Expected: FAIL (no export `captureLocation`; the picker shows an Alert; `region` is set).
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
   - `utils/location.ts` as in Interfaces. The recorder imports from it (its other code is unchanged).
   - `LocationPicker`:
     - `updateAddress` and `handleConfirmLocation` use `addressFor`;
@@ -398,16 +398,16 @@ Expected: FAIL (no export `captureLocation`; the picker shows an Alert; `region`
     - the map takes `ref={mapRef}` and `initialRegion={{ ...start, latitudeDelta: 0.01, longitudeDelta: 0.01 }}`;
     - a `useEffect` on `selectedLocation` calls `mapRef.current?.animateToRegion({...}, 300)`.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest utils components`
 Expected: PASS. All 11 existing recorder tests still pass, including `reports the location captured while recording` and `waits only a short time for a pending fix at stop`.
 
-- [ ] **Step 5: Device check and docs.**
+- [x] **Step 5: Device check and docs.**
   - CLAUDE.md Recording rule: "...waited for at most `LOCATION_WAIT_MS` (3 s, `mobile/utils/location.ts`) at stop; a fix under 2 minutes old is used at once; a failed address lookup keeps the coordinates as 'Unknown Address'."
   - Manual steps:
     > (H2-6.1) With location on, record once (this caches a fix). Turn on Airplane Mode, then record within 2 minutes. Expect: the review shows the location card with "Unknown Address", and the saved interaction has coordinates. In the location picker, with Airplane Mode on, Confirm returns a pin with "Unknown Address".
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/utils mobile/components CLAUDE.md docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "fix(mobile): keep GPS coordinates when the address lookup fails; uncontrolled map (H2-6.1, H2-6.2)

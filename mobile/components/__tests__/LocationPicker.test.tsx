@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import { LocationPicker } from '../LocationPicker';
 
@@ -19,10 +20,15 @@ jest.mock('expo-location', () => ({
   }])),
 }));
 
-// Mock react-native-maps
+// Mock react-native-maps: the map exposes animateToRegion through its ref
+const mockAnimateToRegion = jest.fn();
 jest.mock('react-native-maps', () => {
+  const ReactActual = require('react');
   const { View } = require('react-native');
-  const MapView = (props: any) => <View {...props} />;
+  const MapView = ReactActual.forwardRef((props: any, ref: any) => {
+    ReactActual.useImperativeHandle(ref, () => ({ animateToRegion: mockAnimateToRegion }));
+    return ReactActual.createElement(View, { testID: 'map', ...props });
+  });
   return { __esModule: true, default: MapView, MapView, Marker: View };
 });
 
@@ -141,6 +147,40 @@ describe('LocationPicker', () => {
     await waitFor(() => expect(mockOnLocationSelected).toHaveBeenCalledWith({
       location: { latitude: 37.72, longitude: -122.42, address: 'New St San Francisco CA' },
     }));
+  });
+
+  it('confirms coordinates without an address (H2-6.2)', async () => {
+    const expoLocation = require('expo-location');
+    expoLocation.reverseGeocodeAsync.mockRejectedValue(new Error('offline'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    try {
+      const { getByText } = render(
+        <LocationPicker onLocationSelected={mockOnLocationSelected} onCancel={mockOnCancel} />
+      );
+      await waitFor(() => expect(getByText('Confirm Location')).toBeTruthy());
+      fireEvent.press(getByText('Confirm Location'));
+      await waitFor(() => expect(mockOnLocationSelected).toHaveBeenCalledWith({
+        location: expect.objectContaining({ address: 'Unknown Address' }) }));
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      expoLocation.reverseGeocodeAsync.mockReset();
+      expoLocation.reverseGeocodeAsync.mockImplementation(() => Promise.resolve([{
+        street: 'Market Street', city: 'San Francisco', region: 'CA' }]));
+      alert.mockRestore();
+    }
+  });
+
+  it('gives the map an initialRegion and animates to a newly picked point instead of a controlled region', async () => {
+    const { getByTestId } = render(
+      <LocationPicker onLocationSelected={mockOnLocationSelected} onCancel={mockOnCancel} />
+    );
+    await waitFor(() => expect(getByTestId('map')).toBeTruthy());
+    const map = getByTestId('map');
+    expect(map.props.region).toBeUndefined();
+    expect(map.props.initialRegion).toMatchObject({ latitude: 37.80808794862037, longitude: -122.43016054168524 });
+    fireEvent(map, 'press', { nativeEvent: { coordinate: { latitude: 37.7, longitude: -122.4 } } });
+    await waitFor(() => expect(mockAnimateToRegion).toHaveBeenCalledWith(
+      expect.objectContaining({ latitude: 37.7, longitude: -122.4 }), expect.any(Number)));
   });
 
   it('calls onCancel when cancel button is pressed', async () => {

@@ -50,8 +50,10 @@ only after `npx expo prebuild --platform ios`.
   interruption (a call, Siri) stops the recording and offers Keep (5 s or more) or
   Record again. Only `mobile/services/audioSession.ts` changes the audio session.
   Recording starts on tap; the GPS fix
-  is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s) at
-  stop (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
+  is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s,
+  `mobile/utils/location.ts`) at stop; a fix under 2 minutes old is used at once; a
+  failed address lookup keeps the coordinates as 'Unknown Address'
+  (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
   own fix unless the worker picked a location by hand. The server re-checks the
   length with mutagen: 400 under 5 s or over 125 s (2:00 plus 5 s slack)
   (`services/openai_service.py`, `RECORDING_LIMITS`).

@@ -36,6 +36,7 @@ jest.mock('expo-file-system', () => ({ deleteAsync: jest.fn(async () => {}) }));
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn(async () => ({ status: 'denied' })),
   getCurrentPositionAsync: jest.fn(),
+  getLastKnownPositionAsync: jest.fn(async () => null),
   reverseGeocodeAsync: jest.fn(async () => [{ street: '5th St', city: 'San Francisco', region: 'CA' }]),
   Accuracy: { High: 4 },
 }));

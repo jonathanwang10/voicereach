@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Mod
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { SF_DEFAULT_COORDINATE, formatGeocodedAddress } from '../utils/location';
+import { SF_DEFAULT_COORDINATE, UNKNOWN_ADDRESS, addressFor } from '../utils/location';
 
 interface LocationPickerProps {
   onLocationSelected: (location: { 
@@ -33,10 +33,21 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   // Only the newest address lookup may set the address: an older one that
   // resolves late would pair the old address with the new pin
   const geocodeRequestRef = useRef(0);
+  // The map is uncontrolled (H2-6.2): it opens at initialRegion and is moved with
+  // animateToRegion, so a re-render never snaps it back while the worker pans
+  const mapRef = useRef<MapView>(null);
+  const [initialRegion, setInitialRegion] = useState<{ latitude: number; longitude: number } | null>(
+    initialLocation || null
+  );
 
   useEffect(() => {
     getCurrentLocation();
   }, []);
+
+  useEffect(() => {
+    if (!selectedLocation) return;
+    mapRef.current?.animateToRegion({ ...selectedLocation, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+  }, [selectedLocation]);
 
   // Start the pin at the location passed in, else the GPS fix, else the SF default.
   // A denied permission or a failed fix still opens the map (C-04).
@@ -67,6 +78,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           ? { latitude: fix.coords.latitude, longitude: fix.coords.longitude }
           : SF_DEFAULT_COORDINATE;
         setSelectedLocation(start);
+        setInitialRegion(start);
         updateAddress(start.latitude, start.longitude);
       }
       setIsLoading(false);
@@ -89,17 +101,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     const request = ++geocodeRequestRef.current;
     // Until the new lookup lands, Confirm geocodes the pin itself
     setAddress('');
-    let next: string;
-    try {
-      const addressResponse = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
-      next = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
-    } catch (err) {
-      if (__DEV__) console.error('Error getting address:', err);
-      next = 'Address unavailable';
-    }
+    const next = await addressFor(latitude, longitude);
     if (request === geocodeRequestRef.current) setAddress(next);
   };
 
@@ -109,25 +111,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       return;
     }
 
-    // Use the current address or get a fresh one
+    // Use the current address or get a fresh one. Without an address the coordinates
+    // still count (H2-6.2): they go as UNKNOWN_ADDRESS.
     let finalAddress = address;
-    if (!finalAddress || finalAddress === 'Address unavailable') {
-      try {
-        const addressResponse = await Location.reverseGeocodeAsync({
-          latitude: selectedLocation.latitude,
-          longitude: selectedLocation.longitude,
-        });
-
-        finalAddress = formatGeocodedAddress(addressResponse[0]) ?? 'Unknown location';
-      } catch (err) {
-        if (__DEV__) console.error('Error getting address:', err);
-        finalAddress = 'Unknown location';
-      }
-    }
-
-    if (!finalAddress || finalAddress === 'Unknown location') {
-      Alert.alert('Error', 'Unable to get address for this location. Please try again.');
-      return;
+    if (!finalAddress || finalAddress === UNKNOWN_ADDRESS) {
+      finalAddress = await addressFor(selectedLocation.latitude, selectedLocation.longitude);
     }
 
     onLocationSelected({
@@ -152,7 +140,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     );
   }
 
-  const mapRegion = selectedLocation || SF_DEFAULT_COORDINATE;
+  const mapStart = initialRegion || selectedLocation || SF_DEFAULT_COORDINATE;
 
   return (
     <Modal visible={true} animationType="slide">
@@ -165,9 +153,10 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         </View>
 
         <MapView
+          ref={mapRef}
           style={styles.map}
-          region={{
-            ...mapRegion,
+          initialRegion={{
+            ...mapStart,
             latitudeDelta: 0.01,
             longitudeDelta: 0.01,
           }}

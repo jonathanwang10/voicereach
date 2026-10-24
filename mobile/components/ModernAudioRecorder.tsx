@@ -17,22 +17,17 @@ import {
   useAudioRecorderState,
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system';
-import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { acquireRecording } from '../services/audioSession';
 import { RECORDING_FAILED, showApiError } from '../utils/errors';
-import { formatGeocodedAddress } from '../utils/location';
+import { awaitLocation, captureLocation, RecordingLocation } from '../utils/location';
 import { theme } from '../theme';
 
-const { width } = Dimensions.get('window');
+// Re-exported: callers of the recorder import them from here
+export { LOCATION_WAIT_MS } from '../utils/location';
+export type { RecordingLocation } from '../utils/location';
 
-export interface RecordingLocation {
-  location: {
-    latitude: number;
-    longitude: number;
-    address: string;
-  };
-}
+const { width } = Dimensions.get('window');
 
 interface AudioRecorderProps {
   onRecordingComplete: (uri: string, location?: RecordingLocation) => void;
@@ -41,9 +36,6 @@ interface AudioRecorderProps {
 export interface AudioRecorderRef {
   resetRecording: () => void;
 }
-
-// How long stopping waits for a GPS fix that is still on its way (C-39)
-export const LOCATION_WAIT_MS = 3000;
 
 // The field note: 16 kHz mono AAC at 32 kbps, about 4 KB a second (H2-5.4)
 export const FIELD_NOTE_RECORDING: RecordingOptions = {
@@ -64,43 +56,6 @@ const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
-};
-
-// The GPS fix and its address, or undefined when there is none. Never throws.
-const captureLocation = async (): Promise<RecordingLocation | undefined> => {
-  try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return undefined;
-    const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-    const [address] = await Location.reverseGeocodeAsync({
-      latitude: coords.latitude,
-      longitude: coords.longitude,
-    });
-    return {
-      location: {
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        address: formatGeocodedAddress(address) ?? 'Unknown Address',
-      },
-    };
-  } catch (err) {
-    if (__DEV__) console.warn('Location capture failed, continuing without location:', err);
-    return undefined;
-  }
-};
-
-// The fix if it arrives within LOCATION_WAIT_MS, else undefined
-const awaitLocation = async (pending: Promise<RecordingLocation | undefined> | null) => {
-  if (!pending) return undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<undefined>(resolve => {
-    timer = setTimeout(() => resolve(undefined), LOCATION_WAIT_MS);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
 };
 
 export const ModernAudioRecorder = forwardRef<AudioRecorderRef, AudioRecorderProps>(({
