@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { SF_DEFAULT_COORDINATE, UNKNOWN_ADDRESS, addressFor } from '../utils/location';
+import { PrivacyOverlay } from './PrivacyOverlay';
 
 interface LocationPickerProps {
   onLocationSelected: (location: { 
@@ -210,6 +211,8 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+      {/* The modal has its own window: cover it in the app switcher too (H2-6.14) */}
+      <PrivacyOverlay />
     </Modal>
   );
 };

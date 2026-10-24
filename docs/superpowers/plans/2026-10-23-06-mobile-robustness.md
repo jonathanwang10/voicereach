@@ -1194,7 +1194,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - When shown: an opaque `View` with `StyleSheet.absoluteFill`, `backgroundColor: theme.colors.background`, `zIndex: 1000`, centred `Text` with `PRIVACY_OVERLAY_TEXT`, `pointerEvents="none"`, `accessibilityElementsHidden` and `importantForAccessibility="no-hide-descendants"`.
 - A system permission prompt also makes the app `inactive`, so the overlay shows behind it. That is acceptable and stated in the device check.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```tsx
 let emit: (s: string) => void = () => {};
@@ -1216,22 +1216,22 @@ it('covers an open interaction (a transcript) in the app switcher', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest components/__tests__/PrivacyOverlay.test.tsx components/__tests__/InteractionDetailModal.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** as in Interfaces.
+- [x] **Step 3: Implement** as in Interfaces.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Docs and device check.**
+- [x] **Step 5: Docs and device check.**
   - README **On the phone**: "When the app leaves the foreground, an opaque VoiceReach screen covers it (modals included), so the app switcher's snapshot shows no case data."
   - Manual steps:
     > (H2-6.14) Swipe up to the app switcher from each of: Search, a profile, an open interaction detail, the location picker and a voice review. Expect: the card shows the white "VoiceReach" screen, never the content. Return: the content is back at once. A system permission prompt also shows the overlay behind it (expected).
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/components mobile/App.tsx README.md docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "feat(mobile): cover the app with an opaque overlay in the app switcher (H2-6.14)

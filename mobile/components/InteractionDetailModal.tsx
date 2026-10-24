@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Interaction } from '../types';
 import { FieldCategory, fieldLabel, formatFieldValue } from '../utils/fieldValues';
+import { PrivacyOverlay } from './PrivacyOverlay';
 
 interface InteractionDetailModalProps {
   visible: boolean;
@@ -118,6 +119,8 @@ export default function InteractionDetailModal({
           </ScrollView>
         </View>
       </View>
+      {/* The modal has its own window: cover it in the app switcher too (H2-6.14) */}
+      <PrivacyOverlay />
     </Modal>
   );
 }

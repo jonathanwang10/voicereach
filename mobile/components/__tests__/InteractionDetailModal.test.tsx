@@ -1,7 +1,11 @@
 // C-09: the interaction's changed fields skip empty values and never show "null"
 // or [object Object].
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { AppState } from 'react-native';
+import { act, render } from '@testing-library/react-native';
+
+// The overlay is hidden from VoiceOver on purpose, so queries must include hidden elements
+const HIDDEN = { includeHiddenElements: true };
 import InteractionDetailModal from '../InteractionDetailModal';
 
 it('renders changes without null rows, joining lists and showing a location address', () => {
@@ -61,4 +65,18 @@ it('shows each removed field as "removed" and never the _removed list itself', (
   expect(screen.getAllByText('removed')).toHaveLength(2);
   expect(screen.queryByText('Removed:')).toBeNull();
   expect(screen.queryByText('hiv_status, notes')).toBeNull();
+});
+
+it('covers an open interaction (a transcript) in the app switcher (H2-6.14)', () => {
+  let emit: (s: string) => void = () => {};
+  const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation(((_t: string, h: any) => {
+    emit = h;
+    return { remove: jest.fn() };
+  }) as any);
+  const interaction: any = { id: 'i1', individual_id: 'p1', user_id: '', created_at: '2026-01-01T00:00:00Z',
+    data: {}, transcription: 'Met Ann by the library' };
+  const s = render(<InteractionDetailModal visible interaction={interaction} onClose={jest.fn()} />);
+  act(() => emit('inactive'));
+  expect(s.getByText('VoiceReach', HIDDEN)).toBeTruthy();
+  spy.mockRestore();
 });

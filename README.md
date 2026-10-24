@@ -639,6 +639,8 @@ out of those.
   so nothing about a person is written to the phone's storage. The cache is
   cleared on Sign Out. It refetches when the app returns to the foreground and
   when the network comes back.
+- When the app leaves the foreground, an opaque VoiceReach screen covers it
+  (modals included), so the app switcher's snapshot shows no case data.
 
 ## Testing
 

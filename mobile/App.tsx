@@ -12,6 +12,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, wireQueryManagers } from './services/queryClient';
 import { useEvictCommittedDeletes } from './services/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PrivacyOverlay } from './components/PrivacyOverlay';
 
 // Import screens
 import { ModernRecordScreen } from './screens/ModernRecordScreen';
@@ -158,6 +159,8 @@ export default function App() {
         <AuthProvider>
           <AppContent />
           <Toast />
+          {/* Last, so it covers toasts too (H2-6.14) */}
+          <PrivacyOverlay />
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
