@@ -1,3 +1,7 @@
+// Expo's babel plugin rewrites `process.env.EXPO_PUBLIC_X` reads (and deletes) to its
+// own env module; a computed key keeps this delete on the process.env api.ts reads
+const unset = (name: string) => { delete process.env[name]; };
+
 describe('API_CONFIG', () => {
   const OLD = process.env;
   beforeEach(() => { jest.resetModules(); process.env = { ...OLD }; });
@@ -35,10 +39,23 @@ describe('API_CONFIG', () => {
     expect(API_CONFIG.BASE_URL).toBe('http://192.168.1.5:8001');
   });
 
-  it('reads Supabase settings from env', () => {
+  it('reads Supabase settings from env, the publishable key first (H2-8.3)', () => {
     process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://abc.supabase.co';
+    process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_x';
     process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'anon';
     const { API_CONFIG } = require('../api');
-    expect(API_CONFIG.SUPABASE).toEqual({ URL: 'https://abc.supabase.co', ANON_KEY: 'anon' });
+    expect(API_CONFIG.SUPABASE).toEqual({ URL: 'https://abc.supabase.co', KEY: 'sb_publishable_x' });
+  });
+
+  it('falls back to the legacy anon key', () => {
+    unset('EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'anon';
+    expect(require('../api').API_CONFIG.SUPABASE.KEY).toBe('anon');
+  });
+
+  it('has no key when neither is set', () => {
+    unset('EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+    unset('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+    expect(require('../api').API_CONFIG.SUPABASE.KEY).toBe('');
   });
 });

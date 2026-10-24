@@ -15,7 +15,8 @@ export const API_CONFIG = {
   SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
   SUPABASE: {
     URL: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
-    ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+    // The new publishable key, else the legacy anon key until legacy keys are disabled (H2-8.3)
+    KEY: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
   },
 };
 

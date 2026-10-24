@@ -374,8 +374,8 @@ Match-confidence colours mean the same on every screen (`confidenceColor` in
 ```bash
 # backend/.env
 SUPABASE_URL=...
-SUPABASE_SERVICE_KEY=...      # server-side database access
-SUPABASE_ANON_KEY=...         # token verification only
+SUPABASE_SECRET_KEY=...       # server-side database access (legacy: SUPABASE_SERVICE_KEY)
+SUPABASE_PUBLISHABLE_KEY=...  # token verification only (legacy: SUPABASE_ANON_KEY)
 OPENAI_API_KEY=...
 # Optional: ALLOWED_USER_EMAILS, CORS_ALLOW_ORIGINS, RATE_LIMIT_*_PER_MIN,
 # REALTIME_MAX_SESSION_SECONDS, LOG_LEVEL (see the README). backend/.env is
@@ -384,7 +384,7 @@ OPENAI_API_KEY=...
 # mobile/.env
 EXPO_PUBLIC_API_BASE_URL=http://localhost:8001   # LAN address on a physical phone
 EXPO_PUBLIC_SUPABASE_URL=...
-EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=...   # legacy: EXPO_PUBLIC_SUPABASE_ANON_KEY
 ```
 
 ## Known limitations

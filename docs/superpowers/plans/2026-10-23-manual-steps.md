@@ -48,6 +48,9 @@ Each file is idempotent.
 | `RECORDING_WORKER_ENABLED` | 1 (set to 0 only to pause processing) | backend (Railway) | 7 |
 | `SENTRY_DSN` | unset (optional: the Sentry project's DSN turns error reports on) | backend (Railway) | 8 |
 | `ENVIRONMENT` | `development` (set `production` on Railway) | backend (Railway) | 8 |
+| `SUPABASE_SECRET_KEY` | the project's `sb_secret_...` key (keep `SUPABASE_SERVICE_KEY` until legacy keys are disabled) | backend (Railway) | 8 |
+| `SUPABASE_PUBLISHABLE_KEY` | the project's `sb_publishable_...` key, for `auth.get_user` (keep `SUPABASE_ANON_KEY` meanwhile) | backend (Railway) | 8 |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | the same publishable key (keep `EXPO_PUBLIC_SUPABASE_ANON_KEY` meanwhile) | app (local `mobile/.env` and EAS) | 8 |
 | `EXPO_PUBLIC_SENTRY_DSN` | unset (optional: the Sentry React Native project's DSN) | app (local `mobile/.env` and the EAS environment) | 8 |
 
 ## Device checks
@@ -109,3 +112,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 14. (Phase 7, Task 9) Enable the Data Protection capability for the App ID (Apple Developer → Identifiers; needs the paid account), then `cd mobile && npx expo prebuild --platform ios` and check that `ios/SFHomelessOutreach/SFHomelessOutreach.entitlements` has `com.apple.developer.default-data-protection = NSFileProtectionComplete` and that `CODE_SIGN_ENTITLEMENTS` points at it; commit the `ios/` diff (it also adds the ExpoSQLite pod from item 13).
 15. (Phase 8, Task 2) Optional: create a Sentry project (platform FastAPI), copy its DSN into Railway's `SENTRY_DSN`, then hit a route that 500s on staging and confirm in Sentry that the event has no message text, body or query string.
 16. (Phase 8, Task 3) Optional: create a Sentry React Native project and copy its DSN into `EXPO_PUBLIC_SENTRY_DSN` (local `mobile/.env` and the EAS environment).
+17. (Phase 8, Task 4) Move to the new Supabase keys, in order: (1) in Supabase, Settings → API Keys, create a publishable and a secret key; (2) set `SUPABASE_SECRET_KEY` and `SUPABASE_PUBLISHABLE_KEY` on Railway, and `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `mobile/.env` and in EAS, keeping the legacy ones; (3) run `backend/tests/integration/test_live_smoke.py` and one recording on a phone; if PostgREST answers `Invalid JWT` for the secret key, keep the legacy key and report it; (4) only then disable the legacy keys in the Dashboard.

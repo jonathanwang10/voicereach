@@ -20,14 +20,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.individual_service import rescore_all_individuals  # noqa: E402
 from supabase import create_client, Client  # noqa: E402
+from db.client import supabase_secret_key  # noqa: E402
 
 
 def get_supabase_client() -> Client:
     """Get Supabase client instance"""
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY")
+    key = supabase_secret_key()
     if not url or not key:
-        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be provided")
+        raise ValueError("Set SUPABASE_URL and the Supabase secret key (see backend/.env.example)")
     return create_client(url, key)
 
 

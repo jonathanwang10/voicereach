@@ -22,6 +22,16 @@ _client: Client | None = None
 _lock = threading.Lock()
 
 
+def supabase_secret_key() -> str | None:
+    """The backend's key (H2-8.3): the new `sb_secret_...` key, else the legacy
+    service-role key until legacy keys are disabled."""
+    for name in ("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_KEY"):
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value
+    return None
+
+
 def get_supabase() -> Client:
     """The shared service-key client, built on first use (lazily, so tests can patch it).
 
@@ -33,9 +43,9 @@ def get_supabase() -> Client:
         with _lock:
             if _client is None:
                 url = os.getenv("SUPABASE_URL")
-                key = os.getenv("SUPABASE_SERVICE_KEY")
+                key = supabase_secret_key()
                 if not url or not key:
-                    raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+                    raise RuntimeError("Set SUPABASE_URL and SUPABASE_SECRET_KEY (or the legacy SUPABASE_SERVICE_KEY)")
                 _client = create_client(
                     url, key, options=ClientOptions(postgrest_client_timeout=POSTGREST_TIMEOUT_SECONDS))
     return _client

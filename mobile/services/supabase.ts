@@ -8,16 +8,17 @@ import { API_CONFIG } from '../config/api';
 const DEMO_EMAIL = 'demo@sfgov.org';
 const DEMO_PASSWORD = 'demo123456';
 
-if (!API_CONFIG.SUPABASE.URL || !API_CONFIG.SUPABASE.ANON_KEY) {
+if (!API_CONFIG.SUPABASE.URL || !API_CONFIG.SUPABASE.KEY) {
   throw new Error(
     'Supabase is not configured. Copy mobile/.env.example to mobile/.env and set ' +
-    'EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, then restart Expo.'
+    'EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY (or the legacy ' +
+    'EXPO_PUBLIC_SUPABASE_ANON_KEY), then restart Expo.'
   );
 }
 
 export const supabase = createClient(
   API_CONFIG.SUPABASE.URL,
-  API_CONFIG.SUPABASE.ANON_KEY,
+  API_CONFIG.SUPABASE.KEY,
   {
     auth: {
       storage: new LargeSecureStore(), // encrypted at rest (H2-6.12)

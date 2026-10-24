@@ -281,8 +281,8 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 |---|---|
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings, Realtime |
 | `SUPABASE_URL` | Project URL |
-| `SUPABASE_SERVICE_KEY` | All server-side database access (bypasses RLS) |
-| `SUPABASE_ANON_KEY` | Used only by `api/auth.py` to verify users' access tokens |
+| `SUPABASE_SECRET_KEY` | All server-side database access (bypasses RLS): the `sb_secret_...` key. `SUPABASE_SERVICE_KEY` (the legacy service-role key) is the fallback until legacy keys are disabled. |
+| `SUPABASE_PUBLISHABLE_KEY` | Used only by `api/auth.py` to verify users' access tokens: the `sb_publishable_...` key. `SUPABASE_ANON_KEY` is the legacy fallback. |
 | `ALLOWED_USER_EMAILS` | Optional. Comma-separated emails (case-insensitive) allowed to use the API, e.g. `demo@sfgov.org`. When set, any other signed-in user gets a 403. Unset, or set but empty, means every user of the Supabase project is accepted. Checked on every request, but `backend/.env` is loaded at startup, so restart the backend after changing it. |
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
 | `RATE_LIMIT_*_PER_MIN` | Optional. Per-account limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
@@ -311,7 +311,7 @@ npx expo start
 |---|---|
 | `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Required in release builds: without it the app stops at startup. Only in development does it default to `http://localhost:8001`, which works in the iOS simulator. On a physical phone use your machine's LAN address, e.g. `http://<your-LAN-IP>:8001` — `localhost` would resolve to the phone, and uvicorn must be started with `--host 0.0.0.0`. |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL (Project Settings → API) |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key (`sb_publishable_...`); `EXPO_PUBLIC_SUPABASE_ANON_KEY` is the legacy fallback |
 | `EXPO_PUBLIC_SENTRY_DSN` | Optional. Sends the app's JS errors to Sentry (scrubbed; see [Data leaving the system](#data-leaving-the-system)). Unset means off. |
 
 These are the only settings the app reads (`mobile/config/api.ts`). If the two
@@ -394,7 +394,8 @@ To call the API by hand, get a token from the repo root with the venv active:
 TOKEN=$(python - <<'PY'
 import os; from dotenv import load_dotenv; from supabase import create_client
 load_dotenv('backend/.env')
-c = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+c = create_client(os.environ["SUPABASE_URL"],
+                  os.environ.get("SUPABASE_PUBLISHABLE_KEY") or os.environ["SUPABASE_ANON_KEY"])
 print(c.auth.sign_in_with_password({"email": "demo@sfgov.org", "password": "demo123456"}).session.access_token)
 PY
 )

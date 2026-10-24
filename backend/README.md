@@ -30,8 +30,8 @@ Environment variables (`backend/.env`):
 | Variable | Used for |
 |---|---|
 | `SUPABASE_URL` | Every Supabase client |
-| `SUPABASE_SERVICE_KEY` | All database access from the routes and services (bypasses RLS) |
-| `SUPABASE_ANON_KEY` | Only `api/auth.py`, to verify users' access tokens |
+| `SUPABASE_SECRET_KEY` | All database access from the routes and services (bypasses RLS); legacy fallback `SUPABASE_SERVICE_KEY` (`db.client.supabase_secret_key`) |
+| `SUPABASE_PUBLISHABLE_KEY` | Only `api/auth.py`, to verify users' access tokens; legacy fallback `SUPABASE_ANON_KEY` (`auth.supabase_public_key`) |
 | `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
 | `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset, or set but empty = any user of the project |
 | `CORS_ALLOW_ORIGINS` | Optional comma-separated browser origins (unset = none); the app doesn't need it |

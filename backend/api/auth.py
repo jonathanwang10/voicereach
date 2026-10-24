@@ -26,10 +26,23 @@ _auth_client = None
 logger = logging.getLogger(__name__)
 
 
+def supabase_public_key() -> str | None:
+    """The key for verifying tokens with Supabase Auth (H2-8.3): the new
+    `sb_publishable_...` key, else the legacy anon key until legacy keys are disabled."""
+    for name in ("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_ANON_KEY"):
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value
+    return None
+
+
 def _get_auth_client():
     global _auth_client
     if _auth_client is None:
-        _auth_client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
+        key = supabase_public_key()
+        if not key:
+            raise RuntimeError("no Supabase public key")
+        _auth_client = create_client(os.environ["SUPABASE_URL"], key)
     return _auth_client
 
 
@@ -74,7 +87,8 @@ def verify_token(token: str) -> str:
     try:
         client = _get_auth_client()
     except Exception as e:
-        logger.error("Auth client could not be created (check SUPABASE_URL / SUPABASE_ANON_KEY): %s",
+        logger.error("Auth client could not be created (check SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY, "
+                     "or the legacy SUPABASE_ANON_KEY): %s",
                      type(e).__name__)
         raise _unavailable()
     try:
