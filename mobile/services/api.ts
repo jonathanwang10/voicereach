@@ -190,6 +190,15 @@ const toSearchResult = (item: any): SearchResult => ({
   ...(item.search_type !== undefined && { search_type: item.search_type }),
 });
 
+export const LIST_PAGE_SIZE = 50;
+
+// One page of the default list
+export interface IndividualsPage {
+  items: SearchResult[];
+  nextCursor: string | null;
+  total: number;
+}
+
 // One possible duplicate from the backend's check (confidence 0-100; only >= 60 is returned)
 export interface DuplicateMatch {
   id: string;
@@ -280,6 +289,19 @@ export const api = {
   // most recently seen first. The backend escapes the term (no PostgREST filter
   // built from raw input, C-41). Throws ApiError: an outage must not look like
   // "no one recorded yet" (C-17).
+  // The default list, a page at a time (H2-6.10): newest first, the next page by cursor
+  listIndividuals: async (cursor: string | null): Promise<IndividualsPage> => {
+    const params = new URLSearchParams({ limit: String(LIST_PAGE_SIZE) });
+    if (cursor) params.set('cursor', cursor);
+    const result = await apiRequest(`/api/individuals?${params.toString()}`);
+    return {
+      items: (result?.individuals ?? []).map(toSearchResult),
+      nextCursor: result?.next_cursor ?? null,
+      total: result?.total ?? 0,
+    };
+  },
+
+  // A text search (with a term; the list without one is listIndividuals)
   searchIndividuals: async (query: string): Promise<SearchResult[]> => {
     const params = new URLSearchParams({ search: query.trim(), limit: '100' });
     const result = await apiRequest(`/api/individuals?${params.toString()}`);

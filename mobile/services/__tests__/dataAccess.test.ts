@@ -42,14 +42,19 @@ afterEach(() => {
 describe('searchIndividuals', () => {
   const listBody = (individuals: any[]) => ({ individuals, total: individuals.length, offset: 0, limit: 100 });
 
-  it('the default list is GET /api/individuals with an empty search and limit 100', async () => {
-    (global as any).fetch = jest.fn(async () => jsonResponse(200, listBody([])));
-    await expect(api.searchIndividuals('')).resolves.toEqual([]);
+  it('the default list is GET /api/individuals?limit=50, then the next page by cursor (H2-6.10)', async () => {
+    (global as any).fetch = jest.fn(async () =>
+      jsonResponse(200, { individuals: [], total: 0, next_cursor: '2026-01-02T00:00:00+00:00,abc' }));
+    const page = await api.listIndividuals(null);
     const { url, method } = lastCall();
     expect(method).toBe('GET');
     expect(url.pathname).toBe('/api/individuals');
-    expect(url.searchParams.get('search')).toBe('');
-    expect(url.searchParams.get('limit')).toBe('100');
+    expect(url.searchParams.get('limit')).toBe('50');
+    expect(url.searchParams.has('cursor')).toBe(false);
+    expect(url.searchParams.has('search')).toBe(false);
+    expect(page).toEqual({ items: [], nextCursor: '2026-01-02T00:00:00+00:00,abc', total: 0 });
+    await api.listIndividuals(page.nextCursor);
+    expect(lastCall().url.searchParams.get('cursor')).toBe('2026-01-02T00:00:00+00:00,abc');
   });
 
   it('sends free text URL-encoded, with no PostgREST filter grammar (C-41)', async () => {

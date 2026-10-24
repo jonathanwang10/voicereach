@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
   ActivityIndicator,
   SafeAreaView,
@@ -10,11 +9,12 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { FlashList } from '@shopify/flash-list';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { SearchStackParamList } from '../navigation/types';
 import { SearchResult } from '../types';
-import { api } from '../services/api';
+import { useIndividualSearch, useIndividualsList, useRefreshOnFocus } from '../services/queries';
+import { useDebouncedValue } from '../utils/useDebouncedValue';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -36,50 +36,121 @@ export const SEMANTIC_MIN_CHARS = 3;
 export const debounceFor = (query: string): number =>
   query.trim().split(/\s+/).join(' ').length >= SEMANTIC_MIN_CHARS ? SEMANTIC_DEBOUNCE_MS : TEXT_DEBOUNCE_MS;
 const HIGHLIGHT_MS = 2500;
+const NO_RESULTS: SearchResult[] = [];
 // Rows fade in one after another; cap the stagger so row 100 does not wait 5 s (C-60)
 const MAX_FADE_DELAY_MS = 500;
+
+// One row, memoised: FlashList re-renders it only when its own props change
+const SearchResultRow = React.memo(({ item, index, isHighlighted, onPress }: {
+  item: SearchResult;
+  index: number;
+  isHighlighted: boolean;
+  onPress: (item: SearchResult) => void;
+}) => {
+  const urgencyScore = scoreOf(item);
+  const urgencyLevel = getUrgencyLevel(urgencyScore);
+
+  return (
+    <FadeInView
+      delay={Math.min(index * 50, MAX_FADE_DELAY_MS)}
+      duration={300}
+    >
+      <Card
+        style={[
+          styles.resultCard,
+          isHighlighted && styles.highlightedCard,
+        ]}
+        variant={isHighlighted ? 'filled' : 'elevated'}
+        onPress={() => onPress(item)}
+        accessibilityLabel={`${item.name}, urgency ${Math.round(urgencyScore)}, last seen ${formatLastSeen(item.last_seen_days)}`}
+      >
+      <View style={styles.resultHeader}>
+        <View style={styles.nameContainer}>
+          <Text style={styles.resultName}>{item.name}</Text>
+          {item.search_type != null && (
+            <Badge
+              variant={item.search_type === 'semantic' ? 'secondary' : 'primary'}
+              size="small"
+              style={styles.matchBadge}
+            >
+              <Ionicons
+                name={item.search_type === 'semantic' ? 'bulb-outline' : 'search'}
+                size={10}
+                color={theme.colors.text.inverse}
+              />
+              <Text style={styles.matchText}>
+                {item.search_type === 'exact' ? 'Exact'
+                  : item.search_type === 'name' ? 'Name'
+                  : item.search_type === 'value' ? 'Details'
+                  : `${Math.round((item.similarity_score ?? 0) * 100)}%`}
+              </Text>
+            </Badge>
+          )}
+        </View>
+        <Badge variant={URGENCY_BADGE_VARIANT[urgencyLevel]} size="medium">
+          {Math.round(urgencyScore)}
+        </Badge>
+      </View>
+
+      <View style={styles.resultDetails}>
+        <View style={styles.detailRow}>
+          <Ionicons name="time-outline" size={14} color={theme.colors.text.secondary} />
+          <Text style={styles.detailText}>
+            Last seen {formatLastSeen(item.last_seen_days)}
+          </Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Ionicons name="alert-circle-outline" size={14} color={theme.colors.text.secondary} />
+          <Text style={styles.detailText}>
+            {URGENCY_LABELS[urgencyLevel]}
+          </Text>
+        </View>
+      </View>
+      </Card>
+    </FadeInView>
+  );
+});
 
 export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackParamList, 'SearchMain'>> = ({
   navigation,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  // The default list (empty query) and the results for the current query are kept
-  // apart, so a background list refresh never replaces search results.
-  const [allIndividuals, setAllIndividuals] = useState<SearchResult[]>([]);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  // Set when a load (list) or search failed with nothing good to show: shown instead
-  // of "no results" (C-17). A failed background refresh keeps the list and toasts.
-  const [listError, setListError] = useState<string | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const hasQuery = searchQuery.trim() !== '';
-  const loadError = hasQuery ? searchError : listError;
-  const listRef = useRef<FlatList<SearchResult>>(null);
+  const query = searchQuery.trim();
+  const hasQuery = query !== '';
+  // One search per pause in typing (C-06, H2-4.5); every query has its own cache entry
+  const debounced = useDebouncedValue(query, debounceFor(query));
+  // The default list (pages by cursor) and the current query's results are kept apart
+  // (H2-6.6), so a background list refresh never replaces search results.
+  const list = useIndividualsList();
+  const search = useIndividualSearch(hasQuery ? debounced : '');
+  const isSearching = hasQuery && (debounced !== query || search.isPending);
+  const listRef = useRef<FlashList<SearchResult>>(null);
   // A row that came back (Undo, or a failed delete): scroll to it once it is present
   const [scrollTargetId, setScrollTargetId] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const clearHighlightTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Re-render when a delete is scheduled, undone or fails (OD-3)
   const [pendingVersion, setPendingVersion] = useState(0);
-  const shownResults = hasQuery ? searchResults : allIndividuals;
-  const visibleResults = shownResults.filter(r => !isPendingDelete(r.id));
 
-  // Request sequencing (C-06): only the newest list load / search may touch state,
-  // so a slow response for "v" can never overwrite the one for "veteran".
-  const listSeq = useRef(0);
-  const searchSeq = useRef(0);
-  const listLoaded = useRef(false);
-  const queryRef = useRef(searchQuery);
-  queryRef.current = searchQuery;
+  // Rows across the loaded pages, each person once
+  const listRows = useMemo(() => {
+    const seen = new Set<string>();
+    return (list.data?.pages ?? []).flatMap(page => page.items).filter(r => !seen.has(r.id) && !!seen.add(r.id));
+  }, [list.data]);
+  const shownResults = hasQuery ? search.data ?? NO_RESULTS : listRows;
+  const visibleResults = useMemo(
+    () => shownResults.filter(r => !isPendingDelete(r.id)),
+    [shownResults, pendingVersion]
+  );
+  // The full-screen error only when there is nothing good to show (C-17)
+  const active = hasQuery ? search : list;
+  const loadError = !isSearching && active.isError && !active.data ? errorMessage(active.error) : null;
+  const isLoadingList = !hasQuery && list.isPending;
 
   useEffect(() => {
     const unsubscribe = subscribePendingDeletes(({ id, type }) => {
-      if (type === 'committed') {
-        // Gone from the backend: drop it locally instead of reloading
-        setAllIndividuals(list => list.filter(r => r.id !== id));
-        setSearchResults(list => list.filter(r => r.id !== id));
-      } else if (type === 'cancelled' || type === 'failed') {
+      // A committed delete leaves the cache (useEvictCommittedDeletes, mounted by App)
+      if (type === 'cancelled' || type === 'failed') {
         // The person is back in the list: bring their row into view (C-60)
         setScrollTargetId(id);
         setHighlightedId(id);
@@ -97,190 +168,55 @@ export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackPara
     };
   }, []);
 
-  // The first load shows the spinner (and the retry state if it fails). Later loads
-  // run in the background: the last good list stays, and a failure is a toast.
-  const loadAllIndividuals = async () => {
-    const reqId = ++listSeq.current;
-    const background = listLoaded.current;
-    if (!background) setIsLoading(true);
-    try {
-      const results = await api.searchIndividuals('');
-      if (reqId !== listSeq.current) return;
-      listLoaded.current = true;
-      setListError(null);
-      setAllIndividuals(results);
-    } catch (error) {
-      if (reqId !== listSeq.current) return;
-      if (background) {
-        // One toast at a time: never replace a delete's "Tap to undo" (Minor 5)
-        if (!hasPendingDeletes()) showApiError(error, "Couldn't refresh the list");
-      } else {
-        setListError(errorMessage(error));
-      }
-    } finally {
-      if (reqId === listSeq.current) setIsLoading(false);
-    }
-  };
-
-  const performSearch = async (query: string, background = false) => {
-    const reqId = ++searchSeq.current;
-    const isCurrent = () => reqId === searchSeq.current;
-    if (!background) setIsSearching(true);
-    try {
-      let results: SearchResult[];
-      try {
-        results = await api.semanticSearchIndividuals(query);
-      } catch {
-        if (!isCurrent()) return;
-        // Semantic search failed: fall back to the backend's text search
-        results = await api.searchIndividuals(query);
-      }
-      if (!isCurrent()) return;
-      setSearchError(null);
-      setSearchResults(results);
-    } catch (error) {
-      if (!isCurrent()) return;
-      if (background) {
-        if (!hasPendingDeletes()) showApiError(error, "Couldn't refresh the search results");
-      } else {
-        setSearchError(errorMessage(error));
-      }
-    } finally {
-      if (isCurrent()) setIsSearching(false);
-    }
-  };
-
-  // The only load trigger: every focus, including the first (C-60). On a return
-  // from a profile it refreshes in the background.
-  useFocusEffect(
-    React.useCallback(() => {
-      loadAllIndividuals();
-      const query = queryRef.current.trim();
-      if (query) performSearch(query, true);
-    }, [])
-  );
-
-  // One debounced search per pause in typing (C-06)
+  // A failed background refresh keeps what is shown and toasts once, unless a delete's
+  // "Tap to undo" is showing (one toast at a time, Minor 5)
+  const toastedAt = useRef({ list: 0, search: 0 });
   useEffect(() => {
-    searchSeq.current++; // drop any in-flight response for an older query
-    const query = searchQuery.trim();
-    if (!query) {
-      setIsSearching(false);
-      setSearchError(null);
-      return;
-    }
-    setIsSearching(true); // never show the previous query's results under the new text
-    const timeoutId = setTimeout(() => performSearch(query), debounceFor(query));
-    return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+    if (!list.isRefetchError || toastedAt.current.list === list.errorUpdatedAt) return;
+    toastedAt.current.list = list.errorUpdatedAt;
+    if (!hasPendingDeletes()) showApiError(list.error, "Couldn't refresh the list");
+  }, [list.isRefetchError, list.errorUpdatedAt]);
+  useEffect(() => {
+    if (!search.isRefetchError || toastedAt.current.search === search.errorUpdatedAt) return;
+    toastedAt.current.search = search.errorUpdatedAt;
+    if (!hasPendingDeletes()) showApiError(search.error, "Couldn't refresh the search results");
+  }, [search.isRefetchError, search.errorUpdatedAt]);
 
-  // The FlatList is only mounted when no spinner or error view replaces it
-  const listMounted = !isSearching && !(isLoading && !hasQuery) && !loadError;
-  const scrollRetries = useRef(0);
-  const scrollRetryTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (scrollRetryTimeout.current) clearTimeout(scrollRetryTimeout.current);
-  }, []);
+  // Coming back to the screen (e.g. from a profile) refreshes in the background (C-60).
+  // One stable callback reading the latest state: useFocusEffect re-runs a callback
+  // that changes, which would refetch on every keystroke.
+  const refreshLatest = useRef(() => {});
+  refreshLatest.current = () => {
+    list.refetch();
+    if (hasQuery && debounced) search.refetch();
+  };
+  const refreshShown = useCallback(() => refreshLatest.current(), []);
+  useRefreshOnFocus(refreshShown);
+
+  // The list is only mounted when no spinner or error view replaces it
+  const listMounted = !isSearching && !isLoadingList && !loadError;
 
   useEffect(() => {
     if (!scrollTargetId || !listMounted) return; // keep the target until the list is back
     const index = visibleResults.findIndex(item => item.id === scrollTargetId);
     if (index < 0) return; // not shown yet: try again when the list changes
     setScrollTargetId(null);
-    scrollRetries.current = 0;
     listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
-  }, [scrollTargetId, shownResults, pendingVersion, listMounted]);
-
-  // scrollToIndex needs the row's layout; if it is not measured yet, scroll near it
-  // first and try once more (only once).
-  const handleScrollToIndexFailed = (info: { index: number; averageItemLength: number }) => {
-    listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
-    if (scrollRetries.current >= 1) return;
-    scrollRetries.current += 1;
-    if (scrollRetryTimeout.current) clearTimeout(scrollRetryTimeout.current);
-    scrollRetryTimeout.current = setTimeout(() => {
-      scrollRetryTimeout.current = null;
-      listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.2 });
-    }, 250);
-  };
+  }, [scrollTargetId, visibleResults, listMounted]);
 
   const handleRetry = () => {
-    if (hasQuery) {
-      performSearch(searchQuery.trim());
-    } else {
-      loadAllIndividuals();
-    }
+    if (hasQuery) search.refetch();
+    else list.refetch();
   };
 
-  const handleResultPress = (result: SearchResult) => {
+  // The next page, for the default list only
+  const handleEndReached = () => {
+    if (!hasQuery && list.hasNextPage && !list.isFetchingNextPage) list.fetchNextPage();
+  };
+
+  const handleResultPress = useCallback((result: SearchResult) => {
     navigation.navigate('IndividualProfile', { individualId: result.id });
-  };
-
-  const renderSearchResult = ({ item, index }: { item: SearchResult; index: number }) => {
-    const urgencyScore = scoreOf(item);
-    const urgencyLevel = getUrgencyLevel(urgencyScore);
-    const isHighlighted = highlightedId === item.id;
-
-    return (
-      <FadeInView
-        delay={Math.min(index * 50, MAX_FADE_DELAY_MS)}
-        duration={300}
-      >
-        <Card
-          style={[
-            styles.resultCard,
-            isHighlighted && styles.highlightedCard,
-          ]}
-          variant={isHighlighted ? 'filled' : 'elevated'}
-          onPress={() => handleResultPress(item)}
-          accessibilityLabel={`${item.name}, urgency ${Math.round(urgencyScore)}, last seen ${formatLastSeen(item.last_seen_days)}`}
-        >
-        <View style={styles.resultHeader}>
-          <View style={styles.nameContainer}>
-            <Text style={styles.resultName}>{item.name}</Text>
-            {item.search_type != null && (
-              <Badge
-                variant={item.search_type === 'semantic' ? 'secondary' : 'primary'}
-                size="small"
-                style={styles.matchBadge}
-              >
-                <Ionicons
-                  name={item.search_type === 'semantic' ? 'bulb-outline' : 'search'}
-                  size={10}
-                  color={theme.colors.text.inverse}
-                />
-                <Text style={styles.matchText}>
-                  {item.search_type === 'exact' ? 'Exact'
-                    : item.search_type === 'name' ? 'Name'
-                    : item.search_type === 'value' ? 'Details'
-                    : `${Math.round((item.similarity_score ?? 0) * 100)}%`}
-                </Text>
-              </Badge>
-            )}
-          </View>
-          <Badge variant={URGENCY_BADGE_VARIANT[urgencyLevel]} size="medium">
-            {Math.round(urgencyScore)}
-          </Badge>
-        </View>
-
-        <View style={styles.resultDetails}>
-          <View style={styles.detailRow}>
-            <Ionicons name="time-outline" size={14} color={theme.colors.text.secondary} />
-            <Text style={styles.detailText}>
-              Last seen {formatLastSeen(item.last_seen_days)}
-            </Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="alert-circle-outline" size={14} color={theme.colors.text.secondary} />
-            <Text style={styles.detailText}>
-              {URGENCY_LABELS[urgencyLevel]}
-            </Text>
-          </View>
-        </View>
-        </Card>
-      </FadeInView>
-    );
-  };
+  }, [navigation]);
 
   const renderErrorState = () => (
     <TouchableOpacity
@@ -314,9 +250,14 @@ export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackPara
   );
 
   const renderStats = () => {
-    if ((!hasQuery && isLoading) || loadError || visibleResults.length === 0) return null;
+    if (isLoadingList || loadError || visibleResults.length === 0) return null;
 
-    const totalResults = visibleResults.length;
+    // The list's Total is the server's, less the loaded rows hidden as pending deletes;
+    // a search counts what it shows. The urgency counts cover the loaded rows.
+    const serverTotal = list.data?.pages[0]?.total ?? listRows.length;
+    const totalResults = hasQuery
+      ? visibleResults.length
+      : serverTotal - (listRows.length - visibleResults.length);
     const countAt = (level: UrgencyLevel) => visibleResults.filter(r => getUrgencyLevel(scoreOf(r)) === level).length;
     const highUrgency = countAt('high');
     const mediumUrgency = countAt('medium');
@@ -374,7 +315,7 @@ export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackPara
       {renderStats()}
 
       <View style={styles.resultsContainer}>
-        {!hasQuery && isLoading ? (
+        {isLoadingList ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.colors.primary[600]} />
             <Text style={styles.loadingText}>Loading individuals...</Text>
@@ -387,12 +328,25 @@ export const ModernSearchScreen: React.FC<NativeStackScreenProps<SearchStackPara
         ) : loadError ? (
           renderErrorState()
         ) : visibleResults.length > 0 ? (
-          <FlatList
+          <FlashList
             ref={listRef}
             data={visibleResults}
-            renderItem={({ item, index }) => renderSearchResult({ item, index })}
+            renderItem={({ item, index }) => (
+              <SearchResultRow
+                item={item}
+                index={index}
+                isHighlighted={highlightedId === item.id}
+                onPress={handleResultPress}
+              />
+            )}
             keyExtractor={(item) => item.id}
-            onScrollToIndexFailed={handleScrollToIndexFailed}
+            estimatedItemSize={104}
+            extraData={highlightedId}
+            onEndReached={handleEndReached}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={list.isFetchingNextPage && !hasQuery
+              ? <ActivityIndicator style={styles.footer} color={theme.colors.primary[600]} />
+              : null}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
           />
@@ -468,6 +422,9 @@ const styles = StyleSheet.create({
   },
   resultsContainer: {
     flex: 1,
+  },
+  footer: {
+    paddingVertical: theme.spacing.md,
   },
   listContent: {
     paddingHorizontal: theme.spacing.base,

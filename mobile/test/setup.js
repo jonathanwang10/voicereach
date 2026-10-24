@@ -28,6 +28,9 @@ if (!globalThis.crypto?.getRandomValues) {
 // for; a microtask lands inside act(async () => ...)
 require('@tanstack/react-query').notifyManager.setScheduler(fn => Promise.resolve().then(fn));
 
+// H2-6.10: FlashList's own Jest setup (renders rows without native layout)
+require('@shopify/flash-list/jestSetup');
+
 // H2-6.6: NetInfo's own mock (isConnected true, addEventListener a jest.fn)
 jest.mock('@react-native-community/netinfo', () => require('@react-native-community/netinfo/jest/netinfo-mock.js'));
 

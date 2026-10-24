@@ -62,6 +62,15 @@
    `notifyManager.setScheduler(fn => Promise.resolve().then(fn))`; the app keeps the default.
    `CategoryContext`'s `isLoading` is now `isPending`, true only before the first result: a
    refetch never swaps a form for the spinner.
+11. **(Task 11, during execution) Search refreshes on focus through one stable callback.**
+    `useFocusEffect` re-runs a callback whose identity changes, so a callback depending on the
+    query refetched on every keystroke; it now reads the latest state from a ref and refetches a
+    search only once it has a debounced term. Phase 4's 300/600 ms `debounceFor` is kept as the
+    `useDebouncedValue` delay (the plan's `SEARCH_DEBOUNCE_MS = 300` predates it).
+    `renderWithQuery`'s client uses `gcTime: Infinity`, because a 5-minute garbage-collection timer
+    kept single-suite Jest runs alive for 5 minutes after the tests finished; `queryClient.test.ts`
+    clears the clients it makes. Added tests: the server total in the stats card, a row repeated
+    across pages shows once, and the last page makes no further request.
 
 ## Global Constraints
 
@@ -954,7 +963,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - The stats card's Total is the server's `total` for the list minus the loaded rows hidden as pending deletes, and `visibleResults.length` for a search. The High/Medium/Low counts cover the loaded rows.
   - FlashList: `estimatedItemSize={104}`, `extraData={highlightedId}`, `ListFooterComponent` (a spinner while `isFetchingNextPage`).
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // dataAccess.test.ts (replaces 'the default list is GET /api/individuals with an empty search and limit 100')
@@ -995,20 +1004,20 @@ The rest of the file's behaviour tests keep their names and assertions:
 - `waits for the list to come back from a search spinner before scrolling`;
 - `renders the match badge for a 0 similarity score`.
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest services/__tests__/dataAccess.test.ts screens/__tests__/ModernSearchScreen.test.tsx`
 Expected: FAIL (`api.listIndividuals is not a function`).
 
-- [ ] **Step 3: Install and implement** as in Interfaces.
+- [x] **Step 3: Install and implement** as in Interfaces.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx tsc --noEmit && npx jest`
 Expected: PASS.
 
-- [ ] **Step 5: Device check.**
+- [x] **Step 5: Device check.**
   > (H2-6.10) With more than 50 people (`supabase/seed.sql` plus manual entries, or a local script), scroll Search to the end. Expect: the next page loads with a footer spinner, no row repeats, and scrolling stays smooth. Undo a delete near the bottom: the list scrolls to the restored row.
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/services mobile/utils/useDebouncedValue.ts mobile/screens mobile/App.tsx mobile/test/setup.js mobile/package.json mobile/package-lock.json docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "feat(mobile): Search on TanStack Query and FlashList with cursor pages (H2-6.6, H2-6.10)

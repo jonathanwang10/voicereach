@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { CategoryProvider } from './contexts/CategoryContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient, wireQueryManagers } from './services/queryClient';
+import { useEvictCommittedDeletes } from './services/queries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Import screens
@@ -53,6 +54,8 @@ function AppContent() {
 
   // Refetch on foreground and on reconnect (H2-6.6)
   useEffect(() => wireQueryManagers(), []);
+  // A committed delete leaves every cached list, search and profile
+  useEvictCommittedDeletes();
   // Signed out: no person from this session may come back from the memory cache
   useEffect(() => {
     if (!user) queryClient.clear();

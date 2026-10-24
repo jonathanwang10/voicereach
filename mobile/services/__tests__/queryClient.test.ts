@@ -11,9 +11,12 @@ beforeEach(async () => {
   jest.clearAllMocks();
   await AsyncStorage.clear();
 });
+const made: ReturnType<typeof createQueryClient>[] = [];
+const newClient = () => { const c = createQueryClient(); made.push(c); return c; };
 afterEach(() => {
   jest.restoreAllMocks();
   onlineManager.setOnline(true);
+  made.splice(0).forEach(c => c.clear()); // no gc timer outlives the test
 });
 
 it('the app comes to the foreground: queries see focus (H2-6.6)', () => {
@@ -43,20 +46,20 @@ it('NetInfo drives onlineManager; unknown connectivity counts as online', () => 
 
 it('a query offline still runs and fails instead of pausing', async () => {
   onlineManager.setOnline(false);
-  const client = createQueryClient();
+  const client = newClient();
   await expect(client.fetchQuery({ queryKey: ['x'], queryFn: async () => { throw new Error('No connection'); } }))
     .rejects.toThrow('No connection');
 });
 
 it('does not retry: the transport already retries a GET once', async () => {
-  const client = createQueryClient();
+  const client = newClient();
   const queryFn = jest.fn(async () => { throw new Error('boom'); });
   await expect(client.fetchQuery({ queryKey: ['r'], queryFn })).rejects.toThrow('boom');
   expect(queryFn).toHaveBeenCalledTimes(1);
 });
 
 it('has no persister: nothing is written to AsyncStorage', async () => {
-  const client = createQueryClient();
+  const client = newClient();
   await client.fetchQuery({ queryKey: ['p'], queryFn: async () => ({ name: 'Ann Lee' }) });
   expect(await AsyncStorage.getAllKeys()).toEqual([]);
 });
