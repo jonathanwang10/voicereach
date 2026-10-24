@@ -129,7 +129,9 @@ async def _visits(supabase: Any, individual_id: str, limit: int) -> List[dict]:
 
 async def search_people(query: str, limit: int = 5) -> list[dict]:
     """Hybrid search (exact name first, then fused name/full-text/semantic), then people
-    found only through a matching visit transcript (`match: "visit"`)."""
+    found only through a matching visit transcript (`match: "visit"`). Visit-only people
+    get up to limit // 2 of the slots even when the hybrid search fills the page, since
+    its semantic floor is low enough that it usually does (review I-2)."""
     q = (query or "").strip()
     if not q:
         return []
@@ -155,6 +157,8 @@ async def search_people(query: str, limit: int = 5) -> list[dict]:
 
     found = {str(r["id"]) for r in rows}
     extra_ids = [pid for pid in best_visit if pid not in found]
+    visit_slots = min(len(extra_ids), max(limit - len(rows), limit // 2))
+    rows, extra_ids = rows[:limit - visit_slots], extra_ids[:visit_slots]
     if extra_ids:
         people = (await run_db(lambda: supabase.table("individuals").select("*")
                                .in_("id", extra_ids).execute())).data or []

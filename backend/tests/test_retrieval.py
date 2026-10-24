@@ -117,6 +117,36 @@ def test_search_people_appends_people_found_only_through_a_visit(patched, monkey
     assert sb.calls_to("individuals", "select")[0].mod("in_") == (("id", [CID]), {})
 
 
+def _person(n: int) -> dict:
+    return {**ANN, "id": f"00000000-0000-0000-0000-0000000001{n:02d}", "name": f"Person {n}",
+            "urgency_override": None, "data": {"name": f"Person {n}"}}
+
+
+def _visit_for(person: dict, similarity: float) -> dict:
+    return {"interaction_id": person["id"].replace("01", "0e", 1), "individual_id": person["id"],
+            "created_at": T1, "transcription": "dog bite", "location": None, "similarity": similarity}
+
+
+@pytest.mark.parametrize("hybrid_count,visit_count,limit,expected", [
+    (5, 1, 5, ["Person 0", "Person 1", "Person 2", "Person 3", "Person 50"]),       # review I-2
+    (5, 3, 5, ["Person 0", "Person 1", "Person 2", "Person 50", "Person 51"]),      # at most limit // 2 visits
+    (2, 1, 5, ["Person 0", "Person 1", "Person 50"]),                               # room for all
+    (1, 1, 1, ["Person 0"]),                                                        # limit 1: no reserve
+])
+def test_search_people_keeps_room_for_people_found_only_through_a_visit(
+        patched, monkeypatch, hybrid_count, visit_count, limit, expected):
+    monkeypatch.setattr(EmbeddingService, "embed_query", AsyncMock(return_value=VEC))
+    hybrid = [_person(n) for n in range(hybrid_count)]
+    visit_people = [_person(50 + n) for n in range(visit_count)]
+    visits = [_visit_for(p, 0.6 - 0.01 * n) for n, p in enumerate(visit_people)]
+    sb = _db(search_individuals_hybrid=[_hybrid(p, "semantic", 0.3) for p in hybrid], match_interactions=visits)
+    sb.on("individuals", "select", data=visit_people)
+    with patched(sb):
+        rows = run(retrieval.search_people("who mentioned a dog bite", limit=limit))
+    assert [r["name"] for r in rows] == expected
+    assert all(r["match"] == "visit" for r in rows if r["name"].startswith("Person 5"))
+
+
 def test_search_people_clamps_the_limit_and_ignores_blank_queries(patched):
     sb = _db(search_individuals_hybrid=[])
     with patched(sb):

@@ -305,8 +305,10 @@ vector of the wrong length is rejected, not stored.
   `REALTIME_MODEL` (default `gpt-realtime-2.1`). The server sets the session once; client frames pass through
   the allowlist in `services/realtime_guard.py` (others get an `event_not_allowed`
   error event). The session declares four read-only tools (`search_people`,
-  `get_person`, `recent_interactions`, `most_urgent`; `services/assistant_tools.py`);
-  the proxy runs the model's calls on the server and sends each result back as a
+  `get_person`, `recent_interactions`, `most_urgent`; `services/assistant_tools.py`).
+  `search_people` returns the hybrid search's people, plus people found only through a
+  matching visit transcript, who keep up to half the slots (`services/retrieval.py`).
+  The proxy runs the model's calls on the server and sends each result back as a
   `function_call_output` fenced as REFERENCE DATA (never a `system` message).
   A client can't send `function_call_output` itself. Close codes after `accept()`: 1000
   normal, 1008 session time limit or too many connects, 1011 upstream or Auth
