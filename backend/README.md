@@ -1,7 +1,7 @@
 # VoiceReach backend
 
-FastAPI service for VoiceReach. It owns every OpenAI call (Whisper, GPT-4o,
-embeddings, the Realtime proxy) and all server-side database access. The root
+FastAPI service for VoiceReach. It owns every OpenAI call (transcription,
+extraction, duplicate scoring, embeddings, the Realtime proxy) and all server-side database access. The root
 [`README.md`](../README.md) covers the whole project; this file is the backend
 detail.
 
@@ -32,7 +32,7 @@ Environment variables (`backend/.env`):
 | `SUPABASE_URL` | Every Supabase client |
 | `SUPABASE_SECRET_KEY` | All database access from the routes and services (bypasses RLS); legacy fallback `SUPABASE_SERVICE_KEY` (`db.client.supabase_secret_key`) |
 | `SUPABASE_PUBLISHABLE_KEY` | Only `api/auth.py`, to verify users' access tokens; legacy fallback `SUPABASE_ANON_KEY` (`auth.supabase_public_key`) |
-| `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings and the Realtime API |
+| `OPENAI_API_KEY` | Transcription, extraction, duplicate scoring, embeddings and the Realtime API |
 | `ALLOWED_USER_EMAILS` | Optional allowlist of account emails (comma-separated); others get a 403. Unset, or set but empty = any user of the project |
 | `CORS_ALLOW_ORIGINS` | Optional comma-separated browser origins (unset = none); the app doesn't need it |
 | `RATE_LIMIT_*_PER_MIN` | Optional per-user-and-device limits on the paid or heavy endpoints; `RATE_LIMIT_*_TOTAL_PER_MIN` caps each bucket per process (default 5x). See the root README's Limits |
@@ -52,14 +52,21 @@ editing it, `ALLOWED_USER_EMAILS` included.
 ```
 main.py              App, CORS, router registration, and the realtime WebSocket proxy
 api/
-  auth.py            get_current_user dependency: verifies the bearer token with Supabase Auth
-  transcription.py   POST /api/transcribe
+  auth.py            get_current_user dependency: verifies the bearer token (JWKS, else Supabase Auth)
+  device.py          The X-Device-Id header (rate limits, audit)
+  recordings.py      /api/recordings: upload, poll, list, discard (the async pipeline)
+  transcription.py   POST /api/transcribe (deprecated)
   individuals.py     /api/individuals routes and the background embedding task
   categories.py      /api/categories and GET /api/export
   embeddings.py      /api/embeddings routes
   voice_assistant.py /api/voice-assistant helper routes (only `/guidelines`)
 services/
-  openai_service.py             Whisper, GPT-4o extraction, duplicate scoring call
+  openai_service.py             Transcription, strict-schema extraction, duplicate scoring call
+  openai_client.py, fake_openai.py  The one OpenAI client factory; the load-test fake
+  category_schema.py            The extraction json_schema and the evidence check
+  recording_pipeline.py         The stage functions both transcribe paths run
+  recording_worker.py           The lifespan worker: claims jobs, purges old recordings
+  retrieval.py                  Hybrid search and the assistant's retrieval helpers
   field_registry.py             Field normaliser, category_key, height parsing; labels,
                                 embedding text and export columns from the categories
   duplicate_detection_service.py Candidate search + GPT-4o comparison (threshold 60)
@@ -68,17 +75,23 @@ services/
   validation_helper.py          Normalise, then check required fields
   embedding_service.py          text-embedding-3-large, the text hash and the query cache
   assistant_tools.py            Read-only retrieval tools the realtime proxy runs
+  rate_limit.py, audit.py       Per-device limits and session caps; the audit log
+  request_log.py, sentry_setup.py  JSON request logs (allowlisted fields); optional Sentry
 db/models.py         Pydantic request/response models
 scripts/backfill_embeddings.py  Embed every individual
 scripts/rescore_urgency.py      Re-score every individual (run after upgrading)
-tests/               Offline pytest suite; tests/integration/ needs a live backend
+evals/               Offline extraction, duplicate and assistant evals (baseline.json)
+loadtest/            The Locust load test (run in fake-OpenAI mode)
+tests/               Offline pytest suite; tests/db/ needs a local Postgres, tests/integration/ a live backend
 ```
 
 ## Authentication
 
 Every `/api/*` route depends on `get_current_user` (`api/auth.py`), which expects
-`Authorization: Bearer <Supabase access token>` and checks it with
-`auth.get_user`. Valid tokens are cached for 60 seconds. Missing or invalid
+`Authorization: Bearer <Supabase access token>`. An ES256/RS256 token is verified
+locally against the project JWKS (keys cached 10 minutes); anything else, or any
+token while the JWKS can't be fetched, is checked with `auth.get_user`. Valid
+tokens are cached for 60 seconds. Missing or invalid
 tokens get a 401; there is no demo fallback. When `ALLOWED_USER_EMAILS` is set
 (comma-separated, case-insensitive, checked on every call), a valid user whose
 email isn't listed gets a 403 `{"detail": "This account is not allowed to use
@@ -100,8 +113,8 @@ prefix is stripped; the body is capped at 8 MB) or `{"audio_url": "..."}` on the
 same host as `SUPABASE_URL` (other hosts are a 400; the download stops at 5 MB
 and doesn't follow redirects: a 3xx fails like any other download error, with a
 500 "Transcription failed"). Loads categories, transcribes with `TRANSCRIBE_MODEL` (default `gpt-transcribe`, with a fixed SF vocabulary prompt and no person names),
-extracts fields with `gpt-4o`, validates, and looks for duplicates. The M4A's
-length is read with mutagen before Whisper is called: under 5 s or over 125 s is
+extracts fields with `CHAT_MODEL` (default `gpt-4o`), validates, and looks for duplicates. The M4A's
+length is read with mutagen before transcription: under 5 s or over 125 s is
 a 400 (`RECORDING_LIMITS`).
 413 over a size cap, 429 over the rate limit, 504 after 110 s. Returns:
 
@@ -186,8 +199,8 @@ matches sort before value matches, then `sort_by` orders each group
 and an abbreviated `last_location`. `last_seen` is the latest interaction's
 `created_at`, falling back to the person's `created_at` (never `updated_at`),
 fetched by `fetch_last_seen` in chunks of 50 ids per `interactions` query. The
-table is read once and matched in memory: demo scale, and the read is capped by
-Supabase's API row limit (1000 by default).
+table is read once, in pages past Supabase's API row limit (`db.client.fetch_all`),
+and matched in memory: demo scale.
 
 **`GET /api/individuals/{id}`** — Returns `{individual, recent_interactions}`
 (the last 10). 404 if not found; a database error is a 500.
@@ -385,11 +398,13 @@ request; a missing or invalid value uses the default:
 - Errors: every non-2xx body is `{"detail": string}`. A 500 says only
   `"<action> failed"` (`api/errors.py:internal_error`); the log records the
   exception type, not its message.
-- OpenAI calls time out after 30 s with one retry; Whisper gets 60 s and no
+- OpenAI calls time out after 30 s with one retry; transcription gets 60 s and no
   retry. `/api/transcribe` chains up to ~180 s of OpenAI time, so the route has
   its own 110 s deadline (504) to answer before the app's 120 s timeout.
-- Audio is not stored by the backend: it arrives inline, goes to a temp file for
-  Whisper and the file is deleted on every path (`openai_service.temp_audio_file`).
+- Audio is stored only while it waits: `POST /api/recordings` puts it in the
+  private `recordings` bucket, and the worker deletes it once the transcript is
+  saved (rows and any leftover file are purged after 7 days). It goes to a temp file
+  for transcription, deleted on every path (`openai_service.temp_audio_file`).
   It does leave the system: the audio goes to OpenAI, and so do transcripts,
   duplicate candidates' records and the assistant's tool results. The transcript is
   saved with the interaction. See "Data leaving the system" in the root README.
@@ -402,6 +417,7 @@ request; a missing or invalid value uses the default:
   no `print` calls outside `scripts/`; `tests/test_no_pii_logs.py` enforces both.
 - Interactions record the user id from the token, but `user_name` is always
   "Demo User".
-- Several handlers make synchronous Supabase calls inside `async` functions, and
-  list, search and export load whole tables, each read capped by Supabase's API
-  row limit (1000 by default). Fine at demo scale, not beyond it.
+- The list (`GET /api/individuals?search=`) and export read whole tables, paged
+  past Supabase's API row limit (`fetch_all`), and match in Python. Fine at demo
+  scale, not beyond it. Every query reached from `async` code runs in the
+  threadpool (`run_db`).

@@ -61,8 +61,8 @@ at 8 MB (413) and shares the 30-a-minute `RATE_LIMIT_TRANSCRIBE_PER_MIN` budget.
 After the 202 the phone deletes its copy (and Expo's multipart copy) and polls
 `GET /api/recordings/{id}` every 2 s while the job runs.
 
-`POST /api/transcribe` (base64 audio inline, answered within 110 s) is deprecated
-and kept for one release; it runs the same stages.
+`POST /api/transcribe` (the old synchronous route, answered within 110 s) is
+deprecated and kept for one release; it runs the same stages.
 
 ## 3. Backend processing
 
@@ -78,20 +78,27 @@ until the draft is saved or discarded; rows older than 7 days are purged hourly.
 1. **Load categories.** Every row of `categories` defines a field to extract,
    with its type, options and whether it is required.
 2. **Transcribe.** The audio is written to a temp `.m4a` file and sent to
-   `whisper-1` (`openai_service.transcribe_audio_file`).
-3. **Extract.** `categorize_transcription` sends the transcript and the category
-   list to `gpt-4o` in JSON mode (`response_format={"type": "json_object"}`,
-   temperature 0.3). The prompt asks for the required fields (name, height,
-   weight) and for height in inches. Reply keys are matched to category names
-   case- and spacing-insensitively (`field_registry.category_key`, so "Name" or
-   "Housing Status" still land). The reply is then cleaned per type:
+   `TRANSCRIBE_MODEL` (default `gpt-transcribe`, `services/model_config.py`) with
+   the SF vocabulary prompt from `services/transcribe_vocab.py`: places, streets and
+   outreach terms, never person names (`openai_service.transcribe_audio_file`). The
+   transcript is saved on the job row at once.
+3. **Extract.** `extract_fields` sends the transcript, in its own fenced `user`
+   message, to `CHAT_MODEL` (default `gpt-4o`) at temperature 0 with a strict
+   `json_schema` built from the categories (`category_schema.build_extraction_schema`):
+   one `{value, evidence}` object per category, enums for select options. A value
+   whose `evidence` (words from the transcript) isn't in the transcript is dropped;
+   for a number its digits or number word suffice. Nothing is inferred, and a
+   refusal is an empty extraction, so the required fields show as missing instead
+   of the transcript being lost. Reply keys are matched to category names
+   case- and spacing-insensitively (`field_registry.category_key`). The values are
+   then cleaned per type:
    - numbers become floats; height goes through
      `field_registry.parse_height_inches` ("5 ft 10", `5' 10"`, "5.5 feet",
      "5, 10", "178 cm", "1.78 m"; a bare 1-9 is feet);
    - single-select values must match an option label (case-insensitive) or
      become `null`;
-   - multi-select values become a list ("Diabetes, Cancer" is split on commas),
-     keeping only known options (case-insensitive).
+   - multi-select values become a list, keeping only known options
+     (case-insensitive).
 4. **Normalise and validate.** `validation_helper.validate_categorized_data`
    runs the shared `field_registry.normalize_individual_data` and returns
    `normalized_data`, `missing_required` and `validation_errors` (height and
@@ -99,17 +106,18 @@ until the draft is saved or discarded; rows older than 7 days are purged hourly.
    select options). From here on the endpoint uses only the normalised data:
    `null` and empty values are dropped and labels are canonical.
 5. **Find duplicates.** `duplicate_detection_service.find_duplicates` needs a
-   name of at least two characters. It collects up to 50 candidates, most
-   recently updated first: one ILIKE per name token of 3+ letters/digits, ORed
-   (so "John Doe" also finds a first visit saved as "John", and "Jon Smith"
-   finds "John Smith"; a name with no 3-character token uses its 2-character
-   ones), then people among the latest 200 whose data values match the name
-   (`match_individual`, e.g. an "aka" field). Tokens are letters and digits only,
-   so no wildcard or filter syntax reaches the query. Candidates are pre-ranked
-   by name tokens matched, then height (within 12 in) and weight (within 50 lb)
-   closeness, and `gpt-4o` scores the top 8 0-100 on name, height, weight, age
-   and history (not skin colour). Scores below 60 are dropped and only the
-   single best match is returned.
+   name of at least two characters. It collects up to 50 candidates with one call
+   to the SQL function `find_duplicate_candidates`: a trigram or token name match
+   (so "John Doe" also finds a first visit saved as "John", and "Jon Smith" finds
+   "John Smith"; a name with no 3-character token uses its 2-character ones), plus
+   people among the latest 200 whose data values (never keys) start a word with
+   the name, e.g. an "aka" field. The name is a bound parameter, never filter text.
+   Candidates are pre-ranked by name tokens matched, sound-alikes and close
+   spellings, then height (within 12 in) and weight (within 50 lb) closeness, and
+   `DUPLICATE_MODEL` (default `gpt-4o-mini`, temperature 0) scores the top 8 0-100
+   from name, aka, age, height, weight, gender and the last-seen area only (no
+   sensitive or medical fields). Scores below 60 are dropped and the top 3 are
+   returned, best first.
    If the LLM call fails, or its reply is empty, nested or names none of the
    candidates, a whole-word name comparison stands in (80 same name, 70 one
    name's words all in the other, 60 a word in common; capped at 80 because a

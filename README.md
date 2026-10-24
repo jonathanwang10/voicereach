@@ -17,7 +17,7 @@ holds about that person.
 > **Status: hackathon MVP.** This was built in 36 hours as a demo and cleaned up
 > afterwards. It works end-to-end against real OpenAI and Supabase, but it keeps
 > deliberate shortcuts that are *not* safe for production — see
-> [Shortcuts](#shortcuts-taken) at the bottom. It handles what is effectively
+> [Known limitations (deliberate)](#known-limitations-deliberate) at the bottom. It handles what is effectively
 > medical data, and any signed-in user can read and write every row.
 >
 > The original Railway deployment and Supabase project no longer exist. To try
@@ -33,16 +33,22 @@ backend/          FastAPI service — all API logic and OpenAI calls
   services/       Business logic (categorization, dedup, embeddings, urgency)
   db/             Pydantic models
   scripts/        backfill_embeddings.py, rescore_urgency.py — run after upgrading
-  tests/          pytest suites; tests/integration/ needs a live backend (see Testing)
+  evals/          Offline extraction, duplicate and assistant evals against baseline.json
+  loadtest/       Locust load test, run against fake-OpenAI mode (see Testing)
+  tests/          pytest suites; tests/db/ needs a local Postgres, tests/integration/ a live backend (see Testing)
 mobile/           React Native (Expo) app, iOS only; mobile/ios/ is the committed (prebuilt) Xcode project
   screens/        5 tab screens + the profile screen pushed from Search
   components/     Shared UI
-  services/       API + Supabase clients
+  services/       API + Supabase clients, the recording queue, query cache, audio
   config/api.ts   Reads the backend URL and Supabase settings from mobile/.env
+  .maestro/       Maestro end-to-end flows (see Testing)
+  eas.json        EAS build profiles (see Deployment)
 supabase/
   schema.sql      ← the database (full current schema for a fresh install). See Setup.
   seed.sql        Optional demo people; run after schema.sql, never on production
   migrations/     Numbered, idempotent upgrades for an existing database, in filename order
+  check_migrations.sh  Applies a schema, then every migration twice (local or CI only)
+.github/workflows/ci.yml  CI: secrets scan, backend, mobile, real-Postgres db job
 docs/             Architecture, PRD, and feature deep-dives
 main.py           Railway entrypoint; re-exports backend.main:app
 requirements.txt  Backend dependencies (pinned); requirements-dev.txt adds test tools
@@ -122,7 +128,11 @@ column holds only what *changed* at each encounter (the whole payload on the
 first one), plus the transcript and location. `individual_embeddings` backs
 semantic search. `duplicate_decisions` records, for each save made from the merge
 screen, which match was shown, its confidence, and whether the worker merged or
-saved new: labels for the duplicate eval. Because fields live in `categories` rather than in columns,
+saved new: labels for the duplicate eval. `interaction_embeddings` holds one
+vector per visit transcript, for the assistant. `recordings` is the queue of
+uploaded voice notes, from upload to review. `audit_log` records who viewed,
+exported, merged, overrode or deleted which record (ids only, append-only).
+Because fields live in `categories` rather than in columns,
 adding a new field at runtime does not require a migration.
 
 **Creating a category** (Categories tab, or `POST /api/categories`). The name
@@ -279,7 +289,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 
 | Variable | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | Whisper, GPT-4o, embeddings, Realtime |
+| `OPENAI_API_KEY` | Transcription, extraction, duplicate scoring, embeddings, Realtime |
 | `SUPABASE_URL` | Project URL |
 | `SUPABASE_SECRET_KEY` | All server-side database access (bypasses RLS): the `sb_secret_...` key. `SUPABASE_SERVICE_KEY` (the legacy service-role key) is the fallback until legacy keys are disabled. |
 | `SUPABASE_PUBLISHABLE_KEY` | Used only by `api/auth.py` to verify users' access tokens: the `sb_publishable_...` key. `SUPABASE_ANON_KEY` is the legacy fallback. |
@@ -457,7 +467,6 @@ are bounded. All of these are per process and in memory (they reset on restart).
 | `POST /api/recordings` body (one M4A, multipart) | 8 MB | 413 |
 | `audio_url` download | 5 MB, same host as `SUPABASE_URL` | 413; another host or a missing file 400; a redirect is not followed and fails like any other download error, with a 500 |
 | Recording length (read from the M4A header with mutagen) | 5 s to 125 s (2:00 plus 5 s slack) | 400 "Audio must be at least 5 seconds long" / "Audio must be less than 2 minutes"; an unreadable M4A is 400 "File is not in M4A format" |
-| Assistant question length | 1 s to 60 s | 400 "Question must be at least 1 second long" / "Question must be under 1 minute" |
 | `POST /api/individuals/check-duplicates` body | 20 KB, a JSON object | 413 / 422 |
 | `POST /api/individuals` body (a save or merge) | 256 KB; `transcription` ≤ 20,000 chars; `data` ≤ 100 fields | 413 / 422 |
 | `POST /api/embeddings/search` | `query` ≤ 500 chars, `top_k` 1–50, `similarity_threshold` 0–1 | 422 |
@@ -944,30 +953,50 @@ These are still true:
   prebuilt, so `app.json` changes need `npx expo prebuild --platform ios` (see
   [Mobile](#3-mobile)). After pulling, rebuild any existing development build
   (`npx expo run:ios`): CSV export needs the native `expo-sharing` module.
+- **Offline is recording-only.** A voice note recorded without a connection is
+  queued on the phone and uploaded when the connection returns; search,
+  profiles, the assistant and saving still need a connection.
+- **Rate limits tell phones apart only by the `X-Device-Id` header** the app
+  sends, on top of the shared account.
 - **Not yet re-verified against live services.** After the dependency upgrade,
   the OpenAI and Supabase calls were checked only offline (mocks and
   introspection). Run the curl check in [Auth](#auth) and one recording after
   setup. Sending the `Authorization` header on React Native's WebSocket has not
   yet been confirmed on a physical device.
 
-## Shortcuts taken
+## Known limitations (deliberate)
 
-Listed explicitly so nobody mistakes them for finished work:
+These are choices, not unfinished work. Each says why, and what should change it.
 
-- **No per-agency or per-user scoping.** Row-level security blocks all direct
-  table access, but every user the backend accepts (any user of the Supabase
-  project, or those in `ALLOWED_USER_EMAILS`) can read and change every record
-  through the API. A real deployment needs scoping — this is sensitive personal
-  and medical data.
-- **Keys were once committed to git history** (in 2025: an OpenAI key,
-  Supabase service-role keys for a project that has since been deleted, and a
-  MotherDuck access token from the old SF dashboard). History was not rewritten;
-  those keys are treated as compromised and must stay revoked.
-- **One shared demo account, auto-logged-in.** The credentials are hardcoded in
-  `mobile/services/supabase.ts`, there is no email verification, and every
-  interaction is recorded as "Demo User" (`get_current_user_name` in
-  `backend/api/individuals.py`). Rate limits tell phones apart only by the
-  `X-Device-Id` header the app sends.
-  Sign Out (Profile tab) ends the session on the device, but the next launch
-  signs in again automatically, so it is not a lock on a shared or lost phone.
-- **Offline is recording-only.** A voice note recorded without a connection is queued on the phone and uploaded when the connection returns; search, profiles, the assistant and saving still need a connection.
+1. **One shared demo account, auto-signed-in.** The credentials are hardcoded in
+   `mobile/services/supabase.ts`; there is no email verification; every user the
+   backend accepts (any user of the Supabase project, or those in
+   `ALLOWED_USER_EMAILS`) can read and change every record through the API; and
+   every interaction is recorded as "Demo User" (`get_current_user_name` in
+   `backend/api/individuals.py`). Sign Out ends the session on the device, but the
+   next launch signs in again, so it is not a lock on a shared or lost phone.
+   *Why:* the owner's decision for the demo. *Change it when* there is any real
+   client data or a second worker: per-worker accounts, roles and row scoping.
+   This is sensitive personal and medical data.
+2. **One backend process.** Rate limits and realtime session caps are in memory,
+   and the recording worker runs inside the API process. *Why:* no new
+   infrastructure at this scale. *Change it when* there is a second instance:
+   move the limits and job claiming into Postgres (claiming already uses
+   `SKIP LOCKED`) or Redis.
+3. **No WebRTC: voice goes through the backend proxy.** *Why:* the proxy is the
+   security boundary (the client-event allowlist, server-side tools, nothing from
+   the database as a `system` message). *Change it when* measured voice latency
+   comes from the proxy and there is an equivalent server-side control.
+4. **No multiple organisations.** *Why:* one agency. *Change it when* there is a
+   second agency: an `org_id` on every row, plus RLS.
+5. **A locally verified token outlives Sign Out until it expires** (at most 1 hour
+   with Supabase's default). *Why:* no Auth round trip per request (see
+   [Auth](#auth)). *Change it when* instant revocation is needed: call
+   `auth.get_user` on every request.
+
+Also on record: **keys were once committed to git history** (in 2025: an OpenAI
+key, Supabase service-role keys for a project that has since been deleted, and a
+MotherDuck access token from the old SF dashboard). History was not rewritten;
+those keys are treated as compromised and must stay revoked. Their gitleaks
+fingerprints are in `.gitleaksignore`, so CI's secrets scan passes without hiding
+anything new.

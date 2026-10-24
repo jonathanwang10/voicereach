@@ -5,9 +5,10 @@ Guidance for Claude Code when working in this repository.
 ## What this is
 
 VoiceReach: a hackathon MVP for SF homeless-outreach workers. A worker records a
-short voice note; the FastAPI backend transcribes it (Whisper), extracts structured
-fields (GPT-4o), scores urgency, checks for duplicates, and the Expo app saves a new
-person or merges into an existing one. A realtime voice assistant answers questions
+short voice note; the phone queues and uploads it, and the FastAPI backend's worker
+transcribes it, extracts structured fields (GPT-4o, strict schema), scores urgency
+and checks for duplicates; the worker reviews the draft in the Expo app and saves a
+new person or merges into an existing one. A realtime voice assistant answers questions
 using what the database knows. Read `README.md` first; it is the accurate overview.
 
 ## Principles
@@ -27,13 +28,17 @@ python -m pytest                                # from the repo root; runs offli
 ruff check backend --select F,E9                # the lint CI runs
 cd mobile && npx jest && npx tsc --noEmit
 cd backend && python -m evals.eval_extraction   # offline eval vs backend/evals/baseline.json
+supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql && python -m pytest -m db   # local Postgres only (README Testing)
+maestro test mobile/.maestro/                   # iOS simulator, backend on 8001 with seed.sql
+# load test: README Testing "Load test" (VOICEREACH_FAKE_OPENAI=1, never production)
 # database: fresh = supabase/schema.sql then supabase/seed.sql (demo only); upgrade = supabase/migrations/ in order
 ```
 
 Backend needs `backend/.env` (see `backend/.env.example`); the app needs
 `mobile/.env` (see `mobile/.env.example`). The one live test,
 `backend/tests/integration/test_live_smoke.py`, is skipped unless both
-`VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN` are set. The app is iOS-only and
+`VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN` are set; `backend/tests/db/` is
+skipped unless `SUPABASE_DB_URL` is set (it truncates tables: local only). The app is iOS-only and
 `mobile/ios/` is committed (prebuilt), so an `app.json` change reaches the build
 only after `npx expo prebuild --platform ios`.
 
@@ -111,10 +116,19 @@ only after `npx expo prebuild --platform ios`.
 - **Search** (`search_individuals_hybrid`): reciprocal rank fusion (k = 60) of trigram
   name, full-text (values, never keys) and pgvector cosine legs; an exact name match is
   always first; no semantic leg under 3 characters.
-- **Database access:** one service-key client from `db.client.get_supabase()`; every
+- **Database access:** one secret-key client from `db.client.get_supabase()`
+  (`SUPABASE_SECRET_KEY`; `SUPABASE_SERVICE_KEY` and `SUPABASE_ANON_KEY` are legacy
+  fallbacks, read only through `supabase_secret_key()` / `supabase_public_key()`); every
   `.execute()` reached from `async` code goes through `await run_db(...)` (the test fakes
   fail a query made on the event loop); whole-table reads go through `fetch_all`,
   ordered by a unique key.
+- **OpenAI clients** are built only by `services/openai_client.make_async_openai`
+  (a test enforces it); `VOICEREACH_FAKE_OPENAI=1` gives the load-test fake and is
+  refused when `ENVIRONMENT=production`.
+- **Logs:** ids, counts and error types only, never names, transcripts, field values
+  or GPS (`tests/test_no_pii_logs.py`). Each request, recording job and realtime
+  session ends with one JSON summary line (`services/request_log.py`). New log fields
+  go through `emit_summary`'s allowlist (`SUMMARY_FIELDS`). Sentry events are scrubbed.
 - **Categories** are schema-as-data rows; the API names are `urgency_weight` and
   `single_select`. A category's `name` is its key (`category_key`, e.g. `hiv_status`)
   and `display_name` is the label as typed; export columns, embedding text and the
