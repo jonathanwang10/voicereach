@@ -1,5 +1,5 @@
 import { createClient, Session, User } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LargeSecureStore } from './secureSessionStorage';
 import { API_CONFIG } from '../config/api';
 
 // The app uses Supabase for sign-in only; all data goes through the backend (R-1).
@@ -20,7 +20,7 @@ export const supabase = createClient(
   API_CONFIG.SUPABASE.ANON_KEY,
   {
     auth: {
-      storage: AsyncStorage,
+      storage: new LargeSecureStore(), // encrypted at rest (H2-6.12)
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false, // not a browser: there is no URL to read a session from

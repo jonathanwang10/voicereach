@@ -6,10 +6,24 @@ const mockAuth = {
   signInWithPassword: jest.fn(),
   signOut: jest.fn(),
 };
-// A getter: the client is created when supabase.ts loads, before mockAuth is initialised
-jest.mock('@supabase/supabase-js', () => ({ createClient: () => ({ get auth() { return mockAuth; } }) }));
+// A getter: the client is created when supabase.ts loads, before mockAuth is initialised.
+// `var` (no initialiser): createClient runs during the import, before this line would.
+// eslint-disable-next-line no-var
+var mockCreateArgs: any[];
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: (...args: any[]) => {
+    mockCreateArgs = args;
+    return { get auth() { return mockAuth; } };
+  },
+}));
 
 import { autoLogin, signOut, signIn, isSignedOutByUser } from '../supabase';
+import { LargeSecureStore } from '../secureSessionStorage';
+
+it('stores the session through LargeSecureStore (H2-6.12)', () => {
+  expect(mockCreateArgs[2].auth.storage).toBeInstanceOf(LargeSecureStore);
+  expect(mockCreateArgs[2].auth).toMatchObject({ autoRefreshToken: true, persistSession: true });
+});
 
 const session = { access_token: 't', user: { id: 'u1', email: 'demo@sfgov.org' } };
 

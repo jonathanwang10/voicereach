@@ -48,7 +48,8 @@
           "iosBackgroundMode": false,
           "iosMicrophonePermission": "This app needs access to microphone to record voice notes about interactions with homeless individuals for documentation purposes."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

@@ -594,7 +594,7 @@ is logged.
 | Records returned by the assistant's tools (`search_people`, `get_person`, `recent_interactions`, `most_urgent`), each value clipped | The OpenAI Realtime API, as a delimited tool output | Each tool call | For that assistant session. |
 | Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions, their embeddings and their visit embeddings. Once the owner schedules `coarsen_old_locations`, interaction locations older than 30 days are rounded to about 110 m with the house number removed; the newest visit and the person's last location stay exact. |
 | Who did what to which record: user id, device id, action, record id, a count or an override value (`audit_log`) | Supabase (Postgres) | Viewing a profile, export, delete, an urgency override, a merge, a new person, a new category | Kept after the person is deleted (no names or field values; the table is append-only). |
-| The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; the session also on the phone. |
+| The worker's email and session tokens | Supabase Auth | Sign-in | Supabase Auth; on the phone the session is AES-256 encrypted in AsyncStorage, with its key in the iOS Keychain (this device only). |
 | The GPS position of each recording, and of a location picked by hand | The phone platform's geocoder, through `expo-location`'s `reverseGeocodeAsync` (Apple on iOS, Google Play services on Android) | Each recording, and in the location picker | The platform's own policy. |
 | The area shown on a map (location picker, profile map) | The map tile provider of `react-native-maps` (Apple Maps on iOS, Google Maps on Android) | Each map shown | Tile requests reveal the area being viewed. |
 
@@ -629,6 +629,10 @@ out of those.
 - A random device id (`voicereach.device_id` in AsyncStorage) is sent as
   `X-Device-Id` so rate limits and the audit log can tell phones on the shared
   account apart. It is not derived from the hardware.
+- The Supabase session is AES-256 encrypted in AsyncStorage, with its key in the
+  iOS Keychain (this device only, not in iCloud Keychain or backups;
+  `mobile/services/secureSessionStorage.ts`). A plaintext session left by an older
+  build is encrypted in place on first read.
 
 ## Testing
 

@@ -399,7 +399,9 @@ def test_the_last_seen_area_is_sent_for_both_sides():
     candidate = {**_person("Ann B"), "last_location": {"address": "123 Turk St, San Francisco"}}
     prompt = DuplicateDetectionService(MagicMock(), MagicMock())._build_comparison_prompt(
         {"name": "Ann"}, [candidate], new_location={"address": "9 Eddy St, SF"})
-    assert "Turk St" in prompt and "Eddy St" in prompt and "123" not in prompt
+    # the house numbers are dropped ("123" alone could match the random candidate UUID)
+    assert "Turk St" in prompt and "Eddy St" in prompt
+    assert "123 Turk" not in prompt and "9 Eddy" not in prompt
 
 
 @pytest.mark.parametrize("loc,area", [

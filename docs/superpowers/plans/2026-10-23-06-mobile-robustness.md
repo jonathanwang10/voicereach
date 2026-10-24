@@ -48,6 +48,14 @@
 6. **Item 8, profile presentation.** The JS stack showed the profile with `forModalPresentationIOS` but dismissed it with a horizontal gesture (`App.tsx:28-58`). The native stack uses the standard iOS push (`presentation: 'card'`).
 7. **Item 6, network mode.** Queries and mutations use `networkMode: 'always'`. Otherwise TanStack pauses requests while NetInfo reports offline, so the Search "Couldn't load — tap to retry" state (C-17) and the override's error toast would never appear. `onlineManager` still triggers the refetch on reconnect.
 8. **Search's scroll retry.** FlashList v1 has no `onScrollToIndexFailed` and computes offsets itself, so `handleScrollToIndexFailed` (`ModernSearchScreen.tsx:186-197`) and its test `retries a failed scrollToIndex at most once` are removed.
+9. **(Task 3, during execution) Migration checks for plaintext first.** `getItem` re-encrypts a value
+   that starts with `{` whether or not the Keychain still has an old key for it (ciphertext is hex,
+   so it never starts with `{`); only then does a missing key mean "ciphertext whose key is gone".
+   This covers the two specified cases and also a plaintext session next to a stale key.
+   `npx expo install expo-secure-store` added its config plugin to `app.json` (committed); the
+   native rebuild is Task 15 / the device checks. The full checks for this task also turned up
+   a flaky Phase 3 test (`test_the_last_seen_area_is_sent_for_both_sides` asserted `"123"` was
+   absent from a prompt that holds a random UUID); its assertion now names the house numbers.
 
 ## Global Constraints
 
@@ -251,7 +259,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
     - when the value starts with `{` (the plaintext JSON the old `storage: AsyncStorage` wrote), re-save it through `setItem` (encrypting it in place) and return it;
     - otherwise (ciphertext whose key is gone, for example a restored backup), remove it from AsyncStorage and return `null`. The normal auto sign-in then runs.
 
-- [ ] **Step 1: Write the failing tests** (`beforeEach`: `AsyncStorage.clear()` and `(SecureStore as any).__store.clear()`).
+- [x] **Step 1: Write the failing tests** (`beforeEach`: `AsyncStorage.clear()` and `(SecureStore as any).__store.clear()`).
 
 ```ts
 const KEY = 'sb-abc-auth-token';
@@ -288,27 +296,27 @@ it('stores the session through LargeSecureStore (H2-6.12)', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest services/__tests__/secureSessionStorage.test.ts services/__tests__/supabase.test.ts`
 Expected: FAIL (`Cannot find module '../secureSessionStorage'`).
 
-- [ ] **Step 3: Install and implement.**
+- [x] **Step 3: Install and implement.**
   - Run the installs (`react-native-get-random-values` should come out at `~1.11.0`). It is here only because `aes-js` key generation needs `crypto.getRandomValues`; UUIDs come from Phase 2's `newRequestId()`.
   - In `test/setup.js`, add `jest.mock('react-native-get-random-values', () => ({}))`, and define `globalThis.crypto` from Node's `require('crypto').webcrypto` when `globalThis.crypto?.getRandomValues` is missing.
   - Add the SecureStore mock to `test/setup.js`. It is a factory-local `Map` exposed as `__store`, with `getItemAsync`/`setItemAsync`/`deleteItemAsync` as `jest.fn` over it, and `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY'`.
   - Write `secureSessionStorage.ts` with `import 'react-native-get-random-values'` first.
   - `supabase.ts` passes `storage: new LargeSecureStore()`. Nothing else changes: the same demo sign-in and the same `autoRefreshToken`/`persistSession`.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest services`
 Expected: PASS.
 
-- [ ] **Step 5: Docs and device check.**
+- [x] **Step 5: Docs and device check.**
   - README row: "Supabase Auth; on the phone the session is AES-256 encrypted in AsyncStorage, with its key in the iOS Keychain (this device only)". Add the same as an **On the phone** bullet.
   - Manual steps, Device checks:
     > (H2-6.12) Install a build from `main` and let it sign in. Install this branch's build over it (`npx expo run:ios`, after Task 15). Expect: it opens straight to the Record tab with no "Can't sign in". In Xcode → Devices → the app → Download Container, `Library/Application Support/<bundle>/RCTAsyncLocalStorage_V1/manifest.json` holds a hex string for `sb-…-auth-token`, not JSON. Restore the phone from a backup made after the upgrade: the app opens signed in again (a fresh auto sign-in).
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/services mobile/test/setup.js mobile/package.json mobile/package-lock.json README.md docs/superpowers/plans/2026-10-23-manual-steps.md
 git commit -m "feat(mobile): encrypt the stored session with LargeSecureStore and migrate the old one (H2-6.12)

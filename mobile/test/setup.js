@@ -7,6 +7,23 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 process.env.EXPO_PUBLIC_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'test-anon-key';
 
+// H2-6.12: the session's key store. An in-memory Keychain, exposed as __store.
+jest.mock('expo-secure-store', () => {
+  const store = new Map();
+  return {
+    __store: store,
+    AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: 'AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY',
+    getItemAsync: jest.fn(async key => (store.has(key) ? store.get(key) : null)),
+    setItemAsync: jest.fn(async (key, value) => { store.set(key, value); }),
+    deleteItemAsync: jest.fn(async key => { store.delete(key); }),
+  };
+});
+// aes-js needs crypto.getRandomValues: the polyfill is native, Node's webcrypto stands in.
+jest.mock('react-native-get-random-values', () => ({}));
+if (!globalThis.crypto?.getRandomValues) {
+  Object.defineProperty(globalThis, 'crypto', { value: require('crypto').webcrypto, configurable: true });
+}
+
 // expo-crypto is a native module; Node's crypto gives the same v4 UUIDs.
 jest.mock('expo-crypto', () => ({ randomUUID: () => require('crypto').randomUUID() }));
 
