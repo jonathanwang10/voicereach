@@ -144,6 +144,8 @@ class SearchIndividualsResponse(BaseModel):
     total: int
     offset: int
     limit: int
+    # The default list's next page (`?cursor=`), or None on the last page (H2-6.10)
+    next_cursor: Optional[str] = None
 
 
 class IndividualDetailResponse(BaseModel):

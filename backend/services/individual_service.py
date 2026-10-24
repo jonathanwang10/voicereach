@@ -147,6 +147,25 @@ def _parse_timestamp(value: Any) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+_OLDEST = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def encode_cursor(last_seen: datetime, individual_id: str) -> str:
+    """The default list's keyset position: "<last_seen ISO>,<id>" (H2-6.10)."""
+    return f"{last_seen.isoformat()},{individual_id}"
+
+
+def decode_cursor(raw: str) -> tuple[datetime, str]:
+    """(last_seen, id) from a cursor; ValueError when it isn't one."""
+    stamp, sep, ident = (raw or "").rpartition(",")
+    if not sep:
+        raise ValueError("Invalid cursor")
+    seen = _parse_timestamp(stamp)
+    if seen == _OLDEST:
+        raise ValueError("Invalid cursor")
+    return seen, str(UUID(ident))
+
+
 class IndividualService:
     """Service for managing individuals and interactions"""
     
@@ -332,7 +351,8 @@ class IndividualService:
         limit: int = 20,
         offset: int = 0,
         sort_by: str = "last_seen",
-        sort_order: str = "desc"
+        sort_order: str = "desc",
+        cursor: Optional[tuple[datetime, str]] = None,
     ) -> SearchIndividualsResponse:
         """
         List / search individuals.
@@ -343,6 +363,9 @@ class IndividualService:
         - `last_seen`: latest interaction, else `created_at` (fetch_last_seen).
         - Sort: name matches first, then value matches; within each tier by
           `sort_by` (`urgency_score` means the display score). Then paginate.
+        - The default list (no search, newest first) is keyed on (last_seen, id), so
+          a `cursor` gives the rows strictly after it, and `next_cursor` is set while
+          more follow (H2-6.10). It still reads the whole table (demo scale).
         """
         # Database errors propagate (the route turns them into a 500). Returning
         # an empty list here made an outage look like "no one recorded yet" (C-17).
@@ -363,12 +386,12 @@ class IndividualService:
         reverse = sort_order == "desc"
 
         # last_seen for every person when sorting by it, else only for the page
+        def seen_key(x: dict) -> tuple[datetime, str]:
+            return _parse_timestamp(seen.get(x["id"], {}).get("last_seen", x["created_at"])), str(x["id"])
+
         if sort_by == "last_seen":
             seen = await run_db(lambda: fetch_last_seen(self.supabase, [i["id"] for i in individuals]))
-            individuals.sort(
-                key=lambda x: _parse_timestamp(seen.get(x["id"], {}).get("last_seen", x["created_at"])),
-                reverse=reverse
-            )
+            individuals.sort(key=seen_key, reverse=reverse)
         elif sort_by == "urgency_score":
             individuals.sort(key=get_display_urgency_score, reverse=reverse)
         else:  # sort by name
@@ -376,7 +399,13 @@ class IndividualService:
         # Stable sort: the tier order wins, the sort above orders within a tier
         individuals.sort(key=lambda x: tier.get(x["id"], 0))
 
+        keyset = not term and sort_by == "last_seen" and reverse
+        if keyset and cursor is not None:
+            individuals = [x for x in individuals if seen_key(x) < cursor]
         page = individuals[offset:offset + limit]
+        next_cursor = None
+        if keyset and len(individuals) > offset + limit:
+            next_cursor = encode_cursor(*seen_key(page[-1]))
         if sort_by != "last_seen":
             seen = await run_db(lambda: fetch_last_seen(self.supabase, [i["id"] for i in page]))
 
@@ -404,7 +433,8 @@ class IndividualService:
             individuals=results,
             total=total,
             offset=offset,
-            limit=limit
+            limit=limit,
+            next_cursor=next_cursor,
         )
 
     async def delete_individual(self, individual_id: UUID) -> bool:

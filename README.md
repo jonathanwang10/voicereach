@@ -389,7 +389,7 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `GET` | `/` | API name (public) |
 | `POST` | `/api/transcribe` | Audio → transcript → structured fields → duplicate candidates |
 | `POST` | `/api/individuals` | Create a person, or merge into one with `merge_with_id` |
-| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory over the whole table (demo scale; see [Search](#search)) |
+| `GET` | `/api/individuals` | List / text search (`search`, `limit`, `offset`, `sort_by`, `sort_order`, and `cursor` from the previous page's `next_cursor`, default list only; keyset on `last_seen, id`). A search matches the name or any data *value* (never field names; see [Search](#search)); name matches sort first. `last_seen` is the latest interaction (else `created_at`). Matching is in memory over the whole table (demo scale; see [Search](#search)) |
 | `GET` | `/api/individuals/{id}` | Full profile plus the 10 most recent interactions |
 | `GET` | `/api/individuals/{id}/interactions` | Encounter history |
 | `DELETE` | `/api/individuals/{id}` | Delete a person (cascades interactions and embeddings); 404 if absent |
@@ -753,7 +753,11 @@ These are still true:
   has to be deleted again.
 - **The list search is demo-scale.** The list (`GET /api/individuals?search=`)
   and export read the whole table and work in Python (paged past Supabase's API
-  row limit); the Search tab's hybrid search runs in Postgres. After creating or
+  row limit); the Search tab's hybrid search runs in Postgres. The default list is
+  paged by cursor (50-row pages, no repeats when someone is recorded mid-scroll),
+  but each page still reads the whole table. When it outgrows that, add an
+  `individuals.last_seen_at` column kept by `save_individual` and move the keyset
+  into SQL. After creating or
   editing a category, existing people's embeddings only pick up the change when
   they are next saved, or when `backfill_embeddings.py --stale` (or
   `POST /api/embeddings/generate-all`) runs.

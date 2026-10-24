@@ -23,7 +23,7 @@ from db.models import (
 )
 from services.duplicate_detection_service import DuplicateDetectionService
 from services.embedding_service import get_embedding_service
-from services.individual_service import (IndividualNotFound, IndividualService, VERSION_CONFLICT_DETAIL,
+from services.individual_service import (IndividualNotFound, IndividualService, VERSION_CONFLICT_DETAIL, decode_cursor,
                                          VersionConflictError)
 from services.openai_service import get_openai_service
 from services.validation_helper import validate_categorized_data
@@ -209,6 +209,7 @@ async def search_individuals(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     sort_by: str = Query("last_seen", pattern="^(last_seen|urgency_score|name)$", description="Sort field"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
+    cursor: Optional[str] = Query(None, max_length=100, description="The previous page's next_cursor"),
     user_id: str = Depends(get_current_user)
 ):
     """
@@ -216,10 +217,19 @@ async def search_individuals(
     
     Features:
     - Search across name and all JSONB data fields
-    - Pagination with limit/offset
+    - Pagination with limit/offset, or for the default list a cursor (H2-6.10)
     - Sorting by last_seen (default), urgency_score, or name
     - Returns abbreviated addresses for display
     """
+    position = None
+    if cursor is not None:
+        if (search and search.strip()) or sort_by != "last_seen" or sort_order != "desc" or offset > 0:
+            raise HTTPException(status_code=400,
+                                detail="cursor works only with the default list (no search, newest first, no offset)")
+        try:
+            position = decode_cursor(cursor)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid cursor")
     try:
         # Get Supabase client
         supabase = get_supabase()
@@ -233,7 +243,8 @@ async def search_individuals(
             limit=limit,
             offset=offset,
             sort_by=sort_by,
-            sort_order=sort_order
+            sort_order=sort_order,
+            cursor=position,
         )
         
         return result

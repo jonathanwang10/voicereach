@@ -3,8 +3,9 @@ import asyncio
 import uuid
 from unittest.mock import patch
 
+import pytest
 
-from services.individual_service import IndividualService, fetch_last_seen
+from services.individual_service import IndividualService, decode_cursor, encode_cursor, fetch_last_seen
 from services.urgency_calculator import get_display_urgency_score
 from tests.helpers import ID1, ID2, FakeListDB, person
 
@@ -121,3 +122,65 @@ async def test_search_counts_people_past_the_first_1000():
     people = [person(1, id=str(uuid.UUID(int=i)), name=f"P{i}") for i in range(1, 1501)]
     res = await IndividualService(FakeListDB(people, [])).search_individuals(sort_by="name", limit=5)
     assert res.total == 1500
+
+
+# --- cursor pagination (H2-6.10) -----------------------------------------------------------
+
+def _three():  # last_seen 2026-01-03 > 01-02 > 01-01 via created_at
+    return FakeListDB([person(1), person(2), person(3)], [])
+
+
+def test_default_list_returns_next_cursor_after_a_full_page():
+    res = asyncio.run(IndividualService(_three()).search_individuals(limit=2))
+    assert [r.name for r in res.individuals] == ["Person 3", "Person 2"]
+    assert res.next_cursor == f"2026-01-02T00:00:00+00:00,{ID2}"
+
+
+def test_cursor_returns_the_rows_after_it_and_the_last_page_has_no_cursor():
+    cursor = decode_cursor(f"2026-01-02T00:00:00+00:00,{ID2}")
+    res = asyncio.run(IndividualService(_three()).search_individuals(limit=2, cursor=cursor))
+    assert [r.name for r in res.individuals] == ["Person 1"]
+    assert res.next_cursor is None and res.total == 3
+
+
+def test_a_page_that_ends_the_list_exactly_has_no_cursor():
+    res = asyncio.run(IndividualService(_three()).search_individuals(limit=3))
+    assert len(res.individuals) == 3 and res.next_cursor is None
+
+
+def test_equal_last_seen_is_ordered_by_id_so_pages_never_overlap():
+    same = "2026-05-01T00:00:00+00:00"
+    sb = FakeListDB([person(1, created_at=same), person(2, created_at=same), person(3, created_at=same)], [])
+    p1 = asyncio.run(IndividualService(sb).search_individuals(limit=2))
+    p2 = asyncio.run(IndividualService(sb).search_individuals(limit=2, cursor=decode_cursor(p1.next_cursor)))
+    ids = [str(r.id) for r in p1.individuals + p2.individuals]
+    assert len(ids) == len(set(ids)) == 3
+
+
+def test_someone_recorded_mid_scroll_does_not_repeat_a_row():
+    sb = _three()
+    p1 = asyncio.run(IndividualService(sb).search_individuals(limit=2))
+    sb.individuals.append(person(4))           # newer than everyone: lands before the cursor
+    p2 = asyncio.run(IndividualService(sb).search_individuals(limit=2, cursor=decode_cursor(p1.next_cursor)))
+    assert [r.name for r in p2.individuals] == ["Person 1"]
+
+
+def test_a_search_never_returns_a_cursor():
+    res = asyncio.run(IndividualService(_three()).search_individuals(search="Person", limit=1))
+    assert res.next_cursor is None
+
+
+def test_another_sort_never_returns_a_cursor():
+    res = asyncio.run(IndividualService(_three()).search_individuals(limit=1, sort_by="name", sort_order="asc"))
+    assert res.next_cursor is None
+
+
+def test_encode_and_decode_round_trip():
+    seen, ident = decode_cursor(f"2026-01-02T00:00:00+00:00,{ID2}")
+    assert encode_cursor(seen, ident) == f"2026-01-02T00:00:00+00:00,{ID2}"
+
+
+@pytest.mark.parametrize("raw", ["", "nope", "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00,not-a-uuid", f"garbage,{ID1}"])
+def test_decode_cursor_rejects_malformed_values(raw):
+    with pytest.raises(ValueError):
+        decode_cursor(raw)

@@ -329,6 +329,30 @@ def test_list_defaults_to_twenty_newest_first():
     assert [p["name"] for p in body["individuals"]] == ["Person 3", "Person 2", "Person 1"]
 
 
+def test_list_cursor_round_trips_through_the_query_string():
+    sb = FakeListDB([person(i) for i in range(1, 4)], [])
+    first = _call(sb, "GET", "/api/individuals?limit=2").json()
+    second = _call(sb, "GET", "/api/individuals", params={"limit": 2, "cursor": first["next_cursor"]}).json()
+    assert [p["name"] for p in second["individuals"]] == ["Person 1"]   # the "+00:00" survived URL encoding
+    assert second["next_cursor"] is None
+
+
+def test_list_rejects_a_malformed_cursor_with_400():
+    sb = FakeListDB([], [])
+    r = _call(sb, "GET", "/api/individuals", params={"cursor": "bad"})
+    assert (r.status_code, r.json()) == (400, {"detail": "Invalid cursor"})
+    assert sb.queries == []
+
+
+@pytest.mark.parametrize("extra", [{"search": "Ann"}, {"sort_by": "name"}, {"sort_order": "asc"}, {"offset": 5}])
+def test_list_rejects_a_cursor_outside_the_default_list_with_400(extra):
+    sb = FakeListDB([], [])
+    r = _call(sb, "GET", "/api/individuals",
+              params={"cursor": "2026-01-02T00:00:00+00:00,00000000-0000-0000-0000-000000000002", **extra})
+    assert r.status_code == 400
+    assert r.json() == {"detail": "cursor works only with the default list (no search, newest first, no offset)"}
+
+
 @pytest.mark.parametrize("query", ["sort_by=created_at", "sort_order=up", "limit=0", "limit=101", "offset=-1"])
 def test_list_rejects_bad_paging_and_sorting_with_422(query):
     sb = FakeListDB([], [])

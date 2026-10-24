@@ -843,7 +843,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
   - An undecodable cursor returns 400 `"Invalid cursor"`.
   - The default `limit` stays 20. The app sends 50.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```python
 # test_list_individuals.py
@@ -890,21 +890,21 @@ def test_list_rejects_a_cursor_with_a_search_term_with_400(): ... # search=Ann&c
 ```
 `test_list_defaults_to_twenty_newest_first` and `test_last_seen_is_latest_interaction_else_created_at_never_updated_at` must still pass unchanged.
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `python -m pytest backend/tests/test_list_individuals.py backend/tests/test_individuals_routes.py -q -k "cursor or overlap"`
 Expected: FAIL (`ImportError: cannot import name 'decode_cursor'`).
 
-- [ ] **Step 3: Implement** as in Interfaces. The sort key for `last_seen` becomes `(_parse_timestamp(...), str(x["id"]))`.
+- [x] **Step 3: Implement** as in Interfaces. The sort key for `last_seen` becomes `(_parse_timestamp(...), str(x["id"]))`.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `python -m pytest -q && ruff check backend --select F,E9`
 Expected: PASS.
 
-- [ ] **Step 5: Docs.**
+- [x] **Step 5: Docs.**
   - README API row: add "`cursor` (from the previous page's `next_cursor`, default list only; keyset on `last_seen, id`)".
   - "Search is demo-scale" shortcut: the list is paged by cursor, but each page still reads the whole table, and the trigger to move the keyset into SQL is an `individuals.last_seen_at` column (Deviation 2).
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 ```bash
 git add backend/db/models.py backend/services/individual_service.py backend/api/individuals.py backend/tests README.md
 git commit -m "feat(api): cursor pagination for the default individuals list (H2-6.10)
