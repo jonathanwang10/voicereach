@@ -127,7 +127,7 @@ These are the names the earlier phase plans define (checked across plans on 2026
 **Interfaces:**
 - Produces: table `recordings` with the columns below; `claim_recording_job() RETURNS SETOF recordings`; `purge_old_recordings(p_days int DEFAULT 7) RETURNS SETOF text`; the failure text `'Processing failed. Please record again.'` (Task 4 uses the same string).
 
-- [ ] **Step 1: Write the failing schema tests**
+- [x] **Step 1: Write the failing schema tests**
 
 In `test_schema_sql.py`: add `"recordings"` to `TABLES`, so `test_rls_enabled` and `test_updated_at_trigger` cover it. Bump the `CREATE TABLE` count in `test_tables_and_indexes_are_guarded` by one. Add `claim_recording_job` and `purge_old_recordings` to Phase 2's `test_rpc_functions_are_not_callable_with_the_anon_key` parameter list (Phase 2 dropped the function count in `test_functions_and_triggers_are_replaceable`). Then add:
 
@@ -169,12 +169,12 @@ def test_migrations_match_schema_sql_for_recordings():
 
 In `test_schema_contract.py`: add `"recordings"` to the expected set in `test_schema_parser_sees_every_table_and_column`, and assert `SCHEMA["recordings"] == {"id", "user_id", "device_id", "client_recording_id", "status", "storage_path", "duration_ms", "location", "transcription", "result", "error", "attempts", "created_at", "updated_at"}`. `test_the_source_scan_finds_the_queries` will then fail until Task 3 queries the table. Mark it `@pytest.mark.xfail(strict=True, reason="recordings is queried from Task 3")` in this task, and remove the mark in Task 3.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: FAIL (no `recordings` table, no functions, no migration files).
 
-- [ ] **Step 3: Write `20261107000001_recordings.sql` and fold it into `schema.sql`**
+- [x] **Step 3: Write `20261107000001_recordings.sql` and fold it into `schema.sql`**
 
 ```sql
 -- recordings: async transcription jobs (H2-7.1). One row per uploaded voice note,
@@ -206,7 +206,7 @@ ALTER TABLE recordings ENABLE ROW LEVEL SECURITY;
 
 The migration file repeats `set_updated_at()` with `CREATE OR REPLACE` at its top, copied verbatim from `schema.sql` (Phase 2's `test_migrations.py` requires identical function text), so it runs on its own. In `schema.sql`, put each piece in the matching section listed under Files.
 
-- [ ] **Step 4: Write `20261107000002_recording_jobs.sql` and fold it in**
+- [x] **Step 4: Write `20261107000002_recording_jobs.sql` and fold it in**
 
 ```sql
 -- Claim one job for the in-process worker (H2-7.3). SKIP LOCKED lets two worker
@@ -262,12 +262,12 @@ GRANT EXECUTE ON FUNCTION purge_old_recordings(int) TO service_role;
 -- SELECT cron.schedule('purge-old-recordings', '17 3 * * *', $$SELECT public.purge_old_recordings(7)$$);
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `python -m pytest backend/tests/test_schema_sql.py backend/tests/test_schema_contract.py -q`
 Expected: PASS (the one strict xfail is reported as xfailed).
 
-- [ ] **Step 6: Append the owner steps to `2026-10-23-manual-steps.md`**
+- [x] **Step 6: Append the owner steps to `2026-10-23-manual-steps.md`**
 
 - Under **Apply migrations**, in order: `20261107000001_recordings.sql`, then `20261107000002_recording_jobs.sql`.
 - Under **Owner actions outside code**, "Create the private Storage bucket `recordings`": Dashboard → Storage → New bucket. Name `recordings`, Public **off**, file size limit 8 MB, allowed MIME type `audio/mp4`. Or run this in the SQL Editor:
@@ -275,7 +275,7 @@ Expected: PASS (the one strict xfail is reported as xfailed).
   Add no storage policies: the backend's service key is the only reader and writer. To check it, `select public from storage.buckets where id = 'recordings'` should return `false`.
 - Optional: enable pg_cron and uncomment the purge line. Note that the backend already purges hourly.
 
-- [ ] **Step 7: Run the full checks and commit**
+- [x] **Step 7: Run the full checks and commit**
 
 Run: `python -m pytest -q && ruff check backend --select F,E9 && (cd mobile && npx tsc --noEmit && npx jest)`
 Expected: all pass.

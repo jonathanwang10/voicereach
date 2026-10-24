@@ -28,7 +28,7 @@ SEED_RAW = (SCHEMA.parent / "seed.sql").read_text()
 SEED_SQL = re.sub(r"--[^\n]*", "", SEED_RAW)
 
 TABLES = ("categories", "individuals", "interactions", "individual_embeddings", "audit_log", "duplicate_decisions",
-          "interaction_embeddings")
+          "interaction_embeddings", "recordings")
 SEED_NAMES = {"Sarah Smith", "Michael Chen", "John Doe", "Maria Garcia", "Robert Johnson", "James Brown"}
 
 # Every policy name any earlier version of the schema (or the old migration chain) created.
@@ -130,7 +130,7 @@ def test_old_policies_are_dropped(policy, table):
 # --- safe to re-run (R-12 / C-54) ------------------------------------------
 
 def test_tables_and_indexes_are_guarded():
-    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 7
+    assert len(re.findall(r"CREATE TABLE", SQL)) == len(re.findall(r"CREATE TABLE IF NOT EXISTS", SQL)) == 8
     assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX", SQL)) == len(re.findall(r"CREATE (?:UNIQUE )?INDEX IF NOT EXISTS", SQL))
 
 
@@ -290,7 +290,8 @@ def test_every_function_pins_its_search_path():
     for m in re.finditer(r"CREATE OR REPLACE FUNCTION (\w+)\(", FLAT):
         assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
 
-@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations", "find_duplicate_candidates"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+@pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations", "find_duplicate_candidates",
+                                "claim_recording_job", "purge_old_recordings"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
@@ -545,3 +546,44 @@ def test_most_urgent_uses_haversine_and_guards_bad_coordinates():               
     assert "jsonb_typeof(i.last_location->'latitude') = 'number'" in fn
     assert "ORDER BY display_urgency DESC, last_seen DESC NULLS LAST, l.id" in fn
     assert "COALESCE(l.urgency_override, l.urgency_score)" in fn
+
+
+# --- recordings: async transcription jobs (H2-7.1, H2-7.3, H2-7.8) --------------------
+
+STATUSES = ("queued", "transcribing", "extracting", "checking_duplicates", "ready", "failed")
+
+
+def test_recordings_status_check_lists_exactly_the_job_states():
+    m = re.search(r"CREATE TABLE IF NOT EXISTS recordings \((.*?)\n\);", SQL, re.S)
+    assert m, "recordings table missing"
+    check = re.search(r"CHECK \(status IN \(([^)]*)\)\)", m.group(1))
+    assert tuple(s.strip(" '") for s in check.group(1).split(",")) == STATUSES
+    assert "client_recording_id UUID NOT NULL UNIQUE" in _norm(m.group(1))
+    assert "attempts INTEGER NOT NULL DEFAULT 0" in _norm(m.group(1))
+
+
+def test_claim_recording_job_skips_locked_rows_and_honours_the_retry_rules():
+    fn = _norm(SQL[SQL.index("FUNCTION claim_recording_job"):])
+    fn = fn[:fn.index("$$;")]
+    assert "RETURNS SETOF public.recordings" in fn
+    assert "FOR UPDATE SKIP LOCKED" in fn
+    assert "attempts < 3" in fn
+    assert "INTERVAL '5 minutes'" in fn
+    assert "attempts * INTERVAL '30 seconds'" in fn
+    assert "attempts >= 3" in fn and "'Processing failed. Please record again.'" in fn  # Deviation 2
+
+
+def test_purge_old_recordings_defaults_to_7_days_and_returns_paths():
+    fn = _norm(SQL[SQL.index("FUNCTION purge_old_recordings"):])
+    assert fn.startswith("FUNCTION purge_old_recordings(p_days int DEFAULT 7) RETURNS SETOF text")
+    assert "RETURNING storage_path" in fn[:fn.index("$$;")]
+    assert "-- SELECT cron.schedule('purge-old-recordings'" in RAW_SQL
+
+
+def test_migrations_match_schema_sql_for_recordings():
+    mig = Path(SCHEMA).parent / "migrations"
+    table = (mig / "20261107000001_recordings.sql").read_text()
+    jobs = (mig / "20261107000002_recording_jobs.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS recordings" in table
+    assert "CREATE OR REPLACE FUNCTION claim_recording_job" in jobs
+    assert "CREATE OR REPLACE FUNCTION purge_old_recordings" in jobs

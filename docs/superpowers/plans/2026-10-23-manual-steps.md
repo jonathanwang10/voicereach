@@ -25,6 +25,8 @@ Each file is idempotent.
 13. `supabase/migrations/20261104000003_interaction_embeddings.sql` (Phase 4, Task 5).
 14. `supabase/migrations/20261104000004_most_urgent.sql` (Phase 4, Task 7).
     Then (after the Phase 4 migrations) run `cd backend && python scripts/backfill_embeddings.py --stale` once. It embeds every visit transcript, plus each person whose text changed now that sensitive fields are left out.
+15. `supabase/migrations/20261107000001_recordings.sql` (Phase 7, Task 1). Check: `select count(*) from recordings;` returns 0.
+16. `supabase/migrations/20261107000002_recording_jobs.sql` (Phase 7, Task 1). Check: `select * from claim_recording_job();` returns no rows.
 
 ## Environment variables
 
@@ -86,3 +88,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 8. (Phase 3, Task 11) Record live extraction replies: `cd backend && EVAL_LIVE=1 python -m evals.eval_extraction --live --record && python -m evals.eval_extraction --update-baseline`, then review and commit the diff. This replaces the hand-written replies with real ones. Repeat after changing `CHAT_MODEL` or the schema.
 9. (Phase 3, Task 12) Record live duplicate replies: `cd backend && EVAL_LIVE=1 python -m evals.eval_duplicates --live --record && python -m evals.eval_duplicates --update-baseline`, then review and commit the diff. Later, once `duplicate_decisions` has real labels, consider adding synthetic pairs that mirror the error patterns seen there; never copy real records.
 10. **M5.1** (Phase 5, Task 11) Optionally run `cd backend && EVAL_LIVE=1 python -m evals.eval_assistant` with a real `OPENAI_API_KEY` after Phase 5 lands. Expected: five PASS lines; the absent-person answer says there is no record.
+11. (Phase 7, Task 1) Create the private Storage bucket `recordings`: Dashboard → Storage → New bucket. Name `recordings`, Public **off**, file size limit 8 MB, allowed MIME type `audio/mp4`. Or run this in the SQL Editor:
+    `insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types) values ('recordings', 'recordings', false, 8388608, array['audio/mp4']) on conflict (id) do nothing;`
+    Add no storage policies: the backend's service key is the only reader and writer. Check: `select public from storage.buckets where id = 'recordings'` returns `false`.
+12. (Phase 7, Task 1) Optional: enable pg_cron and uncomment the `purge-old-recordings` line in `supabase/schema.sql`. The backend already purges hourly, and the cron line purges rows only (it leaves stored files behind).

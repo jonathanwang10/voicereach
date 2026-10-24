@@ -40,7 +40,10 @@ SCHEMA = _schema()
 
 def test_schema_parser_sees_every_table_and_column():
     assert set(SCHEMA) == {"categories", "individuals", "interactions", "individual_embeddings", "audit_log",
-                           "duplicate_decisions", "interaction_embeddings"}
+                           "duplicate_decisions", "interaction_embeddings", "recordings"}
+    assert SCHEMA["recordings"] == {"id", "user_id", "device_id", "client_recording_id", "status", "storage_path",
+                                    "duration_ms", "location", "transcription", "result", "error", "attempts",
+                                    "created_at", "updated_at"}
     assert SCHEMA["individuals"] == {"id", "name", "data", "urgency_score", "urgency_override", "last_location",
                                      "created_at", "updated_at", "version", "search_tsv"}
     assert {"changes", "audio_url", "user_name", "user_id", "location", "client_request_id"} <= SCHEMA["interactions"]
@@ -61,6 +64,7 @@ def _chains():
 CHAINS = list(_chains())
 
 
+@pytest.mark.xfail(strict=True, reason="recordings is queried from Task 3")
 def test_the_source_scan_finds_the_queries():
     assert len(CHAINS) >= 30
     assert {t for _, t, _ in CHAINS} == set(SCHEMA)
