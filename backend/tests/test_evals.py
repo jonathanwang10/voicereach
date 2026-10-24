@@ -34,6 +34,9 @@ def test_eval_fixtures_are_synthetic():
         assert _load(f.name)["synthetic"] is True
     names = {c["expected"].get("name") for c in _load("extraction_cases.json")["cases"]} - {None}
     names |= {p[side]["name"] for p in _load("duplicate_pairs.json")["pairs"] for side in ("new", "existing")}
+    for case in _load("assistant_cases.json")["cases"]:
+        for value in case["retrieval"].values():
+            names |= {person["name"] for person in (value if isinstance(value, list) else [value])}
     assert not names & DEMO_NAMES   # the six seed people
 
 

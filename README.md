@@ -667,6 +667,12 @@ It writes nothing and calls no OpenAI endpoint.
   (of the same-person pairs, how many reach it) at confidence 50, 60, 70 and 80. The
   production cut-off is 60. It also counts prompts that carried a sensitive value,
   which must be 0.
+- `eval_assistant.py`: 5 cases for the assistant's tools (a person on record, one
+  not on record, two people with the same first name, an injection inside a
+  record, most urgent near the Mission). Offline it runs the real tool router and
+  checks the retrieval calls and that every result is delimited reference data
+  (in CI through `backend/tests/test_eval_assistant.py`); `EVAL_LIVE=1` asks the
+  realtime model and checks its answers.
 
 Offline (the default) replays cached model replies in `backend/evals/fixtures/`
 through the real parsing and normalising code, so it is deterministic and costs
@@ -680,6 +686,7 @@ EVAL_LIVE=1 python -m evals.eval_extraction --live  # ask the model (OPENAI_API_
 EVAL_LIVE=1 python -m evals.eval_extraction --live --record   # cache real replies
 python -m evals.eval_extraction --update-baseline   # store the offline metrics as the baseline
 python -m evals.eval_duplicates                     # the same flags
+python -m evals.eval_assistant                      # offline; EVAL_LIVE=1 asks the realtime model
 ```
 
 The first cached replies are hand-written (`"source": "hand-written"`); record
