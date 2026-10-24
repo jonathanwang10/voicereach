@@ -11,19 +11,34 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Every action is pinned to a commit SHA (H2-8.4). To update one, look up the newest
+# release's tag and its commit (README Deployment has the commands).
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # Free for personal accounts; .gitleaksignore holds the revoked historic keys
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"   # read-only token; no PR comments
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: ruff check backend --select F,E9
-      - run: python -m pytest -q
+      - run: python -m pytest -q   # the offline evals run here too (backend/tests/test_evals.py)
       - name: pip-audit (advisory, never fails the build)
         continue-on-error: true
         timeout-minutes: 5
@@ -38,8 +53,8 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "20"
           cache: npm
@@ -47,3 +62,42 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npx jest --ci
+      - name: npm audit (advisory, never fails the build)
+        continue-on-error: true
+        run: npm audit --omit=dev
+      - name: expo install --check (advisory, never fails the build)
+        continue-on-error: true
+        run: npx expo install --check
+
+  db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the upgrade check reads ce238db:supabase/schema.sql
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: 2.122.0
+      - name: Start Postgres only (a throwaway project dir, so the CLI applies nothing itself)
+        run: |
+          supabase init --workdir "$RUNNER_TEMP/sb"
+          supabase db start --workdir "$RUNNER_TEMP/sb"
+      - name: Fresh database - schema.sql, then every migration twice, then seed
+        run: |
+          supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+      - run: python -m pytest -m db -q
+      - name: Upgrade path - the pre-hardening schema.sql, then every migration twice
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+          git show ce238db:supabase/schema.sql > "$RUNNER_TEMP/base_schema.sql"
+          supabase/check_migrations.sh "$SUPABASE_DB_URL" "$RUNNER_TEMP/base_schema.sql"
+      - run: python -m pytest -m db -q

@@ -1,0 +1,41 @@
+# gitleaks fingerprints that CI ignores (H2-8.4). Add one only after reading the
+# finding: a real, current key is revoked and removed, never ignored.
+
+# Revoked 2025 keys (README "Shortcuts taken"); history is not rewritten
+1b534d115f8f1a0877a5e16d4ba0ce85f73d4f62:mobile/scripts/normalize-heights.js:jwt:13
+2a81bebd7a11dc91174d92c1eedaa407778ccca5:mobile/services/supabase.ts:jwt:10
+5e179890e3932b0dd67adc770a3d7dce3b1d5ab2:mobile/config/api.ts:jwt:14
+67c4ee698e50f61fbfb08af9ac615a3e473e8f15:mobile/.env.railway:jwt:6
+cf552799b58a14934c2e6f60e9102f03b515d894:mobile/README_INTEGRATION.md:jwt:30
+cf552799b58a14934c2e6f60e9102f03b515d894:mobile/config/api.ts:jwt:12
+eaf3544e7afe11222ba652a51062ab3e747dd623:LIVE_AUDIO_LLM_IMPLEMENTATION.md:jwt:26
+eaf3544e7afe11222ba652a51062ab3e747dd623:LIVE_AUDIO_LLM_IMPLEMENTATION.md:jwt:27
+eaf3544e7afe11222ba652a51062ab3e747dd623:LIVE_AUDIO_LLM_IMPLEMENTATION.md:jwt:610
+eaf3544e7afe11222ba652a51062ab3e747dd623:LIVE_AUDIO_LLM_IMPLEMENTATION.md:openai-api-key:30
+ec03ae6d878d90c4afd36bcdb0e29e23480dbb8c:simple_migration.py:jwt:12
+
+# 2025 MotherDuck access token (SF-dashboard-PulsePoint, since deleted from the tree); history is not
+# rewritten. Revoke it in MotherDuck: docs/superpowers/plans/2026-10-23-manual-steps.md
+2725101d45d834a4cf09ba60e303d9dfcae68c08:SF-dashboard-PulsePoint/motherduck/context/motherduckClientContext.tsx:jwt:55
+67c4ee698e50f61fbfb08af9ac615a3e473e8f15:SF-dashboard-PulsePoint/motherduck-deprecated/context/motherduckClientContext.tsx:jwt:55
+
+# Test dummies, not credentials: fake tokens, placeholder curl headers, UUID idempotency keys,
+# a CocoaPods checksum
+15251d286f02c40e08072e23750764e88ae1df57:docs/superpowers/plans/2026-10-23-02-data-integrity.md:generic-api-key:535
+1b8e8aad09a6f3aad3f8474ac71197d6a270ef92:backend/tests/test_individuals_routes.py:generic-api-key:17
+2848481df4ea409860445a2e2de600b85f335c43:backend/tests/test_error_recovery.py:generic-api-key:401
+2848481df4ea409860445a2e2de600b85f335c43:mobile/debug-demo-errors.md:curl-auth-header:135
+2848481df4ea409860445a2e2de600b85f335c43:mobile/debug-demo-errors.md:curl-auth-header:166
+2848481df4ea409860445a2e2de600b85f335c43:mobile/debug-demo-errors.md:curl-auth-header:268
+2848481df4ea409860445a2e2de600b85f335c43:mobile/debug-demo-errors.md:curl-auth-header:91
+5993b90e25db5a71fde956b847df1eb7e6a02f8f:backend/tests/conftest.py:jwt:15
+8dd9b4b7a1383bbc42705fb01837ca086badfa55:mobile/services/__tests__/saveIndividual.test.ts:generic-api-key:94
+a0b4dbf3bf139eb51b301d1c4fefbadb016c3f54:backend/tests/test_photo_upload.py:generic-api-key:18
+b3a818351d143ff834d86ff583266c4c52eadcf6:mobile/ios/Podfile.lock:generic-api-key:2483
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_2_5.py:generic-api-key:22
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_api_integration.py:generic-api-key:15
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_detailed_requirements.py:generic-api-key:11
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_duplicate_detection.py:generic-api-key:12
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_integration_simple.py:generic-api-key:12
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_optional_fields.py:generic-api-key:11
+dc17feecf6781e4c8d233899ccf403f648878314:backend/tests/test_task_2_comprehensive.py:generic-api-key:13

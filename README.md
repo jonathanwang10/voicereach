@@ -802,9 +802,27 @@ resolves, and `.python-version` pins Python 3.11. Only the backend deploys;
 `mobile/` and `docs/` are excluded via `.railwayignore`. The original deployment
 has been taken down.
 
-CI (`.github/workflows/ci.yml`) runs the ruff lint and the backend suite, then
-`tsc` and Jest for the app, with read-only repo permissions. A `pip-audit` step
-reports known-vulnerable Python dependencies without failing the build.
+CI (`.github/workflows/ci.yml`) runs four jobs with read-only repo permissions:
+
+- `secrets`: gitleaks over the whole history. `.gitleaksignore` holds the
+  fingerprints of the revoked historic keys and of test dummies; add one only after
+  reading the finding.
+- `backend`: ruff, pytest (the offline evals included), and an advisory
+  `pip-audit`.
+- `mobile`: `tsc`, Jest, and an advisory `npm audit --omit=dev` and
+  `npx expo install --check`.
+- `db`: a local Supabase Postgres. It runs two passes: `schema.sql`, every migration
+  twice and `seed.sql`; then the pre-hardening `schema.sql` (ce238db) with every
+  migration twice. The database tests run after each.
+
+The advisory steps never fail the build. Every action is pinned to a commit SHA.
+To update one, take the newest release and dereference an annotated tag:
+
+```bash
+gh api repos/<owner>/<repo>/releases/latest --jq .tag_name
+gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object.type + " " + .object.sha'
+gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha    # only if the type is "tag"
+```
 
 ## Documentation
 
@@ -861,9 +879,10 @@ Listed explicitly so nobody mistakes them for finished work:
   project, or those in `ALLOWED_USER_EMAILS`) can read and change every record
   through the API. A real deployment needs scoping — this is sensitive personal
   and medical data.
-- **Keys were once committed to git history** (in 2025: an OpenAI key and
-  Supabase service-role keys for a project that has since been deleted). History
-  was not rewritten; those keys are treated as compromised and must stay revoked.
+- **Keys were once committed to git history** (in 2025: an OpenAI key,
+  Supabase service-role keys for a project that has since been deleted, and a
+  MotherDuck access token from the old SF dashboard). History was not rewritten;
+  those keys are treated as compromised and must stay revoked.
 - **One shared demo account, auto-logged-in.** The credentials are hardcoded in
   `mobile/services/supabase.ts`, there is no email verification, and every
   interaction is recorded as "Demo User" (`get_current_user_name` in
