@@ -93,6 +93,20 @@ export function stopListeningEvents(speechInProgress: boolean): object[] {
     : [{ type: 'input_audio_buffer.clear' }];
 }
 
+// Barge-in (H2-5.7): cancel the reply, then cut the assistant item at what the worker
+// actually heard, so the model forgets the rest.
+export function bargeInEvents(itemId: string, playedMs: number): object[] {
+  return [
+    { type: 'response.cancel' },
+    { type: 'conversation.item.truncate', item_id: itemId, content_index: 0, audio_end_ms: Math.max(0, Math.floor(playedMs)) },
+  ];
+}
+
+// The server may have cancelled the reply first (interrupt_response): not worth a toast
+export function isIgnorableServerError(event: any): boolean {
+  return event?.error?.code === 'response_cancel_not_active';
+}
+
 const WS_OPEN = 1; // WebSocket.OPEN
 
 export function isSocketOpen(ws: { readyState: number } | null | undefined): boolean {

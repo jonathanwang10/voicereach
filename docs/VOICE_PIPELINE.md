@@ -253,9 +253,15 @@ is cleared.
      it back when its last buffer has played. While the Record tab is recording
      the request returns null and the reply is text only. A session that arrives
      after the reply was stopped is handed straight back.
-   - Mute, a new reply, starting a voice question, Clear, leaving the tab and
-     unmount stop the reply (its text stays) and release the session; later
-     audio for a stopped reply is skipped.
+   - Mute, a new reply, Clear, leaving the tab and unmount stop the reply (its
+     text stays) and release the session; later audio for a stopped reply is
+     skipped.
+   - **Barge-in** (H2-5.7): speech (the server's `speech_started`) or a mic tap
+     during a reply stops it at once, sends `response.cancel`, then
+     `conversation.item.truncate` with the milliseconds actually played, so the
+     model forgets what wasn't heard. A tap during a reply starts listening if it
+     was off and never stops it. The server may have cancelled first
+     (`interrupt_response`); its `response_cancel_not_active` error isn't shown.
    - The tab stays mounted, socket open, when the worker switches tabs. While it
      isn't focused, a reply is shown as text only: it doesn't ask for playback,
      so it can't pause a recording on the Record tab.

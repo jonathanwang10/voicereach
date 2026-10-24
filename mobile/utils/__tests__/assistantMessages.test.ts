@@ -19,6 +19,8 @@ import {
   shouldSendMicFrame,
   audioAppendEvent,
   stopListeningEvents,
+  bargeInEvents,
+  isIgnorableServerError,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -119,6 +121,22 @@ describe('H2-5.6 streamed questions', () => {
     for (const blank of ['', '   ', undefined, null, 3]) {
       expect(setUserTranscript(msgs, 'i1', blank)[0].content).toBe(TRANSCRIPT_UNAVAILABLE);
     }
+  });
+});
+
+describe('H2-5.7 barge-in', () => {
+  it('bargeInEvents cancels, then truncates at the whole milliseconds played', () => {
+    expect(bargeInEvents('a1', 1234.7)).toEqual([
+      { type: 'response.cancel' },
+      { type: 'conversation.item.truncate', item_id: 'a1', content_index: 0, audio_end_ms: 1234 }]);
+    expect(bargeInEvents('a1', -5)[1]).toMatchObject({ audio_end_ms: 0 });
+  });
+
+  it('response_cancel_not_active is ignorable; other errors are not', () => {
+    expect(isIgnorableServerError({ type: 'error', error: { code: 'response_cancel_not_active' } })).toBe(true);
+    expect(isIgnorableServerError({ type: 'error', error: { code: 'event_not_allowed' } })).toBe(false);
+    expect(isIgnorableServerError({ type: 'error' })).toBe(false);
+    expect(isIgnorableServerError(undefined)).toBe(false);
   });
 });
 

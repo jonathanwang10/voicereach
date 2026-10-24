@@ -31,6 +31,8 @@ import {
   FULL_DUPLEX_MIC,
   addAssistantMessage,
   addUserSpeechMessage,
+  bargeInEvents,
+  isIgnorableServerError,
   appendAssistantText,
   audioAppendEvent,
   finalizeAssistantText,
@@ -293,6 +295,20 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     releasePlayback();
   };
 
+  // The worker talked over the reply, or tapped the mic during it (H2-5.7): stop it at
+  // once, then tell the model where it was cut. Nothing happens when no reply plays.
+  const bargeIn = () => {
+    const player = playerRef.current!;
+    if (player.current() === null) return;
+    const { itemId, playedMs } = player.stop();
+    if (itemId) playbackSkippedRef.current.add(itemId);
+    releasePlayback();
+    const ws = wsRef.current;
+    if (itemId && ws && isSocketOpen(ws)) {
+      bargeInEvents(itemId, playedMs).forEach(event => ws.send(JSON.stringify(event)));
+    }
+  };
+
   // The first audio delta of an item: start it, and ask audioSession for playback (H2-5.5)
   const startReply = (id: string) => {
     const player = playerRef.current!;
@@ -446,6 +462,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       case 'input_audio_buffer.speech_started': {
         const id = event.item_id;
         if (!id) break;
+        bargeIn(); // the worker started talking over the reply
         speechItemRef.current = id;
         setMessages(prev => addUserSpeechMessage(prev, id));
         scrollToEnd();
@@ -470,7 +487,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       case 'error':
         // e.g. the backend's event_not_allowed, or an upstream error: brief, not a permanent card.
-        toast('Voice assistant', event.error?.message || 'Something went wrong');
+        if (!isIgnorableServerError(event)) toast('Voice assistant', event.error?.message || 'Something went wrong');
         break;
 
       default:
@@ -576,7 +593,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     }
     startingListenRef.current = true;
     try {
-      stopReply(); // don't talk over a reply
+      bargeIn(); // a tap during a reply interrupts it
       const release = await acquireConversation('assistant');
       if (!release) {
         toast('Recording on the Record tab', 'Finish that recording first.');
@@ -832,7 +849,9 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
               !isConnected && styles.recordButtonDisabled,
             ]}
             onPress={() => {
-              if (isListening) {
+              if (isListening && playerRef.current!.current() !== null) {
+                bargeIn(); // during a reply the tap interrupts it and listening stays on
+              } else if (isListening) {
                 stopListening(true);
               } else {
                 startListening();

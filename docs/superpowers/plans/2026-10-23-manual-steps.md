@@ -60,6 +60,9 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 7. D5.6 (Phase 5, Task 8) Mic streaming. Tap the Assistant mic, ask "What should I do if someone is unresponsive?", then stay quiet. Expected: the bubble shows "[Listening...]", then the transcript; the answer arrives without tapping stop. Tap stop mid-sentence on a second question: it is still answered.
 8. D5.7 (Phase 5, Task 8) Echo. Listening on, phone on a table, volume at maximum, ask for a long answer. Expected: the reply plays to the end without cutting itself off. If it cuts itself off, set `FULL_DUPLEX_MIC = false` in `mobile/utils/assistantMessages.ts`, rebuild, re-check (barge-in then works by tap only), and note the result here.
 9. D5.8 (Phase 5, Task 8) Assistant mic vs Record tab. Assistant listening, switch to Record and record 10 s. Expected: the field note records normally (not paused, correct length); back on the Assistant, the mic is off.
+10. D5.9 (Phase 5, Task 9) Barge-in by voice. During a long reply, say "Stop, a different question: where is the nearest shelter?". Expected: playback stops within about half a second; the next answer is about the shelter; asked "what were you saying?", the assistant doesn't repeat the unheard part. No error toast appears.
+11. D5.10 (Phase 5, Task 9) Barge-in by tap. During a reply, tap the mic. Expected: playback stops at once and listening is on.
+12. D5.11 (Phase 5, Task 9) Record tab while a reply streams. Ask a long question, switch to the Record tab during the reply, start a field note and record 10 s. Expected: the reply stops (its text stays), the recording isn't paused and its length is right.
 
 ## Owner actions outside code
 

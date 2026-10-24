@@ -46,6 +46,7 @@ jest.mock('expo-file-system', () => ({
 // The reply player: a fake that tracks the current item and its onDone like the real one.
 const mockPlayer: any = {
   currentItem: null as string | null,
+  playedMs: 0,
   onDone: null as null | (() => void),
   begin: jest.fn((id: string) => {
     if (mockPlayer.currentItem && mockPlayer.currentItem !== id) mockPlayer.stop();
@@ -63,7 +64,7 @@ const mockPlayer: any = {
     mockPlayer.currentItem = null;
     mockPlayer.onDone = null;
     done?.();
-    return { itemId, playedMs: 0 };
+    return { itemId, playedMs: itemId ? mockPlayer.playedMs : 0 };
   }),
   current: jest.fn(() => mockPlayer.currentItem),
   close: jest.fn(async () => {}),
@@ -148,6 +149,7 @@ beforeEach(() => {
   }) as any);
   mockPlayer.currentItem = null;
   mockPlayer.onDone = null;
+  mockPlayer.playedMs = 0;
 });
 
 let mockAppStateHandler: (state: string) => void = () => {};
@@ -368,6 +370,69 @@ describe('H2-5.6 streamed questions', () => {
     screen.unmount();
     expect(mockMicStop).toHaveBeenCalled();
     expect(mockRelease).toHaveBeenCalled();
+  });
+});
+
+// --- H2-5.7 barge-in -------------------------------------------------------------
+
+describe('H2-5.7 barge-in', () => {
+  const lastTwo = (ws: MockWebSocket) => ws.sent.slice(-2);
+  const BARGE_IN_900 = [
+    { type: 'response.cancel' },
+    { type: 'conversation.item.truncate', item_id: 'a1', content_index: 0, audio_end_ms: 900 },
+  ];
+
+  it('speech_started during a reply stops playback, then sends cancel and truncate with the ms played', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    streamAnswer(ws, 'a1', 'A long answer', [b64(4800)], false);
+    await settle();
+    mockPlayer.playedMs = 900;
+    act(() => ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u2' }));
+    expect(lastTwo(ws)).toEqual(BARGE_IN_900);
+    const stopOrder = (mockPlayer.stop as jest.Mock).mock.invocationCallOrder.at(-1)!;
+    const cancelOrder = ws.send.mock.invocationCallOrder[ws.sent.length - 2];
+    expect(stopOrder).toBeLessThan(cancelOrder);
+    expect(mockRelease).toHaveBeenCalled();
+    expect(screen.getByText('A long answer')).toBeTruthy();
+  });
+
+  it('tapping the mic during a reply interrupts it and starts listening', async () => {
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'A long answer', [b64(4800)], false);
+    await settle();
+    mockPlayer.playedMs = 900;
+    await startListening(screen);
+    expect(ws.sent).toEqual(BARGE_IN_900);
+    expect(startMicStream).toHaveBeenCalledTimes(1);
+  });
+
+  it('tapping the mic during a reply while listening keeps listening', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    streamAnswer(ws, 'a1', 'A long answer', [b64(4800)], false);
+    await settle();
+    mockPlayer.playedMs = 900;
+    await stopListening(screen);          // the same button, while a reply plays
+    expect(lastTwo(ws)).toEqual(BARGE_IN_900);
+    expect(mockMicStop).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Stop recording question')).toBeTruthy();
+  });
+
+  it('speech_started with no reply playing sends nothing but the frames', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    act(() => {
+      mockOnFrame('AAAA');
+      ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u1' });
+    });
+    expect(sentTypes(ws)).toEqual(['input_audio_buffer.append']);
+  });
+
+  it('does not toast response_cancel_not_active', async () => {
+    const { ws } = await renderConnected();
+    act(() => ws.receive({ type: 'error', error: { code: 'response_cancel_not_active', message: 'No active response' } }));
+    expect(Toast.show).not.toHaveBeenCalled();
   });
 });
 
