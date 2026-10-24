@@ -291,7 +291,7 @@ npx expo start
 
 | Variable | Purpose |
 |---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Defaults to `http://localhost:8001`, which works in the iOS simulator. On a physical phone use your machine's LAN address, e.g. `http://<your-LAN-IP>:8001` — `localhost` would resolve to the phone, and uvicorn must be started with `--host 0.0.0.0`. |
+| `EXPO_PUBLIC_API_BASE_URL` | Backend URL. Required in release builds: without it the app stops at startup. Only in development does it default to `http://localhost:8001`, which works in the iOS simulator. On a physical phone use your machine's LAN address, e.g. `http://<your-LAN-IP>:8001` — `localhost` would resolve to the phone, and uvicorn must be started with `--host 0.0.0.0`. |
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL (Project Settings → API) |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 
@@ -623,6 +623,12 @@ out of those.
 - **Mobile.** Every `console.*` call is behind `__DEV__`, so a release build
   writes nothing to the device log. Development builds log error objects only,
   never case data. `mobile/test/noDataLogs.test.ts` scans the source for both.
+
+**On the phone**
+
+- A random device id (`voicereach.device_id` in AsyncStorage) is sent as
+  `X-Device-Id` so rate limits and the audit log can tell phones on the shared
+  account apart. It is not derived from the hardware.
 
 ## Testing
 

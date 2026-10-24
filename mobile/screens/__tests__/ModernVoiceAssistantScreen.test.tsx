@@ -32,6 +32,7 @@ jest.mock('../../services/api', () => ({
   getAuthToken: jest.fn().mockResolvedValue('tok'),
 }));
 jest.mock('../../config/api', () => ({ API_CONFIG: { BASE_URL: 'http://test.local:8001' } }));
+jest.mock('../../services/deviceId', () => ({ getDeviceId: async () => 'dev-1' }));
 jest.mock('expo-location', () => ({
   requestForegroundPermissionsAsync: jest.fn().mockResolvedValue({ status: 'denied' }),
   getCurrentPositionAsync: jest.fn(),
@@ -109,7 +110,7 @@ class MockWebSocket {
   onclose: any = null;
   onerror: any = null;
   onmessage: any = null;
-  constructor(public url: string) {
+  constructor(public url: string, public protocols?: any, public options?: any) {
     MockWebSocket.instances.push(this);
   }
   send = jest.fn((frame: string) => {
@@ -593,6 +594,11 @@ describe('T10 WebSocket contract', () => {
     expect(screen.getByText('Disconnected')).toBeTruthy();
     await act(async () => { await new Promise(r => setTimeout(r, 50)); });
     expect(MockWebSocket.instances.length).toBe(1);
+  });
+
+  it('the handshake carries the token and the device id (H2-6.15)', async () => {
+    const { ws } = await renderConnected();
+    expect(ws.options.headers).toEqual({ Authorization: 'Bearer tok', 'X-Device-Id': 'dev-1' });
   });
 
   it('session.created clears an earlier connection error', async () => {

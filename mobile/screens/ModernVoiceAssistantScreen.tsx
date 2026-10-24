@@ -16,6 +16,7 @@ import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getAuthToken } from '../services/api';
+import { getDeviceId } from '../services/deviceId';
 import { createReplyPlayer, ReplyPlayer } from '../services/replyPlayer';
 import { acquireConversation, acquirePlayback, onChange } from '../services/audioSession';
 import { MicStream, startMicStream } from '../services/micStream';
@@ -562,10 +563,13 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       const wsUrl = `${backendUrl}/api/voice-assistant/realtime/ws`;
 
       const token = await getAuthToken();
+      const deviceId = await getDeviceId();
       // The screen may have unmounted during the await; don't open a socket nobody will close.
       if (!isMountedRef.current) return;
       // React Native's WebSocket accepts headers as a non-standard third argument.
-      const ws: WebSocket = new (WebSocket as any)(wsUrl, null, { headers: { Authorization: `Bearer ${token}` } });
+      const ws: WebSocket = new (WebSocket as any)(wsUrl, null, {
+        headers: { Authorization: `Bearer ${token}`, 'X-Device-Id': deviceId },
+      });
       let opened = false;
       let settled = false; // this socket's failure was already handled (error, then close)
 

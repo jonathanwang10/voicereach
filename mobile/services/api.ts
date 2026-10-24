@@ -1,5 +1,6 @@
 import { supabase, autoLogin, isSignedOutByUser } from './supabase';
 import { getApiUrl } from '../config/api';
+import { getDeviceId } from './deviceId';
 import { daysSince } from '../utils/urgencyScore';
 import { stripEmpty } from '../utils/fieldValues';
 import { SearchResult, IndividualProfile, Interaction, FieldError, LocationData } from '../types';
@@ -61,12 +62,13 @@ const renewAuthToken = async (): Promise<string> => {
   return session.access_token;
 };
 
-const buildHeaders = (init: RequestInit, token: string): Record<string, string> => {
+const buildHeaders = (init: RequestInit, token: string, deviceId: string): Record<string, string> => {
   const headers: Record<string, string> = { ...((init.headers as Record<string, string>) || {}) };
   if (typeof init.body === 'string' && !Object.keys(headers).some(h => h.toLowerCase() === 'content-type')) {
     headers['Content-Type'] = 'application/json';
   }
   headers.Authorization = `Bearer ${token}`;
+  headers['X-Device-Id'] = deviceId; // tells phones on the shared account apart (H2-6.15)
   return headers;
 };
 
@@ -100,9 +102,10 @@ export const authedFetch = async (
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const isGet = (init.method || 'GET').toUpperCase() === 'GET';
   const retryNetwork = isGet || !!opts.retryNetwork;
+  const deviceId = await getDeviceId();
 
   const send = async (token: string): Promise<Response> => {
-    const request = { ...init, headers: buildHeaders(init, token) };
+    const request = { ...init, headers: buildHeaders(init, token, deviceId) };
     try {
       return await fetchWithTimeout(url, request, timeoutMs);
     } catch (e) {

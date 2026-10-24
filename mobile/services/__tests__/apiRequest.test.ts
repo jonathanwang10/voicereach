@@ -18,6 +18,7 @@ jest.mock('../supabase', () => ({
   autoLogin: (...a: any[]) => mockAutoLogin(...a),
 }));
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
+jest.mock('../deviceId', () => ({ getDeviceId: async () => 'dev-1' }));
 
 import Toast from 'react-native-toast-message';
 import { api, apiRequest, authedFetch, ApiError, getAuthToken } from '../api';
@@ -39,6 +40,16 @@ beforeEach(() => {
   mockRefreshSession.mockResolvedValue({ data: { session: { access_token: 'new-token' } }, error: null });
 });
 afterEach(() => { (global as any).fetch = undefined; });
+
+describe('H2-6.15 device id', () => {
+  it('sends X-Device-Id on every request, the 401 retry included', async () => {
+    (global as any).fetch = jest.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { detail: 'Invalid or expired session' }))
+      .mockResolvedValueOnce(jsonResponse(200, []));
+    await authedFetch('/api/categories');
+    expect(fetchMock().mock.calls.map(c => c[1].headers['X-Device-Id'])).toEqual(['dev-1', 'dev-1']);
+  });
+});
 
 describe('apiRequest errors', () => {
   it('throws one ApiError carrying the backend detail, and never toasts', async () => {

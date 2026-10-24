@@ -173,7 +173,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
     - If AsyncStorage throws, it returns an in-memory id for this run.
   - Every `authedFetch` request carries the header `X-Device-Id: <id>`. Phase 1 reads it for rate limits and Phase 2 for the audit log, both through Phase 1's `backend/api/device.py: get_device_id`, which treats the header as optional.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
 
 ```ts
 // config/__tests__/api.test.ts
@@ -207,24 +207,24 @@ it('still returns an id when storage fails', async () => {
 it('sends X-Device-Id on every request, the 401 retry included', async () => { /* 401 then 200; both calls' headers['X-Device-Id'] === 'dev-1' */ });
 ```
 
-- [ ] **Step 2: Run them to verify they fail.**
+- [x] **Step 2: Run them to verify they fail.**
 Run: `cd mobile && npx jest config services/__tests__/deviceId.test.ts services/__tests__/apiRequest.test.ts`
 Expected: FAIL (no throw; `Cannot find module '../deviceId'`; header missing).
 
-- [ ] **Step 3: Install and implement.**
+- [x] **Step 3: Install and implement.**
   - In `config/api.ts`, when `!__DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL`, throw `new Error('The backend URL is not configured. Set EXPO_PUBLIC_API_BASE_URL in mobile/.env, then rebuild the app.')`. Keep the localhost default for `__DEV__`.
   - `buildHeaders(init, token, deviceId)` adds `'X-Device-Id': deviceId`. `authedFetch` awaits `getDeviceId()` once per call.
   - The Assistant's WebSocket handshake (`ModernVoiceAssistantScreen.tsx:509`): if Phase 5 has already landed (the screen has `connect({ quiet })`), add `'X-Device-Id': await getDeviceId()` beside `Authorization` there, with a screen test asserting the header. Otherwise leave the screen alone: Phase 5 Task 10 adds it.
 
-- [ ] **Step 4: Run them to verify they pass.**
+- [x] **Step 4: Run them to verify they pass.**
 Run: `cd mobile && npx jest config services`
 Expected: PASS.
 
-- [ ] **Step 5: Docs.**
+- [x] **Step 5: Docs.**
   - README `mobile/.env` table: `EXPO_PUBLIC_API_BASE_URL` is required in release builds (the app stops at startup without it); `localhost` is the default only in development.
   - Add an **On the phone** list after **What is logged**. Its first bullet: "A random device id (`voicereach.device_id` in AsyncStorage) is sent as `X-Device-Id` so rate limits and the audit log can tell phones on the shared account apart. It is not derived from the hardware."
 
-- [ ] **Step 6: Run the global checks and commit.**
+- [x] **Step 6: Run the global checks and commit.**
 ```bash
 git add mobile/config mobile/utils mobile/services mobile/screens mobile/test/setup.js mobile/package.json mobile/package-lock.json README.md
 git commit -m "feat(mobile): fail fast without a backend URL and send X-Device-Id (H2-6.4, H2-6.15)
