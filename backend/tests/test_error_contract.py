@@ -92,18 +92,6 @@ def test_check_duplicates_failure_is_generic_500():
     assert response.json() == {"detail": "Duplicate check failed"}
 
 
-def test_assistant_transcribe_failure_is_generic_500():
-    svc = MagicMock()
-    svc.return_value.transcribe_audio_file = AsyncMock(side_effect=RuntimeError(SECRET))
-    with patch("api.voice_assistant.get_openai_service", svc):
-        response = _client().post(
-            "/api/voice-assistant/transcribe",
-            files={"audio": ("q.m4a", b"\x00\x00\x00\x18ftypM4A ", "audio/m4a")},
-        )
-    assert response.status_code == 500
-    assert "fk_secret_42" not in response.text
-
-
 # --- client errors keep their status (C-40) -------------------------------------------
 
 def _categories_supabase():
@@ -119,13 +107,6 @@ def test_transcribe_without_audio_is_400_not_500():
         response = _client().post("/api/transcribe", json={})
     assert response.status_code == 400
     assert response.json() == {"detail": "Either audio_url or audio_data must be provided"}
-
-
-def test_assistant_transcribe_non_audio_is_400_not_500():
-    response = _client().post(
-        "/api/voice-assistant/transcribe", files={"audio": ("x.txt", b"hello", "text/plain")})
-    assert response.status_code == 400
-    assert response.json() == {"detail": "File must be an audio file"}
 
 
 def test_generate_embedding_missing_individual_is_404_not_500():

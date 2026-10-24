@@ -1,5 +1,5 @@
 // T11: voice assistant client.
-// C-23: a failed or empty transcription sends nothing and says so.
+// H2-5.6: the mic streams over the socket; the server's input transcription fills the worker's bubble.
 // C-25: answer text lands in its own bubble, even after a follow-up question.
 // C-26: audio deltas are decoded one by one and pushed as they arrive.
 // C-59: playback stops on mute/unmount, no GPS, sends need an OPEN socket.
@@ -7,6 +7,7 @@
 // H2-5.5: replies stream through the reply player once audioSession grants playback.
 // T10 contract: only allowlisted events, tool items hidden, error events toasted, close codes explained.
 import React from 'react';
+import { Alert, AppState } from 'react-native';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
 jest.mock('react-native-toast-message', () => ({ __esModule: true, default: { show: jest.fn() } }));
@@ -28,7 +29,6 @@ jest.mock('@react-navigation/native', () => {
 });
 jest.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u' }, loading: false }) }));
 jest.mock('../../services/api', () => ({
-  api: { transcribeForAssistant: jest.fn() },
   getAuthToken: jest.fn().mockResolvedValue('tok'),
 }));
 jest.mock('../../config/api', () => ({ API_CONFIG: { BASE_URL: 'http://test.local:8001' } }));
@@ -82,41 +82,22 @@ jest.mock('../../services/audioSession', () => ({
   acquireConversation: jest.fn(async () => mockRelease),
   acquireRecording: jest.fn(),
   isRecordingActive: jest.fn(() => false),
-  onChange: jest.fn(() => () => {}),
+  onChange: jest.fn((listener: any) => { mockSessionListener = listener; return () => {}; }),
 }));
-// Test hooks for the recorder: hold prepareToRecordAsync, or make stopAndUnloadAsync fail.
-let mockPrepare: () => Promise<void> = () => Promise.resolve();
-let mockStop: () => Promise<void> = () => Promise.resolve();
-const mockRecordings: any[] = [];
-jest.mock('expo-av', () => {
-  class Recording {
-    prepareToRecordAsync = jest.fn(() => mockPrepare());
-    startAsync = jest.fn().mockResolvedValue(undefined);
-    stopAndUnloadAsync = jest.fn(() => mockStop());
-    getURI = () => 'file:///question.m4a';
-    constructor() {
-      mockRecordings.push(this);
-    }
-  }
-  return {
-    Audio: {
-      Recording,
-      setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
-      requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
-      AndroidOutputFormat: { MPEG_4: 2 },
-      AndroidAudioEncoder: { AAC: 3 },
-      IOSOutputFormat: { MPEG4AAC: 'aac' },
-      IOSAudioQuality: { MEDIUM: 64 },
-      RecordingOptionsPresets: { LOW_QUALITY: {} },
-    },
-  };
-});
-
+let mockSessionListener: (state: any) => void = () => {};
+// The mic: the test sends frames through mockOnFrame
+let mockOnFrame: (frame: string) => void = () => {};
+const mockMicStop = jest.fn(async () => {});
+jest.mock('../../services/micStream', () => ({
+  startMicStream: jest.fn(async (onFrame: (frame: string) => void) => {
+    mockOnFrame = onFrame;
+    return { stop: mockMicStop };
+  }),
+}));
 import Toast from 'react-native-toast-message';
-import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
-import { api } from '../../services/api';
-import { acquirePlayback } from '../../services/audioSession';
+import { acquireConversation, acquirePlayback } from '../../services/audioSession';
+import { startMicStream } from '../../services/micStream';
 import { ModernVoiceAssistantScreen } from '../ModernVoiceAssistantScreen';
 
 class MockWebSocket {
@@ -160,12 +141,16 @@ afterAll(() => {
 beforeEach(() => {
   jest.clearAllMocks();
   MockWebSocket.instances = [];
-  mockRecordings.length = 0;
-  mockPrepare = () => Promise.resolve();
-  mockStop = () => Promise.resolve();
+  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  jest.spyOn(AppState, 'addEventListener').mockImplementation(((_type: string, handler: any) => {
+    mockAppStateHandler = handler;
+    return { remove: jest.fn() };
+  }) as any);
   mockPlayer.currentItem = null;
   mockPlayer.onDone = null;
 });
+
+let mockAppStateHandler: (state: string) => void = () => {};
 
 const ALLOWED = new Set([
   'input_audio_buffer.append',
@@ -174,6 +159,7 @@ const ALLOWED = new Set([
   'conversation.item.create',
   'response.create',
   'response.cancel',
+  'conversation.item.truncate',
 ]);
 
 // Render and open the socket; returns the live socket.
@@ -206,11 +192,13 @@ const settle = () => act(async () => { await new Promise(r => setTimeout(r, 0));
 const pushedBytes = (id: string) =>
   (mockPlayer.push as jest.Mock).mock.calls.filter(c => c[0] === id).map(c => Array.from(c[1] as Uint8Array));
 
-async function askByVoice(screen: any) {
+async function startListening(screen: any) {
   await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
   await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
+}
+
+async function stopListening(screen: any) {
   await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
-  await waitFor(() => expect(screen.queryByLabelText('Processing question')).toBeNull());
 }
 
 const blurScreen = () => act(() => {
@@ -231,52 +219,155 @@ function streamAnswer(ws: MockWebSocket, id: string, text: string, chunks = [b64
   });
 }
 
-// --- C-23 ------------------------------------------------------------------
+// --- H2-5.6 streamed questions ---------------------------------------------------
 
-describe('C-23 failed transcription', () => {
-  it('a transcription error sends nothing, shows no invented question, and says so', async () => {
-    (api.transcribeForAssistant as jest.Mock).mockRejectedValue(new Error('Request timed out'));
+describe('H2-5.6 streamed questions', () => {
+  it('tapping the mic acquires the conversation session and streams frames as input_audio_buffer.append', async () => {
     const { screen, ws } = await renderConnected();
-    await askByVoice(screen);
-
-    expect(ws.send).not.toHaveBeenCalled();
-    expect(screen.queryByText(/I need help with homeless outreach guidance/)).toBeNull();
-    expect(screen.queryByText('[Processing your speech...]')).toBeNull();
-    expect(toastTexts().join('\n')).toMatch(/Couldn't transcribe, please try again/);
+    await startListening(screen);
+    expect(acquireConversation).toHaveBeenCalledWith('assistant');
+    expect(startMicStream).toHaveBeenCalledTimes(1);
+    act(() => { mockOnFrame('AAAA'); mockOnFrame('BBBB'); });
+    expect(ws.sent).toEqual([
+      { type: 'input_audio_buffer.append', audio: 'AAAA' },
+      { type: 'input_audio_buffer.append', audio: 'BBBB' },
+    ]);
+    expect(screen.getByText('Tap to stop')).toBeTruthy();
   });
 
-  it('an empty transcript sends nothing', async () => {
-    (api.transcribeForAssistant as jest.Mock).mockResolvedValue('   ');
+  it('speech_started adds the worker bubble and the input transcription fills it', async () => {
     const { screen, ws } = await renderConnected();
-    await askByVoice(screen);
-
-    expect(ws.send).not.toHaveBeenCalled();
-    expect(toastTexts().join('\n')).toMatch(/Couldn't transcribe, please try again/);
+    await startListening(screen);
+    act(() => ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u1' }));
+    expect(screen.getByText('Recording your voice...')).toBeTruthy();
+    act(() => ws.receive({ type: 'input_audio_buffer.speech_stopped', item_id: 'u1' }));
+    expect(screen.getByText('Processing your speech...')).toBeTruthy();
+    act(() => ws.receive({
+      type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: 'Where is the shelter?' }));
+    expect(screen.getByText('Where is the shelter?')).toBeTruthy();
+    expect(screen.queryByText('Processing your speech...')).toBeNull();
   });
 
-  it('a short real answer ("OK") is sent with response.create', async () => {
-    (api.transcribeForAssistant as jest.Mock).mockResolvedValue('OK');
+  it('a failed input transcription says so in the bubble', async () => {
     const { screen, ws } = await renderConnected();
-    await askByVoice(screen);
-
-    expect(sentTypes(ws)).toEqual(['conversation.item.create', 'response.create']);
-    expect(ws.sent[0].item.content[0].text).toBe('OK');
-    expect(screen.getByText('OK')).toBeTruthy();
+    await startListening(screen);
+    act(() => {
+      ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u1' });
+      ws.receive({ type: 'input_audio_buffer.speech_stopped', item_id: 'u1' });
+      ws.receive({ type: 'conversation.item.input_audio_transcription.failed', item_id: 'u1', error: {} });
+    });
+    expect(screen.getByText("[Couldn't transcribe]")).toBeTruthy();
   });
 
-  it('if the socket closed meanwhile, nothing is sent and the question goes back in the text box', async () => {
-    let resolve: (t: string) => void = () => {};
-    (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
+  it('stopping mid-speech commits the buffer and asks for a response', async () => {
     const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    act(() => ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u1' }));
+    await stopListening(screen);
+    expect(sentTypes(ws).slice(-2)).toEqual(['input_audio_buffer.commit', 'response.create']);
+    expect(mockMicStop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+    expect(screen.getByText('Tap to record')).toBeTruthy();
+  });
+
+  it('stopping after the turn ended clears the buffer', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    act(() => {
+      ws.receive({ type: 'input_audio_buffer.speech_started', item_id: 'u1' });
+      ws.receive({ type: 'input_audio_buffer.speech_stopped', item_id: 'u1' });
+    });
+    await stopListening(screen);
+    expect(ws.sent.at(-1)).toEqual({ type: 'input_audio_buffer.clear' });
+  });
+
+  it('no frames after the socket closes; the mic stops and the session is released', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    act(() => ws.serverClose(1011, ''));
+    act(() => mockOnFrame('AAAA'));
+    expect(ws.sent).toEqual([]);
+    expect(mockMicStop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByLabelText('Start recording question')).toBeTruthy());
+  });
+
+  it('leaving the tab stops listening', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    blurScreen();
+    act(() => mockOnFrame('AAAA'));
+    expect(ws.sent).toEqual([]);
+    expect(mockMicStop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+    expect(screen.getByLabelText('Start recording question')).toBeTruthy();
+  });
+
+  it.each(['background', 'inactive'])('going to the %s stops listening', async (state) => {
+    const { screen } = await renderConnected();
+    await startListening(screen);
+    act(() => mockAppStateHandler(state));
+    expect(mockMicStop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('a recording on the Record tab stops listening', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    act(() => mockSessionListener({ recordingOwner: 'record-tab', conversationOwner: null }));
+    expect(mockMicStop).toHaveBeenCalled();
+    act(() => mockOnFrame('AAAA'));
+    expect(ws.sent).toEqual([]);
+  });
+
+  it('while the Record tab records, the mic does not start and says why', async () => {
+    (acquireConversation as jest.Mock).mockResolvedValueOnce(null);
+    const { screen } = await renderConnected();
     await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
-    act(() => ws.serverClose(1011, 'Upstream unavailable'));
-    await act(async () => { resolve('Where is the shelter?'); });
+    expect(startMicStream).not.toHaveBeenCalled();
+    expect(toastTexts().join('\n')).toMatch(/Recording on the Record tab Finish that recording first\./);
+    expect(screen.getByLabelText('Start recording question')).toBeTruthy();
+  });
 
-    expect(ws.send).not.toHaveBeenCalled();
-    expect(screen.getByDisplayValue('Where is the shelter?')).toBeTruthy();
-    expect(toastTexts().join('\n')).not.toMatch(/Failed to stop recording/);
+  it('a mic that fails to start releases the session and explains', async () => {
+    (startMicStream as jest.Mock).mockRejectedValueOnce(new Error('Microphone permission denied'));
+    const { screen } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    expect(mockRelease).toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith('Microphone', 'Could not start the microphone. Check the permission in Settings.');
+    expect(screen.getByLabelText('Start recording question')).toBeTruthy();
+  });
+
+  it('a frame from a replaced socket is never sent on the new one', async () => {
+    const { screen, ws } = await renderConnected();
+    await startListening(screen);
+    await act(async () => { fireEvent.press(screen.getByLabelText('Clear conversation')); });
+    await waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
+    const ws2 = MockWebSocket.instances[1];
+    act(() => ws2.open());
+    act(() => mockOnFrame('x'));
+    expect(ws2.sent).toEqual([]);
+    expect(ws.sent).toEqual([]);
+    expect(mockMicStop).toHaveBeenCalled();
+  });
+
+  it('the mic never starts if the screen closed while the session was being acquired', async () => {
+    let grant: (r: any) => void = () => {};
+    (acquireConversation as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
+    const { screen } = await renderConnected();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    screen.unmount();
+    await act(async () => { grant(mockRelease); });
+    expect(startMicStream).not.toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('unmount while listening stops the mic and releases the session', async () => {
+    const { screen } = await renderConnected();
+    await startListening(screen);
+    screen.unmount();
+    expect(mockMicStop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
   });
 });
 
@@ -573,107 +664,12 @@ describe('C-59 lifecycle', () => {
   });
 
   it('starting a voice question stops the reply and releases its session', async () => {
-    (api.transcribeForAssistant as jest.Mock).mockResolvedValue('OK');
     const { screen, ws } = await renderConnected();
     streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
     await settle();
     await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
     expect(mockPlayer.stop).toHaveBeenCalled();
     expect(mockRelease).toHaveBeenCalled();
-  });
-});
-
-// --- T14 carried items ----------------------------------------------------------
-
-describe('T14: late transcripts, cached files', () => {
-  it('a transcript that arrives after the screen closed changes nothing and sends nothing', async () => {
-    let resolve: (t: string) => void = () => {};
-    (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
-    const { screen, ws } = await renderConnected();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
-
-    screen.unmount();
-    (Toast.show as jest.Mock).mockClear();
-    await act(async () => { resolve('Where is the shelter?'); });
-
-    expect(ws.send).not.toHaveBeenCalled();
-    expect(Toast.show).not.toHaveBeenCalled();
-  });
-
-  it('a transcript for the old socket is not sent on the new one after Clear', async () => {
-    let resolve: (t: string) => void = () => {};
-    (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
-    const { screen, ws } = await renderConnected();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Stop recording question')); });
-
-    await act(async () => { fireEvent.press(screen.getByLabelText('Clear conversation')); });
-    await waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
-    const ws2 = MockWebSocket.instances[1];
-    act(() => ws2.open());
-    await act(async () => { resolve('Where is the shelter?'); });
-
-    expect(ws.send).not.toHaveBeenCalled();
-    expect(ws2.send).not.toHaveBeenCalled();
-    expect(screen.getByDisplayValue('Where is the shelter?')).toBeTruthy();
-    expect(toastTexts().join('\n')).toMatch(/conversation was restarted/);
-  });
-
-  it.each([
-    ['transcribed', () => (api.transcribeForAssistant as jest.Mock).mockResolvedValue('OK')],
-    ['failed', () => (api.transcribeForAssistant as jest.Mock).mockRejectedValue(new Error('Request timed out'))],
-  ])('the recorded question file is deleted from the cache once %s (C-65)', async (_label, arrange) => {
-    (arrange as () => void)();
-    const FileSystem = require('expo-file-system');
-    const { screen } = await renderConnected();
-    await askByVoice(screen);
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
-  });
-});
-
-// --- T14 fix round 1 -------------------------------------------------------------
-
-describe('T14 fix round 1: the microphone never outlives the screen', () => {
-  it('leaving the screen while the recorder is being prepared stops it and deletes its file', async () => {
-    let release: () => void = () => {};
-    mockPrepare = () => new Promise<void>(r => { release = r; });
-    const FileSystem = require('expo-file-system');
-    const { screen } = await renderConnected();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-    await waitFor(() => expect(mockRecordings.length).toBe(1));
-
-    screen.unmount();
-    await act(async () => { release(); });
-
-    const rec = mockRecordings[0];
-    expect(rec.startAsync).not.toHaveBeenCalled();
-    expect(rec.stopAndUnloadAsync).toHaveBeenCalled();
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
-  });
-
-  it('leaving the screen during the permission prompt never creates a recorder', async () => {
-    let grant: (v: any) => void = () => {};
-    (Audio.requestPermissionsAsync as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
-    const { screen } = await renderConnected();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-
-    screen.unmount();
-    await act(async () => { grant({ status: 'granted' }); });
-
-    expect(mockRecordings.filter(r => r.startAsync.mock.calls.length > 0)).toHaveLength(0);
-  });
-
-  it('if stopping the recorder fails, its file is still deleted', async () => {
-    mockStop = () => Promise.reject(new Error('stop failed'));
-    const FileSystem = require('expo-file-system');
-    const { screen, ws } = await renderConnected();
-    await askByVoice(screen);
-
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///question.m4a', { idempotent: true });
-    expect(ws.send).not.toHaveBeenCalled();
   });
 });
 

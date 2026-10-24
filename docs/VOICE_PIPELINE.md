@@ -198,20 +198,20 @@ is cleared.
    activity detection (threshold 0.5, 800 ms of silence, `create_response` and
    `interrupt_response` on). The session closes with 1008 after
    `REALTIME_MAX_SESSION_SECONDS` (600).
-3. When the worker speaks a question, the app records it and posts it to
-   `POST /api/voice-assistant/transcribe` (multipart `audio` up to 3 MB,
-   `whisper-1` only, 30 a minute per account).
-   It then sends the text over the socket as a `conversation.item.create` with
-   `input_text`, followed by `response.create`. Typed questions take the same
-   route. If transcription fails or comes back empty, the app shows "Couldn't
-   transcribe, please try again" and sends nothing. It only sends on an open
-   socket, and only on the socket the question was recorded for: if the socket
-   closed, or Clear/Retry replaced it, while transcribing, the question goes back
-   into the text box to send again. If the screen has closed meanwhile, nothing
-   happens. The recorded question file is deleted from the cache once
-   transcribed, or when transcription or stopping fails. If the screen closes
-   while a recording is starting, the recorder is stopped and its file deleted,
-   so the microphone never outlives the screen. The app never sends `session.update`.
+3. **Speaking a question** (`mobile/services/micStream.ts`, H2-5.6). The mic
+   button toggles listening. The app takes the conversation session from
+   `audioSession.acquireConversation` (refused while the Record tab records: "Recording
+   on the Record tab. Finish that recording first.") and streams 100 ms mono PCM16
+   frames at 24 kHz as `input_audio_buffer.append`, only to the socket that was open
+   when listening started. Server VAD ends the turn and creates the response; the
+   server's input transcription fills the worker's bubble ("[Listening...]", then the
+   transcript, or "[Couldn't transcribe]"). Tapping stop mid-speech commits the
+   buffer and sends `response.create`; otherwise it clears the buffer. Listening
+   also stops, without sending, when the socket closes, Clear/Retry replaces it, the
+   tab is left, the app goes to the background, the screen unmounts, or the Record
+   tab takes the session. Nothing is uploaded or written to disk. Typed questions
+   go as a `conversation.item.create` with `input_text`, followed by
+   `response.create`, on an open socket only. The app never sends `session.update`.
    Every client frame passes the allowlist in `services/realtime_guard.py`
    (at most 1 MB; only audio-buffer append/commit/clear, a `user` message
    item, `response.create` with its overrides stripped, `response.cancel`, and a

@@ -206,15 +206,8 @@ describe('reads throw instead of returning empty values', () => {
 });
 
 describe('raw-fetch helpers use the shared transport', () => {
-  it('transcribeForAssistant retries after a 401 and uses a 60 s timeout', async () => {
-    const timeouts = jest.spyOn(global, 'setTimeout');
-    (global as any).fetch = jest.fn()
-      .mockResolvedValueOnce(jsonResponse(401, { detail: 'Invalid or expired session' }))
-      .mockResolvedValueOnce(jsonResponse(200, { transcription: 'is John ok' }));
-    await expect(api.transcribeForAssistant('file:///q.m4a')).resolves.toBe('is John ok');
-    expect(authHeader(1)).toBe('Bearer new-token');
-    expect(timeouts.mock.calls.some(c => c[1] === 60_000)).toBe(true);
-    timeouts.mockRestore();
+  it('has no assistant transcription call any more', () => {
+    expect((api as any).transcribeForAssistant).toBeUndefined();
   });
 
   it('transcribe uses a 120 s timeout', async () => {

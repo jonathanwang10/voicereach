@@ -2,8 +2,6 @@
  * Audio helpers for the Realtime API: base64 <-> bytes, and PCM16 <-> float samples.
  */
 
-import { Audio } from 'expo-av';
-
 // Audio format specifications for GPT Realtime API
 export const AUDIO_SPECS = {
   SAMPLE_RATE: 24000, // 24kHz as specified in GPT Realtime docs
@@ -62,28 +60,3 @@ export function floatTo16BitPCM(samples: Float32Array): Uint8Array {
   }
   return out;
 }
-
-/**
- * Helper function to configure audio recording for optimal results
- */
-export const configureAudioRecording = async (): Promise<void> => {
-  try {
-    // Request audio permissions
-    const { status } = await Audio.requestPermissionsAsync();
-    if (status !== 'granted') {
-      throw new Error('Audio recording permission not granted');
-    }
-
-    // Configure audio mode for recording
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-      staysActiveInBackground: false,
-    });
-  } catch (error) {
-    if (__DEV__) console.warn('Failed to configure audio recording:', error);
-    throw error;
-  }
-};

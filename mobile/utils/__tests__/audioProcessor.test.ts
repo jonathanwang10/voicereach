@@ -1,8 +1,5 @@
 // C-26: assistant audio deltas are decoded one by one, never joined as base64 text.
 // H2-5.5: replies are PCM16 at 24 kHz, turned into float samples for the buffer queue.
-// configureAudioRecording still imports expo-av until Task 8 removes it
-jest.mock('expo-av', () => ({ Audio: {} }));
-
 import { AudioProcessor, floatTo16BitPCM, pcm16ToFloat32 } from '../audioProcessor';
 
 describe('C-26 audio chunks', () => {

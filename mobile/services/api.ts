@@ -26,7 +26,6 @@ export class ApiError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const TRANSCRIBE_TIMEOUT_MS = 120_000;
-const ASSISTANT_TRANSCRIBE_TIMEOUT_MS = 60_000;
 const NETWORK_RETRY_DELAY_MS = 500;
 const NOT_SIGNED_IN = 'Not signed in. Check that the demo user exists in Supabase (see README setup).';
 const SIGNED_OUT = 'You signed out. Sign in again to continue.';
@@ -363,17 +362,6 @@ export const api = {
     const response = await authedFetch('/api/export');
     await throwIfNotOk(response);
     return response.text();
-  },
-
-  // Whisper-only transcription for the voice assistant
-  transcribeForAssistant: async (uri: string): Promise<string> => {
-    const form = new FormData();
-    form.append('audio', { uri, name: 'question.m4a', type: 'audio/m4a' } as any);
-    const result = await apiRequest<{ transcription?: string }>('/api/voice-assistant/transcribe', {
-      method: 'POST',
-      body: form,
-    }, { timeoutMs: ASSISTANT_TRANSCRIBE_TIMEOUT_MS });
-    return result?.transcription ?? '';
   },
 
   // Interaction history for one individual (backend returns `changes`; the app's Interaction type uses `data`)

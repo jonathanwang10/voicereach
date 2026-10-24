@@ -14,11 +14,11 @@ export interface Message {
 }
 
 export const SPEAKING_PLACEHOLDER = '[Speaking...]';
-export const RECORDING_PLACEHOLDER = '[Recording... Speak now]';
 export const PROCESSING_PLACEHOLDER = '[Processing your speech...]';
 export const SPEECH_DELIVERED = '[Speech response delivered]';
 export const RESPONSE_INTERRUPTED = '[Response interrupted]';
-export const TRANSCRIBE_FAILED = "Couldn't transcribe, please try again";
+export const LISTENING_PLACEHOLDER = '[Listening...]';
+export const TRANSCRIPT_UNAVAILABLE = "[Couldn't transcribe]";
 
 const isPlaceholder = (content: string) => !content || content === SPEAKING_PLACEHOLDER;
 
@@ -60,9 +60,37 @@ export function finalizeAssistantText(
   });
 }
 
-// The transcript to send, or '' when there is nothing to send (C-23).
-export function cleanTranscript(raw: unknown): string {
-  return typeof raw === 'string' ? raw.trim() : '';
+// The worker's spoken question (H2-5.6): a bubble per input item, filled by the server's
+// input transcription. A known id is a no-op.
+export function addUserSpeechMessage(messages: Message[], id: string, now: Date = new Date()): Message[] {
+  if (messages.some(m => m.id === id)) return messages;
+  return [...messages, { id, role: 'user', content: LISTENING_PLACEHOLDER, timestamp: now }];
+}
+
+export function setUserTranscript(messages: Message[], id: string, transcript: unknown): Message[] {
+  const text = typeof transcript === 'string' ? transcript.trim() : '';
+  return setMessageContent(messages, id, text || TRANSCRIPT_UNAVAILABLE);
+}
+
+// Full duplex: the mic keeps streaming while a reply plays, so the worker can talk over
+// it. Set false if the reply's echo cuts itself off on the device (D5.7).
+export const FULL_DUPLEX_MIC = true;
+
+export function shouldSendMicFrame(s: {
+  listening: boolean; socketOpen: boolean; replyPlaying: boolean; fullDuplex: boolean;
+}): boolean {
+  return s.listening && s.socketOpen && (s.fullDuplex || !s.replyPlaying);
+}
+
+export function audioAppendEvent(base64: string): object {
+  return { type: 'input_audio_buffer.append', audio: base64 };
+}
+
+// Stopping mid-speech sends what was said; otherwise the buffer is dropped.
+export function stopListeningEvents(speechInProgress: boolean): object[] {
+  return speechInProgress
+    ? [{ type: 'input_audio_buffer.commit' }, { type: 'response.create' }]
+    : [{ type: 'input_audio_buffer.clear' }];
 }
 
 const WS_OPEN = 1; // WebSocket.OPEN

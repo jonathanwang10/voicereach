@@ -57,6 +57,9 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 4. D5.3 (Phase 5, Task 3) Record-tab interruption. Start a field-note recording, record 10 s, then trigger Siri (or have someone call the phone). Expected: recording stops; "Recording was interrupted at 0:1x. You can keep what was recorded or record again." with Keep and Record again; Keep goes on to transcription with the audio up to the interruption. Also record 10 s normally: the file is about 40 KB (32 kbps).
 5. D5.4 (Phase 5, Task 7) Speaker routing. Type a question on the Assistant, then ask one by voice with listening on. Expected: both replies play from the loudspeaker, not the earpiece, with the ringer switch on silent too. If the voice-mode reply uses the earpiece, apply the audio-route row of the Task 1 decision table and re-check.
 6. D5.5 (Phase 5, Task 7) Streaming latency. Ask a question that needs a long answer. Expected: audio starts while the text is still growing (well under a second after the first words appear), with no gaps or clicks between chunks.
+7. D5.6 (Phase 5, Task 8) Mic streaming. Tap the Assistant mic, ask "What should I do if someone is unresponsive?", then stay quiet. Expected: the bubble shows "[Listening...]", then the transcript; the answer arrives without tapping stop. Tap stop mid-sentence on a second question: it is still answered.
+8. D5.7 (Phase 5, Task 8) Echo. Listening on, phone on a table, volume at maximum, ask for a long answer. Expected: the reply plays to the end without cutting itself off. If it cuts itself off, set `FULL_DUPLEX_MIC = false` in `mobile/utils/assistantMessages.ts`, rebuild, re-check (barge-in then works by tap only), and note the result here.
+9. D5.8 (Phase 5, Task 8) Assistant mic vs Record tab. Assistant listening, switch to Record and record 10 s. Expected: the field note records normally (not paused, correct length); back on the Assistant, the mic is off.
 
 ## Owner actions outside code
 

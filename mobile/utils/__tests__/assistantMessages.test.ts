@@ -1,6 +1,6 @@
 // T11: pure helpers behind the voice assistant screen.
 // C-25: answer text is keyed by item id, so follow-ups can't steal or lose it.
-// C-23: an empty transcript is "nothing to send".
+// H2-5.6: mic frames, stopping a turn, and the worker's input-transcription bubble.
 // C-59: updates are immutable; sends need an OPEN socket.
 // T10 contract: only allowlisted client events, close-code messages.
 import {
@@ -12,7 +12,13 @@ import {
   finalizeAssistantText,
   setMessageContent,
   removeMessage,
-  cleanTranscript,
+  LISTENING_PLACEHOLDER,
+  TRANSCRIPT_UNAVAILABLE,
+  addUserSpeechMessage,
+  setUserTranscript,
+  shouldSendMicFrame,
+  audioAppendEvent,
+  stopListeningEvents,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -80,16 +86,39 @@ describe('C-25 keyed assistant text', () => {
   });
 });
 
-describe('C-23 transcripts', () => {
-  it('blank or missing transcripts are empty (nothing to send)', () => {
-    expect(cleanTranscript('')).toBe('');
-    expect(cleanTranscript('   ')).toBe('');
-    expect(cleanTranscript(undefined)).toBe('');
-    expect(cleanTranscript(null)).toBe('');
+describe('H2-5.6 streamed questions', () => {
+  it.each([
+    [{ listening: true, socketOpen: true, replyPlaying: true, fullDuplex: true }, true],
+    [{ listening: true, socketOpen: true, replyPlaying: true, fullDuplex: false }, false],
+    [{ listening: true, socketOpen: true, replyPlaying: false, fullDuplex: false }, true],
+    [{ listening: true, socketOpen: false, replyPlaying: false, fullDuplex: true }, false],
+    [{ listening: false, socketOpen: true, replyPlaying: false, fullDuplex: true }, false],
+  ])('shouldSendMicFrame(%o) is %s', (state, expected) => {
+    expect(shouldSendMicFrame(state)).toBe(expected);
   });
 
-  it('short real answers like "OK" are kept (only empty is rejected)', () => {
-    expect(cleanTranscript(' OK ')).toBe('OK');
+  it('a frame is an input_audio_buffer.append', () => {
+    expect(audioAppendEvent('AAAA')).toEqual({ type: 'input_audio_buffer.append', audio: 'AAAA' });
+  });
+
+  it('stopping mid-speech commits and asks for a response; otherwise clears', () => {
+    expect(stopListeningEvents(true)).toEqual([{ type: 'input_audio_buffer.commit' }, { type: 'response.create' }]);
+    expect(stopListeningEvents(false)).toEqual([{ type: 'input_audio_buffer.clear' }]);
+  });
+
+  it('the worker bubble starts as listening and takes the input transcript', () => {
+    let msgs = addUserSpeechMessage([], 'i1', T);
+    expect(msgs).toEqual([{ id: 'i1', role: 'user', content: LISTENING_PLACEHOLDER, timestamp: T }]);
+    expect(addUserSpeechMessage(msgs, 'i1', T)).toBe(msgs);
+    msgs = setUserTranscript(msgs, 'i1', ' Where is the shelter? ');
+    expect(msgs[0].content).toBe('Where is the shelter?');
+  });
+
+  it('a blank input transcript says it could not be transcribed', () => {
+    const msgs = addUserSpeechMessage([], 'i1', T);
+    for (const blank of ['', '   ', undefined, null, 3]) {
+      expect(setUserTranscript(msgs, 'i1', blank)[0].content).toBe(TRANSCRIPT_UNAVAILABLE);
+    }
   });
 });
 

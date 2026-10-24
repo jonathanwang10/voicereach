@@ -57,7 +57,7 @@ api/
   individuals.py     /api/individuals routes and the background embedding task
   categories.py      /api/categories and GET /api/export
   embeddings.py      /api/embeddings routes
-  voice_assistant.py /api/voice-assistant helper routes
+  voice_assistant.py /api/voice-assistant helper routes (only `/guidelines`)
 services/
   openai_service.py             Whisper, GPT-4o extraction, duplicate scoring call
   field_registry.py             Field normaliser, category_key, height parsing; labels,
@@ -100,7 +100,7 @@ and doesn't follow redirects: a 3xx fails like any other download error, with a
 500 "Transcription failed"). Loads categories, transcribes with `TRANSCRIBE_MODEL` (default `gpt-transcribe`, with a fixed SF vocabulary prompt and no person names),
 extracts fields with `gpt-4o`, validates, and looks for duplicates. The M4A's
 length is read with mutagen before Whisper is called: under 5 s or over 125 s is
-a 400 (`RECORDING_LIMITS`; assistant questions use 1-60 s, `QUESTION_LIMITS`).
+a 400 (`RECORDING_LIMITS`).
 413 over a size cap, 429 over the rate limit, 504 after 110 s. Returns:
 
 ```json
@@ -275,8 +275,6 @@ vector of the wrong length is rejected, not stored.
   A client can't send `function_call_output` itself. Close codes after `accept()`: 1000
   normal, 1008 session time limit or too many connects, 1011 upstream or Auth
   outage.
-- **`POST /api/voice-assistant/transcribe`** — Multipart field `audio` (≤ 3 MB,
-  else 413); returns `{"transcription", "status"}`. Whisper only.
 - **`GET /api/voice-assistant/guidelines`** — Static safety guidance.
 
 The pipeline end to end is in [`docs/VOICE_PIPELINE.md`](../docs/VOICE_PIPELINE.md).
@@ -339,7 +337,7 @@ The original deployment no longer exists.
 ## Limits
 
 Size caps (`BODY_LIMITS` in `main.py`, plus the route checks) give a 413
-`{"detail": ...}`: `/api/transcribe` body 8 MB, assistant audio 3 MB, `audio_url`
+`{"detail": ...}`: `/api/transcribe` body 8 MB, `audio_url`
 download 5 MB, `check-duplicates` body 20 KB. A saved `name` is at most 200
 characters (422).
 
@@ -351,7 +349,6 @@ request; a missing or invalid value uses the default:
 | Env var | Default / min | Applies to |
 |---|---|---|
 | `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` |
-| `RATE_LIMIT_ASSISTANT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/voice-assistant/transcribe` |
 | `RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN` | 60 | `POST /api/embeddings/search` |
 | `RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN` | 30 | `POST /api/embeddings/generate` |
 | `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |

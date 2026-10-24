@@ -68,8 +68,6 @@ class AudioLimits:
 
 # A recording is 5 s to 2:00 in the app; 5 s of slack covers the encoder's padding.
 RECORDING_LIMITS = AudioLimits(5, 125, "Audio must be at least 5 seconds long", "Audio must be less than 2 minutes")
-# Assistant questions are short and have their own lower minimum.
-QUESTION_LIMITS = AudioLimits(1, 60, "Question must be at least 1 second long", "Question must be under 1 minute")
 
 
 def audio_duration_seconds(path: str) -> float:
@@ -205,7 +203,7 @@ class OpenAIService:
         
         Args:
             file_path: Path to local M4A audio file
-            limits: allowed length (RECORDING_LIMITS, or QUESTION_LIMITS for the assistant)
+            limits: allowed length (RECORDING_LIMITS by default)
             
         Returns:
             Plain text transcription

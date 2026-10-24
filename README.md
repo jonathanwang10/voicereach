@@ -99,7 +99,7 @@ Three separate AI capabilities, easy to confuse:
 | Transcribe + extract fields | `gpt-transcribe` (`TRANSCRIBE_MODEL`, with a fixed SF place/street vocabulary prompt, no person names) + `gpt-4o` (`CHAT_MODEL`, Structured Outputs) | `services/openai_service.py`, `services/category_schema.py` |
 | Score duplicate candidates | `gpt-4o-mini` (`DUPLICATE_MODEL`) | `services/duplicate_detection_service.py` |
 | Semantic search over profiles | `text-embedding-3-large` (`EMBEDDING_MODEL`) | `services/embedding_service.py` |
-| Live spoken assistant | `gpt-realtime-2.1` with server-side read-only retrieval tools (`REALTIME_MODEL`; questions transcribed by `TRANSCRIBE_MODEL`) | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
+| Live spoken assistant | `gpt-realtime-2.1` with server-side read-only retrieval tools (`REALTIME_MODEL`); the worker's speech streamed as PCM16 over the proxy; input transcription (`TRANSCRIBE_MODEL`) for the bubble | `main.py` (the WS proxy); `api/voice_assistant.py` (helper endpoints) |
 
 The model names live in `backend/services/model_config.py`; each env var
 overrides its default (blank or unset = the default).
@@ -401,7 +401,6 @@ Base URL `http://localhost:8001`. Everything under `/api` needs a bearer token.
 | `POST` | `/api/embeddings/generate` | Embed one individual (`{"individual_id": ...}`) |
 | `POST` | `/api/embeddings/generate-all` | Embed every stale person and visit (as `backfill_embeddings.py --stale`) |
 | `WS` | `/api/voice-assistant/realtime/ws` | Realtime assistant proxy (defined in `main.py`) |
-| `POST` | `/api/voice-assistant/transcribe` | Whisper-only transcription of an assistant question (multipart `audio`) |
 | `GET` | `/api/voice-assistant/guidelines` | Static safety guidelines |
 
 `POST /api/transcribe` takes `{"audio_data": "<base64, data-URL prefix optional>"}`
@@ -421,7 +420,6 @@ are bounded. All of these are per process and in memory (they reset on restart).
 |---|---|---|
 | `POST /api/transcribe` body (base64 audio) | 8 MB | 413 |
 | `audio_url` download | 5 MB, same host as `SUPABASE_URL` | 413; another host or a missing file 400; a redirect is not followed and fails like any other download error, with a 500 |
-| `POST /api/voice-assistant/transcribe` audio | 3 MB | 413 |
 | Recording length (read from the M4A header with mutagen) | 5 s to 125 s (2:00 plus 5 s slack) | 400 "Audio must be at least 5 seconds long" / "Audio must be less than 2 minutes"; an unreadable M4A is 400 "File is not in M4A format" |
 | Assistant question length | 1 s to 60 s | 400 "Question must be at least 1 second long" / "Question must be under 1 minute" |
 | `POST /api/individuals/check-duplicates` body | 20 KB, a JSON object | 413 / 422 |
@@ -444,7 +442,6 @@ allow the full limit). Set the env var to a positive integer to change one:
 | Env var | Default | Route |
 |---|---|---|
 | `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/transcribe` |
-| `RATE_LIMIT_ASSISTANT_TRANSCRIBE_PER_MIN` | 30 | `POST /api/voice-assistant/transcribe` |
 | `RATE_LIMIT_EMBEDDINGS_SEARCH_PER_MIN` | 60 | `POST /api/embeddings/search` |
 | `RATE_LIMIT_EMBEDDINGS_GENERATE_PER_MIN` | 30 | `POST /api/embeddings/generate` |
 | `RATE_LIMIT_GENERATE_ALL_PER_MIN` | 1 | `POST /api/embeddings/generate-all` |
@@ -593,7 +590,7 @@ is logged.
 | A person's name and labelled fields (`build_embedding_text`); never a sensitive (`is_sensitive`) field | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
 | Each visit's transcript | OpenAI embeddings (`EMBEDDING_MODEL`) | After a save that carried a transcript | Supabase: the vector only, in `interaction_embeddings` (the transcript is already stored with the interaction). It was already sent to OpenAI to be transcribed, so this sends nothing new. |
 | A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
-| An assistant question: the recorded audio, then its transcript (or the typed text) | The backend, then OpenAI Whisper; the text goes to the OpenAI Realtime API (`REALTIME_MODEL`, default `gpt-realtime-2.1`) | Each question | Phone: the recording is deleted from the cache once transcribed, when transcription or stopping fails, or when the screen closes while recording starts (the microphone is stopped too). OpenAI: as above. |
+| An assistant question: the worker's speech as a PCM16 stream (or the typed text) | The OpenAI Realtime API (`REALTIME_MODEL`, default `gpt-realtime-2.1`), through the backend proxy; it also transcribes the speech (`TRANSCRIBE_MODEL`) for the worker's bubble | Each question | Phone: nothing is stored; the stream stops when listening stops, the tab is left, the app goes to the background or the socket closes. OpenAI: as above. |
 | Records returned by the assistant's tools (`search_people`, `get_person`, `recent_interactions`, `most_urgent`), each value clipped | The OpenAI Realtime API, as a delimited tool output | Each tool call | For that assistant session. |
 | Everything saved: name, fields, urgency, last location, transcripts and each interaction's location | Supabase (Postgres) | Each save | Until the person is deleted, which also removes their interactions, their embeddings and their visit embeddings. Once the owner schedules `coarsen_old_locations`, interaction locations older than 30 days are rounded to about 110 m with the house number removed; the newest visit and the person's last location stay exact. |
 | Who did what to which record: user id, device id, action, record id, a count or an override value (`audit_log`) | Supabase (Postgres) | Viewing a profile, export, delete, an urgency override, a merge, a new person, a new category | Kept after the person is deleted (no names or field values; the table is append-only). |

@@ -39,21 +39,21 @@ def test_api_key_route_removed():
 def test_debug_routes_removed():
     p = _paths()
     for gone in ["/test-ws", "/api/voice-assistant/test", "/api/voice-assistant/chat",
-                 "/api/voice-assistant/resources", "/api/voice-assistant/context"]:
+                 "/api/voice-assistant/resources", "/api/voice-assistant/context",
+                 "/api/voice-assistant/transcribe"]:
         assert gone not in p
 
 
 def test_kept_assistant_routes_present():
     p = _paths()
-    for kept in ["/api/voice-assistant/guidelines",
-                 "/api/voice-assistant/transcribe", "/api/voice-assistant/realtime/ws"]:
+    for kept in ["/api/voice-assistant/guidelines", "/api/voice-assistant/realtime/ws"]:
         assert kept in p
 
 
 def test_public_routes_are_exactly_the_expected_ones():
     """A new route is protected unless it is added to PUBLIC on purpose."""
     assert {p for _, p in _http_routes()} & PUBLIC == PUBLIC
-    assert len(PROTECTED) >= 17  # guards the route walk itself (it once missed included routers)
+    assert len(PROTECTED) >= 16  # guards the route walk itself (it once missed included routers)
 
 
 @pytest.mark.real_auth

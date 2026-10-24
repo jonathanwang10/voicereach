@@ -66,22 +66,9 @@ def test_chunked_body_through_fastapi_is_413_not_400():
     gsc.assert_not_called()
 
 
-def test_assistant_audio_over_3mb_is_413():
-    with patch("api.voice_assistant.get_openai_service") as svc:
-        r = _client().post("/api/voice-assistant/transcribe",
-                           files={"audio": ("q.m4a", b"\x00" * (3 * MB + 1), "audio/m4a")})
-    assert r.status_code == 413
-    svc.assert_not_called()
-
-
-def test_assistant_audio_under_cap_is_transcribed():
-    svc = MagicMock()
-    svc.return_value.transcribe_audio_file = AsyncMock(return_value="hello")
-    with patch("api.voice_assistant.get_openai_service", svc):
-        r = _client().post("/api/voice-assistant/transcribe",
-                           files={"audio": ("q.m4a", b"\x00\x00\x00\x18ftypM4A ", "audio/m4a")})
-    assert r.status_code == 200
-    assert r.json()["transcription"] == "hello"
+def test_assistant_transcribe_has_no_body_cap_entry():
+    import main
+    assert "/api/voice-assistant/transcribe" not in main.BODY_LIMITS
 
 
 def test_check_duplicates_body_over_20kb_is_413():
@@ -286,7 +273,6 @@ def test_temp_audio_file_is_removed_even_if_writing_fails(monkeypatch):
 
 @pytest.mark.parametrize("route,kwargs", [
     ("/api/transcribe", {"json": {"audio_data": "AAAA"}}),
-    ("/api/voice-assistant/transcribe", {"files": {"audio": ("q.m4a", b"\x00\x00\x00\x18ftypM4A ", "audio/m4a")}}),
 ])
 def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
     seen = []
@@ -302,8 +288,7 @@ def test_routes_remove_their_temp_file_when_whisper_fails(route, kwargs):
     svc = MagicMock()
     svc.return_value.transcribe_audio_file = failing
     with patch("api.transcription.get_supabase", return_value=sb), \
-         patch("api.transcription.get_openai_service", svc), \
-         patch("api.voice_assistant.get_openai_service", svc):
+         patch("api.transcription.get_openai_service", svc):
         r = _client().post(route, **kwargs)
     assert r.status_code == 500
     assert seen and not os.path.exists(seen[0])

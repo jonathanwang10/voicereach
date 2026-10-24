@@ -53,8 +53,8 @@ only after `npx expo prebuild --platform ios`.
   is captured alongside it and waited for at most `LOCATION_WAIT_MS` (3 s) at
   stop (`mobile/components/ModernAudioRecorder.tsx`). Each recording uses its
   own fix unless the worker picked a location by hand. The server re-checks the
-  length with mutagen: 400 under 5 s or over 125 s (2:00 plus 5 s slack);
-  assistant questions 1-60 s (`services/openai_service.py`, `RECORDING_LIMITS`).
+  length with mutagen: 400 under 5 s or over 125 s (2:00 plus 5 s slack)
+  (`services/openai_service.py`, `RECORDING_LIMITS`).
 - **Urgency** (`backend/services/urgency_calculator.py`): only `number` and
   `single_select` categories can have a weight or auto-trigger. Number →
   `min(value / (number_scale_max or 300), 1) * weight`; select → `option_value * weight`; final score is
@@ -122,7 +122,8 @@ Five tabs: Record (default), Search (pushes the individual profile), Assistant,
 Categories, Profile. API client: `mobile/services/api.ts`. All data access goes
 through the backend; the app's Supabase client is for auth only (never call
 `supabase.from` in mobile/). Delete is delayed for an undo window
-(`mobile/utils/delayedDelete.ts`).
+(`mobile/utils/delayedDelete.ts`). Only `mobile/services/audioSession.ts` changes the
+audio session; the Assistant streams the mic over the proxy (no upload).
 
 ## Git
 

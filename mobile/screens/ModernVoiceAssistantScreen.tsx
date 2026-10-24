@@ -9,32 +9,35 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Animated,
+  AppState,
   Dimensions,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
-import * as FileSystem from 'expo-file-system';
-import { api, getAuthToken } from '../services/api';
+import { getAuthToken } from '../services/api';
 import { createReplyPlayer, ReplyPlayer } from '../services/replyPlayer';
-import { acquirePlayback } from '../services/audioSession';
-import { AudioProcessor, configureAudioRecording } from '../utils/audioProcessor';
-import { errorMessage, showApiError } from '../utils/errorHandler';
+import { acquireConversation, acquirePlayback, onChange } from '../services/audioSession';
+import { MicStream, startMicStream } from '../services/micStream';
+import { AudioProcessor } from '../utils/audioProcessor';
+import { errorMessage } from '../utils/errorHandler';
 import {
   Message,
   SPEAKING_PLACEHOLDER,
-  RECORDING_PLACEHOLDER,
+  LISTENING_PLACEHOLDER,
   PROCESSING_PLACEHOLDER,
   SPEECH_DELIVERED,
   RESPONSE_INTERRUPTED,
-  TRANSCRIBE_FAILED,
+  FULL_DUPLEX_MIC,
   addAssistantMessage,
+  addUserSpeechMessage,
   appendAssistantText,
+  audioAppendEvent,
   finalizeAssistantText,
   setMessageContent,
-  removeMessage,
-  cleanTranscript,
+  setUserTranscript,
+  shouldSendMicFrame,
+  stopListeningEvents,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -238,12 +241,11 @@ const ModernSpeakingIndicator: React.FC = () => {
 export const ModernVoiceAssistantScreen: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
   const [textInput, setTextInput] = useState('');
-  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
   // Streaming state lives in refs, keyed by the Realtime item id (C-25), so a socket
@@ -255,16 +257,16 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   // Items whose audio is no longer played: text only (muted, blurred, stopped, no session)
   const playbackSkippedRef = useRef<Set<string>>(new Set());
   const lastAssistantIdRef = useRef<string | null>(null); // for events that arrive without item_id
-  const pendingUserIdRef = useRef<string | null>(null); // the bubble of the question being recorded
   const idCounterRef = useRef(0);
   const isMutedRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
   const isMountedRef = useRef(true);
   const scrollViewRef = useRef<ScrollView>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  // True while startRecording sets up the recorder (before recordingRef is set), so a reply
-  // that arrives then isn't played over the recording being started.
-  const startingRecordingRef = useRef(false);
+  // The mic streaming to one socket, and the conversation session it holds (H2-5.6)
+  const listeningRef = useRef<{ ws: WebSocket; mic: MicStream | null; release: () => Promise<void> } | null>(null);
+  const startingListenRef = useRef(false); // a second tap while the mic starts is ignored
+  // Between the server's speech_started and speech_stopped: stopping now sends what was said
+  const speechItemRef = useRef<string | null>(null);
   // I-2: bottom tabs keep this screen mounted with its socket open. While another tab is
   // focused (e.g. Record is recording a field note), a reply shows as text only: it doesn't
   // even ask audioSession for playback, so it can't touch the shared iOS audio session.
@@ -337,6 +339,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       return () => {
         isFocusedRef.current = false;
         stopReply();
+        stopListening(false);
       };
     }, [])
   );
@@ -348,9 +351,24 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       isMountedRef.current = false;
       detachAndClose(wsRef.current);
       wsRef.current = null;
-      recordingRef.current?.stopAndUnloadAsync().catch(() => {});
+      stopListening(false);
       resetStreams();
       playerRef.current?.close();
+    };
+  }, []);
+
+  // The mic stops without sending when the app leaves the foreground, or when the
+  // Record tab takes the audio session for a field note.
+  useEffect(() => {
+    const appState = AppState.addEventListener('change', state => {
+      if (state === 'background' || state === 'inactive') stopListening(false);
+    });
+    const unsubscribe = onChange(state => {
+      if (state.recordingOwner) stopListening(false);
+    });
+    return () => {
+      appState.remove();
+      unsubscribe();
     };
   }, []);
 
@@ -391,7 +409,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         const id = itemIdOf(event);
         if (!id || !event.delta || playbackSkippedRef.current.has(id)) break;
         if (playerRef.current!.current() !== id) {
-          if (isMutedRef.current || !isFocusedRef.current || recordingRef.current || startingRecordingRef.current) {
+          if (isMutedRef.current || !isFocusedRef.current) {
             playbackSkippedRef.current.add(id);
             break;
           }
@@ -423,6 +441,33 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         break;
       }
 
+      // The worker's spoken question (H2-5.6): server VAD marks the turn, the input
+      // transcription fills its bubble
+      case 'input_audio_buffer.speech_started': {
+        const id = event.item_id;
+        if (!id) break;
+        speechItemRef.current = id;
+        setMessages(prev => addUserSpeechMessage(prev, id));
+        scrollToEnd();
+        break;
+      }
+
+      case 'input_audio_buffer.speech_stopped': {
+        const id = event.item_id;
+        if (speechItemRef.current === id) speechItemRef.current = null;
+        if (id) setMessages(prev => setMessageContent(prev, id, PROCESSING_PLACEHOLDER));
+        break;
+      }
+
+      case 'conversation.item.input_audio_transcription.completed':
+      case 'conversation.item.input_audio_transcription.failed': {
+        const id = event.item_id;
+        if (!id) break;
+        const transcript = event.type.endsWith('.completed') ? event.transcript : '';
+        setMessages(prev => setUserTranscript(addUserSpeechMessage(prev, id), id, transcript));
+        break;
+      }
+
       case 'error':
         // e.g. the backend's event_not_allowed, or an upstream error: brief, not a permanent card.
         toast('Voice assistant', event.error?.message || 'Something went wrong');
@@ -443,6 +488,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
   const initializeVoiceAssistant = async () => {
     // Detach first so a late close on the old socket can't mark the new one disconnected.
+    stopListening(false);
     detachAndClose(wsRef.current);
     wsRef.current = null;
     setIsConnected(false);
@@ -480,6 +526,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       // A refused handshake (bad or not-allowed token) arrives here as an HTTP 403.
       ws.onerror = (err: any) => {
         if (wsRef.current !== ws) return;
+        stopListening(false);
         setError(connectErrorMessage(err));
         setIsConnected(false);
       };
@@ -487,6 +534,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       // No auto-reconnect: explain the close and let the worker tap Retry.
       ws.onclose = (event: any) => {
         if (wsRef.current !== ws || !isMountedRef.current) return;
+        stopListening(false);
         setIsConnected(false);
         setError(closeMessage(event?.code, event?.reason));
       };
@@ -517,161 +565,77 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     userTextEvents(text).forEach(event => ws.send(JSON.stringify(event)));
   };
 
-  // Stop a recorder that will never be used and delete whatever it wrote to the cache.
-  const discardRecording = async (recording: Audio.Recording) => {
-    await recording.stopAndUnloadAsync().catch(() => {});
-    deleteRecordingFile(recording);
-  };
-
-  const deleteRecordingFile = (recording: Audio.Recording) => {
-    const uri = recording.getURI();
-    if (uri) FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-  };
-
-  const startRecording = async () => {
-    if (startingRecordingRef.current) return;
-    if (!isSocketOpen(wsRef.current) || !isConnected) {
+  // Listening (H2-5.6): the mic streams 100 ms PCM16 frames to the socket that was open
+  // when it started; server VAD ends the turn and starts the reply.
+  const startListening = async () => {
+    if (startingListenRef.current || listeningRef.current) return;
+    const ws = wsRef.current;
+    if (!ws || !isSocketOpen(ws) || !isConnected) {
       Alert.alert('Error', 'Voice assistant not connected');
       return;
     }
-
-    startingRecordingRef.current = true;
-    let recording: Audio.Recording | null = null;
+    startingListenRef.current = true;
     try {
-      stopReply(); // don't record over a reply
-      await configureAudioRecording(); // R-7: recording mode back on
-      // Left the screen during the permission prompt: never turn the mic on.
-      if (!isMountedRef.current) return;
-
-      recording = new Audio.Recording();
-
-      // Optimized audio settings for faster transcription
-      const recordingOptions = {
-        android: {
-          extension: '.m4a',
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 16000, // Lower sample rate for faster processing
-          numberOfChannels: 1, // Mono for efficiency
-          bitRate: 64000, // Lower bitrate
-        },
-        ios: {
-          extension: '.m4a',
-          outputFormat: Audio.IOSOutputFormat.MPEG4AAC,
-          audioQuality: Audio.IOSAudioQuality.MEDIUM, // Medium quality for speed
-          sampleRate: 16000, // Optimized for Whisper
-          numberOfChannels: 1, // Mono
-          bitRate: 64000,
-          linearPCMBitDepth: 16,
-          linearPCMIsBigEndian: false,
-          linearPCMIsFloat: false,
-        },
-        web: {
-          mimeType: 'audio/webm;codecs=opus',
-          bitsPerSecond: 64000,
-        },
-      };
-
-      try {
-        await recording.prepareToRecordAsync(recordingOptions);
-      } catch {
-        await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.LOW_QUALITY);
+      stopReply(); // don't talk over a reply
+      const release = await acquireConversation('assistant');
+      if (!release) {
+        toast('Recording on the Record tab', 'Finish that recording first.');
+        return;
       }
-      // The unmount cleanup only sees recordingRef, which isn't set yet: if the screen
-      // closed meanwhile, stop this recorder here, or nothing ever will.
-      if (!isMountedRef.current) return discardRecording(recording);
-      await recording.startAsync();
-      if (!isMountedRef.current) return discardRecording(recording);
-
-      recordingRef.current = recording;
-      setIsRecording(true);
-
-      const id = nextId('user');
-      pendingUserIdRef.current = id;
-      setMessages(prev => [...prev, { id, role: 'user', content: RECORDING_PLACEHOLDER, timestamp: new Date() }]);
-    } catch (error) {
-      if (__DEV__) console.warn('Failed to start recording:', error);
-      if (recording) await discardRecording(recording);
-      if (isMountedRef.current) Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      // The screen closed, the tab was left or the socket was replaced meanwhile
+      if (!isMountedRef.current || !isFocusedRef.current || wsRef.current !== ws) {
+        release().catch(() => {});
+        return;
+      }
+      const session = { ws, mic: null as MicStream | null, release };
+      listeningRef.current = session;
+      try {
+        const mic = await startMicStream(frame => {
+          // A frame only ever goes to this session's socket
+          if (listeningRef.current !== session) return;
+          if (shouldSendMicFrame({
+            listening: true,
+            socketOpen: isSocketOpen(ws),
+            replyPlaying: playerRef.current!.current() !== null,
+            fullDuplex: FULL_DUPLEX_MIC,
+          })) ws.send(JSON.stringify(audioAppendEvent(frame)));
+        });
+        if (listeningRef.current !== session) {
+          mic.stop().catch(() => {}); // stopped while the mic was starting
+          return;
+        }
+        session.mic = mic;
+        setIsListening(true);
+      } catch (error) {
+        if (__DEV__) console.warn('Failed to start the microphone:', error);
+        if (listeningRef.current === session) listeningRef.current = null;
+        release().catch(() => {});
+        if (isMountedRef.current) {
+          Alert.alert('Microphone', 'Could not start the microphone. Check the permission in Settings.');
+        }
+      }
     } finally {
-      startingRecordingRef.current = false;
+      startingListenRef.current = false;
     }
   };
 
-  const stopRecording = async () => {
-    const recording = recordingRef.current;
-    if (!recording || !isRecording) {
-      return;
+  // The stop button sends the turn (send = true); every other stop just drops the mic.
+  // Clearing listeningRef first means no frame is sent after this.
+  const stopListening = (send: boolean) => {
+    const session = listeningRef.current;
+    if (!session) return;
+    listeningRef.current = null;
+    const speechItem = speechItemRef.current;
+    speechItemRef.current = null;
+    if (isMountedRef.current) setIsListening(false);
+    session.mic?.stop().catch(() => {});
+    if (send && isSocketOpen(session.ws)) {
+      stopListeningEvents(speechItem !== null).forEach(event => session.ws.send(JSON.stringify(event)));
+      if (speechItem && isMountedRef.current) {
+        setMessages(prev => setMessageContent(prev, speechItem, PROCESSING_PLACEHOLDER));
+      }
     }
-    const bubbleId = pendingUserIdRef.current;
-    pendingUserIdRef.current = null;
-    const dropBubble = () => {
-      if (bubbleId) setMessages(prev => removeMessage(prev, bubbleId));
-    };
-    // The question belongs to this socket's conversation; Clear or Retry replaces it.
-    const startWs = wsRef.current;
-
-    setIsProcessingAudio(true);
-    recordingRef.current = null;
-    setIsRecording(false);
-    try {
-      let uri: string | null = null;
-      try {
-        await recording.stopAndUnloadAsync();
-        uri = recording.getURI();
-      } catch (error) {
-        if (__DEV__) console.warn('Failed to stop recording:', error);
-        deleteRecordingFile(recording); // C-65: no orphaned question in the cache
-      }
-      if (!uri) {
-        dropBubble();
-        Alert.alert('Recording Error', 'Failed to stop recording. Please try again.');
-        return;
-      }
-
-      if (bubbleId) setMessages(prev => setMessageContent(prev, bubbleId, PROCESSING_PLACEHOLDER));
-
-      // C-23: a failed or empty transcription sends nothing; never invent a question.
-      let transcript = '';
-      let failure: unknown = null;
-      try {
-        transcript = cleanTranscript(await api.transcribeForAssistant(uri));
-      } catch (e) {
-        failure = e;
-      } finally {
-        // C-65: the recorded question doesn't stay in the cache once it's been used.
-        FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
-      }
-      // The screen closed while transcribing: nothing to update, nothing to send.
-      if (!isMountedRef.current) return;
-      if (failure) {
-        dropBubble();
-        showApiError(failure, TRANSCRIBE_FAILED);
-        return;
-      }
-      if (!transcript) {
-        dropBubble();
-        toast(TRANSCRIBE_FAILED);
-        return;
-      }
-
-      const ws = wsRef.current;
-      if (!ws || ws !== startWs || !isSocketOpen(ws)) {
-        // The socket closed or was replaced while transcribing: keep the question so it
-        // can be sent (after Retry if needed), but never into a different conversation.
-        dropBubble();
-        setTextInput(transcript);
-        toast('Not sent', ws && ws !== startWs
-          ? 'The conversation was restarted. Send your question again.'
-          : 'Voice assistant disconnected. Tap Retry, then send your question.');
-        return;
-      }
-
-      if (bubbleId) setMessages(prev => setMessageContent(prev, bubbleId, transcript));
-      sendQuestion(ws, transcript);
-    } finally {
-      if (isMountedRef.current) setIsProcessingAudio(false);
-    }
+    session.release().catch(() => {});
   };
 
   // Returns false if the question couldn't be sent, so the text box keeps it.
@@ -695,7 +659,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   };
 
   const renderMessage = (message: Message) => {
-    const isRecordingMessage = message.content === RECORDING_PLACEHOLDER;
+    const isRecordingMessage = message.content === LISTENING_PLACEHOLDER;
     const isProcessingMessage = message.content === PROCESSING_PLACEHOLDER;
     const isSpeakingMessage = message.content === SPEAKING_PLACEHOLDER;
 
@@ -864,38 +828,31 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
           <TouchableOpacity
             style={[
               styles.recordButton,
-              isRecording && styles.recordButtonActive,
-              isProcessingAudio && styles.recordButtonProcessing,
-              (!isConnected || isProcessingAudio) && styles.recordButtonDisabled,
+              isListening && styles.recordButtonActive,
+              !isConnected && styles.recordButtonDisabled,
             ]}
             onPress={() => {
-              if (isRecording) {
-                stopRecording();
+              if (isListening) {
+                stopListening(true);
               } else {
-                startRecording();
+                startListening();
               }
             }}
-            disabled={!isConnected || isProcessingAudio}
+            disabled={!isConnected}
             accessibilityRole="button"
-            accessibilityLabel={
-              isProcessingAudio ? 'Processing question' : isRecording ? 'Stop recording question' : 'Start recording question'
-            }
-            accessibilityState={{ disabled: !isConnected || isProcessingAudio, busy: isProcessingAudio }}
+            accessibilityLabel={isListening ? 'Stop recording question' : 'Start recording question'}
+            accessibilityState={{ disabled: !isConnected }}
             activeOpacity={0.7}
           >
-            {isProcessingAudio ? (
-              <ActivityIndicator size="large" color={theme.colors.text.inverse} />
-            ) : (
-              <Ionicons
-                name={isRecording ? 'stop' : 'mic'}
-                size={32}
-                color={isRecording ? theme.colors.text.inverse : theme.colors.primary[600]}
-              />
-            )}
+            <Ionicons
+              name={isListening ? 'stop' : 'mic'}
+              size={32}
+              color={isListening ? theme.colors.text.inverse : theme.colors.primary[600]}
+            />
           </TouchableOpacity>
 
           <Text style={styles.recordButtonLabel}>
-            {isProcessingAudio ? 'Processing...' : isRecording ? 'Tap to stop' : 'Tap to record'}
+            {isListening ? 'Tap to stop' : 'Tap to record'}
           </Text>
         </View>
       </View>
@@ -1119,10 +1076,6 @@ const styles = StyleSheet.create({
   recordButtonActive: {
     backgroundColor: theme.colors.danger[500],
     borderColor: theme.colors.danger[600],
-  },
-  recordButtonProcessing: {
-    backgroundColor: theme.colors.warning[500],
-    borderColor: theme.colors.warning[600],
   },
   recordButtonDisabled: {
     borderColor: theme.colors.neutral[300],

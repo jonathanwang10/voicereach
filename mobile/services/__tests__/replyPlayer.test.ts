@@ -1,6 +1,4 @@
 // H2-5.5: assistant replies stream through one buffer queue per item.
-// audioProcessor still imports expo-av (configureAudioRecording) until Task 8 removes it
-jest.mock('expo-av', () => ({ Audio: {} }));
 const mockCtx: any = { currentTime: 0, sources: [] as any[] };
 jest.mock('react-native-audio-api', () => ({
   AudioContext: jest.fn().mockImplementation(() => {

@@ -67,7 +67,6 @@ def test_m4a_from_this_project_is_transcribed(svc):
 
 
 import openai
-from services.openai_service import QUESTION_LIMITS
 from tests.helpers import openai_bad_request
 
 URL = f"{PROJECT_URL}/storage/v1/object/audio/a.m4a"
@@ -90,12 +89,6 @@ def test_other_bad_requests_propagate(svc):
     with pytest.raises(openai.BadRequestError):
         _transcribe(svc, URL)
 
-async def test_short_question_message_never_says_5_seconds(tmp_path):
-    path = tmp_path / "q.m4a"; path.write_bytes(fixture_audio("audio_2s.m4a"))
-    s = OpenAIService(); s._whisper = AsyncMock(side_effect=openai_bad_request("audio_too_short"))
-    with pytest.raises(ValueError) as exc:
-        await s.transcribe_audio_file(str(path), limits=QUESTION_LIMITS)
-    assert str(exc.value) == "Question must be at least 1 second long" and "5 seconds" not in str(exc.value)
 
 
 from pathlib import Path

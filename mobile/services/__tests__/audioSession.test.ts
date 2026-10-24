@@ -123,8 +123,7 @@ it('onChange returns an unsubscribe', async () => {
   expect(listener).toHaveBeenCalledTimes(1);
 });
 
-// enabled in Task 8 once expo-av's callers are gone
-it.skip('no other file changes the audio session', () => {
+it('no other file changes the audio session', () => {
   const root = path.resolve(__dirname, '../..');
   const skip = new Set(['node_modules', 'ios', 'android', '__tests__', 'test', '.expo']);
   const offenders: string[] = [];
