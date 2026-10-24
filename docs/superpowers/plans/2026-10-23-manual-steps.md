@@ -44,6 +44,8 @@ Each file is idempotent.
 | `REALTIME_MAX_SESSIONS_TOTAL` | 20 (per process) | backend | 1 |
 | `DUPLICATE_MODEL` | `gpt-4o-mini` | backend | 3 |
 | `ENABLE_API_DOCS` | unset (off; `1` serves `/docs`, `/redoc`, `/openapi.json`) | backend | 1 |
+| `RECORDING_WORKER_CONCURRENCY` | 2 (how many recording jobs run at once in the one process) | backend (Railway) | 7 |
+| `RECORDING_WORKER_ENABLED` | 1 (set to 0 only to pause processing) | backend (Railway) | 7 |
 
 ## Device checks
 

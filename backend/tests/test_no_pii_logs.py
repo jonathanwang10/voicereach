@@ -225,6 +225,32 @@ def test_semantic_search_logs_no_query_or_names(capture, capsys):
     _assert_clean(capture, capsys)
 
 
+# --- recordings worker (H2-7.3) ----------------------------------------------------
+
+@pytest.mark.parametrize("extraction_fails", [False, True])
+def test_recording_worker_logs_no_transcript_or_fields(capture, capsys, extraction_fails):
+    from services.recording_worker import process_job
+    from tests.helpers import FakeSupabase
+    job = {"id": str(uuid4()), "storage_path": "c.m4a", "transcription": None, "attempts": 1,
+           "status": "transcribing", "location": PERSON["last_location"]}
+    sb = FakeSupabase()
+    sb.on("recordings", "update", data=lambda c: [{**job, **c.payload}])
+    sb.on("categories", "select", data=[
+        {"name": "name", "type": "text", "is_required": True, "options": None}])
+    sb.storage.files[("recordings", "c.m4a")] = b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 64
+    openai = MagicMock(transcribe_audio_file=AsyncMock(return_value=f"Met {SENTINEL_NAME} at {SENTINEL_LAT}"))
+    if extraction_fails:
+        openai.categorize_transcription = AsyncMock(side_effect=RuntimeError(f"bad output for {SENTINEL_NAME}"))
+    else:
+        openai.categorize_transcription = AsyncMock(return_value={"name": SENTINEL_NAME})
+    dup = MagicMock()
+    dup.return_value.find_duplicates = AsyncMock(return_value=[PERSON])
+    with patch("services.recording_pipeline.DuplicateDetectionService", dup):
+        asyncio.run(process_job(job, sb, openai))
+    assert sb.payloads("recordings", "update")[-1]["status"] == ("queued" if extraction_fails else "ready")
+    _assert_clean(capture, capsys)
+
+
 # --- auth ---------------------------------------------------------------------------
 
 @pytest.mark.real_auth

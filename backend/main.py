@@ -4,6 +4,7 @@ Main FastAPI application for SF Homeless Outreach Voice Transcription App
 import os
 import json
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import httpx
 import websockets
@@ -17,6 +18,7 @@ from api.device import clean_device_id
 from services.rate_limit import (acquire_session, check_keyed_limit, limit_from_env, limit_key,
                                 release_session)
 from services.assistant_tools import TOOL_DEFINITIONS, ToolCallRouter
+from services.recording_worker import start_workers, stop_workers, worker_enabled
 from services.realtime_guard import error_event, sanitize_client_event
 
 # Load environment variables
@@ -74,7 +76,19 @@ def api_docs_urls(value: str | None) -> dict[str, str | None]:
     return {"docs_url": None, "redoc_url": None, "openapi_url": None}
 
 
-app = FastAPI(title="SF Homeless Outreach API", version="0.1.0", **api_docs_urls(os.getenv("ENABLE_API_DOCS")))
+@asynccontextmanager
+async def lifespan(app):
+    # One process, two loops (H2-7.3): Postgres is the queue; no Redis or Celery.
+    handle = start_workers() if worker_enabled() else None
+    try:
+        yield
+    finally:
+        if handle:
+            await stop_workers(*handle)
+
+
+app = FastAPI(title="SF Homeless Outreach API", version="0.1.0", lifespan=lifespan,
+              **api_docs_urls(os.getenv("ENABLE_API_DOCS")))
 
 
 def cors_allow_origins(value: str | None) -> list[str]:

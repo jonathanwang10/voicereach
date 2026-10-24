@@ -569,7 +569,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 `worker_loop`: until `stop` is set, `did = await run_once()`. On an exception (a database outage at claim), log its type and treat it as idle. When idle, `await sleep(poll_seconds)`. After a job, claim the next one straight away.
 
-- [ ] **Step 1: Write the failing worker tests** (`test_recording_worker.py`)
+- [x] **Step 1: Write the failing worker tests** (`test_recording_worker.py`)
 
 Fixtures: `JOB = {"id": RID, "storage_path": f"{CRID}.m4a", "transcription": None, "attempts": 1, "status": "transcribing"}`. `sb` is a `FakeSupabase` with `on("recordings", "update", data=lambda c: [{**JOB, **c.payload}])`, `on("categories", "select", data=CATEGORIES)` and `sb.storage.files[("recordings", JOB["storage_path"])] = M4A`. `openai` is a `MagicMock` with `transcribe_audio_file=AsyncMock(return_value="Met Ann")` and `categorize_transcription=AsyncMock(return_value={"name": "Ann"})`. `services.recording_pipeline.DuplicateDetectionService` is patched to return `[MATCH]`. No test sleeps: every loop test injects `sleep`.
 
@@ -662,12 +662,12 @@ def test_lifespan_leaves_the_worker_off_when_disabled(monkeypatch): ...  # RECOR
 
 In `test_no_pii_logs.py`, add `test_recording_worker_logs_no_transcript_or_fields(capture, capsys)`. It runs `process_job` with the sentinel person as the transcript and fields, once on the success path and once with `categorize_transcription` raising an exception whose message contains the sentinel. It asserts the sentinel is nowhere in the captured logs or in stdout/stderr.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `python -m pytest backend/tests/test_recording_worker.py -q`
 Expected: FAIL with `ModuleNotFoundError: services.recording_worker`.
 
-- [ ] **Step 3: Implement `recording_worker.py` and `lifespan`**
+- [x] **Step 3: Implement `recording_worker.py` and `lifespan`**
 
 ```python
 @asynccontextmanager
@@ -683,16 +683,16 @@ async def lifespan(app):
 
 `main.py` imports `start_workers`, `stop_workers` and `worker_enabled` by name, so tests can monkeypatch `main.start_workers`. A job that is cancelled at shutdown stays in progress, and the 5-minute stale rule reclaims it.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `python -m pytest backend/tests/test_recording_worker.py backend/tests/test_no_pii_logs.py backend/tests/test_auth.py -q`
 Expected: PASS. `test_auth`'s WebSocket tests don't start the worker.
 
-- [ ] **Step 5: Config docs**
+- [x] **Step 5: Config docs**
 
 In `backend/.env.example`, add `RECORDING_WORKER_CONCURRENCY=2` and `RECORDING_WORKER_ENABLED=1`, each with a one-line comment. Add both to the README `backend/.env` table. In the manual steps, under **Environment variables**: `RECORDING_WORKER_CONCURRENCY` (default 2, backend/Railway: how many jobs run at once in the one process) and `RECORDING_WORKER_ENABLED` (default 1, backend: set to 0 only to pause processing).
 
-- [ ] **Step 6: Run the full checks and commit**
+- [x] **Step 6: Run the full checks and commit**
 
 ```bash
 git add backend/ README.md docs/superpowers/plans/2026-10-23-manual-steps.md

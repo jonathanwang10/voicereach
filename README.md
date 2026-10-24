@@ -276,6 +276,8 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `CORS_ALLOW_ORIGINS` | Optional. Comma-separated browser origins allowed to call the API (for example a web dashboard). Unset means none. The mobile app is not a browser and does not need it. Credentials (cookies) are never allowed; auth is a bearer header. |
 | `RATE_LIMIT_*_PER_MIN` | Optional. Per-account limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional. How long one voice-assistant connection may stay open (default 600). |
+| `RECORDING_WORKER_CONCURRENCY` | Optional. How many uploaded recordings the in-process worker runs at once (default 2). |
+| `RECORDING_WORKER_ENABLED` | Optional. `0` pauses processing uploaded recordings (they stay queued); default on. |
 | `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
 
 Sanity check: `curl localhost:8001/health` should return `{"status":"ok"}`.

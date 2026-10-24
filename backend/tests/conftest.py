@@ -19,6 +19,8 @@ os.environ.setdefault("SUPABASE_URL", "http://127.0.0.1:9")
 os.environ.setdefault("SUPABASE_ANON_KEY", _DUMMY_JWT)
 os.environ.setdefault("SUPABASE_SERVICE_KEY", _DUMMY_JWT)
 os.environ.setdefault("OPENAI_API_KEY", "sk-test-dummy")
+# The recordings worker (H2-7.3) never starts under test unless a test turns it on
+os.environ.setdefault("RECORDING_WORKER_ENABLED", "0")
 # Forced, not setdefault: load_dotenv() never overrides a set variable, so a developer's
 # backend/.env can't turn the API docs on under test (H2-1.6).
 os.environ["ENABLE_API_DOCS"] = "0"
