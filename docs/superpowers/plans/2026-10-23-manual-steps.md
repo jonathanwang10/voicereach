@@ -48,6 +48,7 @@ Each file is idempotent.
 | `RECORDING_WORKER_ENABLED` | 1 (set to 0 only to pause processing) | backend (Railway) | 7 |
 | `SENTRY_DSN` | unset (optional: the Sentry project's DSN turns error reports on) | backend (Railway) | 8 |
 | `ENVIRONMENT` | `development` (set `production` on Railway) | backend (Railway) | 8 |
+| `EXPO_PUBLIC_SENTRY_DSN` | unset (optional: the Sentry React Native project's DSN) | app (local `mobile/.env` and the EAS environment) | 8 |
 
 ## Device checks
 
@@ -84,6 +85,7 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 26. P7-5 (Phase 7) Entitlement shipped. `codesign -d --entitlements - <path to the built .app>` lists `com.apple.developer.default-data-protection` = `NSFileProtectionComplete`.
 27. P7-6 (Phase 7) No audio left behind. After P7-1, Xcode → Devices → the app → Download Container. Expected: `Documents/recordings/` and `Library/Caches/uploads/` are empty. In Supabase Storage, the `recordings` bucket has no object for a transcribed recording.
 28. P7-7 (Phase 7) Save and discard clean up. Save one draft and discard another. Expected: both rows are gone from `recordings` and the badge drops to 0.
+29. D8.1 (Phase 8, Task 3) App Sentry. Release build with `EXPO_PUBLIC_SENTRY_DSN` set: trigger a JS error (temporarily throw in a dev-only button, or use `Sentry.captureException` from the debugger). Expected: the event appears in Sentry with type and stack, an empty message, no breadcrumbs except navigation. Without the DSN, nothing is sent. (`ios/Podfile.lock` already has RNSentry: `pod install` ran on the branch.)
 21. D6.0 (H2-6) (Phase 6, Task 15) Rebuild first. Rebuild the iOS dev client (`cd mobile && npx expo run:ios --device`) before running the Phase 5 and Phase 6 device checks. The branch already carries the regenerated `ios/` (`npx expo prebuild --platform ios --no-install` and `pod install` ran; `Podfile.lock` gains ExpoAudio, RNAudioAPI, ExpoSecureStore, react-native-netinfo, RNFlashList and react-native-get-random-values and loses EXAV). Only the Xcode build and the run on a phone are left, which D5.1 also covers.
 
 ## Owner actions outside code
@@ -106,3 +108,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 13. (Phase 7, Task 6) After pulling Phase 7: `cd mobile && npx expo prebuild --platform ios` (adds the ExpoSQLite pod; Task 9 adds the Data Protection entitlement to the same prebuild), review the `ios/` diff, commit it, and rebuild the dev build (`npx expo run:ios`). An older build crashes on the Record tab without it.
 14. (Phase 7, Task 9) Enable the Data Protection capability for the App ID (Apple Developer → Identifiers; needs the paid account), then `cd mobile && npx expo prebuild --platform ios` and check that `ios/SFHomelessOutreach/SFHomelessOutreach.entitlements` has `com.apple.developer.default-data-protection = NSFileProtectionComplete` and that `CODE_SIGN_ENTITLEMENTS` points at it; commit the `ios/` diff (it also adds the ExpoSQLite pod from item 13).
 15. (Phase 8, Task 2) Optional: create a Sentry project (platform FastAPI), copy its DSN into Railway's `SENTRY_DSN`, then hit a route that 500s on staging and confirm in Sentry that the event has no message text, body or query string.
+16. (Phase 8, Task 3) Optional: create a Sentry React Native project and copy its DSN into `EXPO_PUBLIC_SENTRY_DSN` (local `mobile/.env` and the EAS environment).

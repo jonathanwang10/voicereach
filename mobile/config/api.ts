@@ -11,6 +11,8 @@ if (!__DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL) {
 export const API_CONFIG = {
   // On a physical device, set EXPO_PUBLIC_API_BASE_URL to your machine's LAN IP.
   BASE_URL: process.env.EXPO_PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL,
+  // Optional error reports (H2-8.2); empty means off
+  SENTRY_DSN: process.env.EXPO_PUBLIC_SENTRY_DSN || '',
   SUPABASE: {
     URL: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
     ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',

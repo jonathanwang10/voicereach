@@ -15,6 +15,10 @@ import { startRecordingQueue, subscribe } from './services/recordingQueue';
 import { recordingKeys, useReadyDraftCount } from './services/recordingQueries';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PrivacyOverlay } from './components/PrivacyOverlay';
+import { initSentry, wrapRoot } from './services/sentry';
+
+// Error reports, only when EXPO_PUBLIC_SENTRY_DSN is set (H2-8.2)
+initSentry();
 
 // Import screens
 import { ModernRecordScreen } from './screens/ModernRecordScreen';
@@ -182,7 +186,7 @@ function MainTabs() {
   );
 }
 
-export default function App() {
+function App() {
   return (
     <ErrorBoundary onReset={() => queryClient.clear()}>
       <QueryClientProvider client={queryClient}>
@@ -228,3 +232,5 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
+
+export default wrapRoot(App);

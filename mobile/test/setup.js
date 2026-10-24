@@ -28,6 +28,9 @@ if (!globalThis.crypto?.getRandomValues) {
 // for; a microtask lands inside act(async () => ...)
 require('@tanstack/react-query').notifyManager.setScheduler(fn => Promise.resolve().then(fn));
 
+// H2-8.2: Sentry is optional and native; tests see only these three calls
+jest.mock('@sentry/react-native', () => ({ init: jest.fn(), wrap: jest.fn(c => c), captureException: jest.fn() }));
+
 // H2-7.6: the recording queue's database (a scripted fake, test/mocks/expoSqlite.js)
 jest.mock('expo-sqlite', () => require('./mocks/expoSqlite'));
 

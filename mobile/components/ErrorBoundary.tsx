@@ -3,6 +3,7 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { theme } from '../theme';
+import { reportError } from '../services/sentry';
 
 interface Props {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ export class ErrorBoundary extends React.Component<Props, { hasError: boolean }>
 
   componentDidCatch(error: unknown) {
     if (__DEV__) console.error('ErrorBoundary caught', error);
+    reportError(error);   // a no-op unless Sentry is on (H2-8.2)
   }
 
   restart = () => {
