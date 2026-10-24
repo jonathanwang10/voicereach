@@ -242,25 +242,29 @@ is cleared.
    `mobile/utils/assistantMessages.ts`):
    - Transcript text and audio are kept per Realtime `item_id`, so each answer's
      text lands in its own bubble even if the worker asks again mid-answer. The
-     text is shown when that answer's audio finishes (straight away while muted).
-   - Each base64 audio delta is decoded on its own and the bytes are joined
-     (`AudioProcessor.concatChunks`); padded chunks can't be joined as text.
-   - Before playback the app calls `configureAudioPlayback()`
-     (`allowsRecordingIOS: false`), so iOS plays the reply through the speaker,
-     not the earpiece; `configureAudioRecording()` turns recording back on when
-     the next question is recorded.
-   - One reply plays at a time. Mute, a new reply, starting a recording, Clear and
-     leaving the screen stop and unload it and delete its WAV file. A reply that
-     finishes while a recording is starting isn't played (its text still shows),
-     so it can't switch the audio mode back to playback mid-start.
+     text streams into the bubble as it arrives.
+   - Audio streams per item (`mobile/services/replyPlayer.ts`): each base64 delta
+     is decoded on its own (C-26), turned into float samples and put on one
+     buffer queue per item (`react-native-audio-api`, 24 kHz), so playback starts
+     with the first chunk. No file is written. One reply plays at a time: a new
+     reply stops the one still playing.
+   - The playback session comes from `mobile/services/audioSession.ts`
+     (`acquirePlayback`); the reply starts playing once it is granted and hands
+     it back when its last buffer has played. While the Record tab is recording
+     the request returns null and the reply is text only. A session that arrives
+     after the reply was stopped is handed straight back.
+   - Mute, a new reply, starting a voice question, Clear, leaving the tab and
+     unmount stop the reply (its text stays) and release the session; later
+     audio for a stopped reply is skipped.
    - The tab stays mounted, socket open, when the worker switches tabs. While it
-     isn't focused, a reply is shown as text only: no audio mode change and no
-     playback, so it can't pause a recording on the Record tab. Leaving the tab
-     stops the reply that is playing.
-   - On `response.done`, audio still buffered for the response's items is
-     dropped: an interrupted item never gets `output_audio.done`.
-   - The `ctx_` reference-data item is never shown. Server `error` events (such
-     as `event_not_allowed`) show as a short toast.
+     isn't focused, a reply is shown as text only: it doesn't ask for playback,
+     so it can't pause a recording on the Record tab.
+   - On `response.done`, any of its items still playing get no more audio, and
+     a bubble that got no text says "[Speech response delivered]" (or
+     "[Response interrupted]" when the response didn't complete).
+   - Only the assistant's `message` items get a bubble: tool calls and their
+     outputs never show. Server `error` events (such as `event_not_allowed`)
+     show as a short toast.
    - Close codes get a short message (403 handshake: not signed in or not
      allowed; 1008: the server's reason, e.g. the session time limit; 1011:
      unavailable). There is no auto-reconnect: the worker taps Retry.

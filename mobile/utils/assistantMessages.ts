@@ -36,7 +36,7 @@ export function removeMessage(messages: Message[], id: string): Message[] {
   return messages.filter(m => m.id !== id);
 }
 
-// Stream text straight into a bubble (used while muted). Creates the bubble if it isn't there yet.
+// Stream text straight into a bubble. Creates the bubble if it isn't there yet.
 export function appendAssistantText(messages: Message[], id: string, delta: string): Message[] {
   const withBubble = addAssistantMessage(messages, id);
   return withBubble.map(m =>
@@ -44,8 +44,8 @@ export function appendAssistantText(messages: Message[], id: string, delta: stri
   );
 }
 
-// Add an item's buffered (not yet shown) text to its own bubble, after any text already shown
-// (e.g. streamed while muted). With no text, a placeholder becomes `fallback`.
+// Add text to an item's own bubble, after any text already shown. With no text, a
+// placeholder becomes `fallback`.
 export function finalizeAssistantText(
   messages: Message[],
   id: string,
@@ -60,28 +60,9 @@ export function finalizeAssistantText(
   });
 }
 
-// Per-item text buffers: text is held until that item's audio finishes playing.
-export type TextBuffers = Record<string, string>;
-
-export function bufferText(buffers: TextBuffers, id: string, delta: string): TextBuffers {
-  return { ...buffers, [id]: (buffers[id] ?? '') + delta };
-}
-
-export function takeText(buffers: TextBuffers, id: string): { text: string; rest: TextBuffers } {
-  if (!(id in buffers)) return { text: '', rest: buffers };
-  const { [id]: text, ...rest } = buffers;
-  return { text, rest };
-}
-
 // The transcript to send, or '' when there is nothing to send (C-23).
 export function cleanTranscript(raw: unknown): string {
   return typeof raw === 'string' ? raw.trim() : '';
-}
-
-// The backend injects case-database reference data as a user item whose id starts with ctx_.
-// It is context for the model, not something the worker said, so it is never rendered.
-export function isContextItem(item: any): boolean {
-  return typeof item?.id === 'string' && item.id.startsWith('ctx_');
 }
 
 const WS_OPEN = 1; // WebSocket.OPEN

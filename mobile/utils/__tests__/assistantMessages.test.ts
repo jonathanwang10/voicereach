@@ -2,7 +2,7 @@
 // C-25: answer text is keyed by item id, so follow-ups can't steal or lose it.
 // C-23: an empty transcript is "nothing to send".
 // C-59: updates are immutable; sends need an OPEN socket.
-// T10 contract: ignore ctx_ items, only allowlisted client events, close-code messages.
+// T10 contract: only allowlisted client events, close-code messages.
 import {
   Message,
   SPEAKING_PLACEHOLDER,
@@ -12,10 +12,7 @@ import {
   finalizeAssistantText,
   setMessageContent,
   removeMessage,
-  bufferText,
-  takeText,
   cleanTranscript,
-  isContextItem,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -33,23 +30,6 @@ describe('C-25 keyed assistant text', () => {
     msgs = finalizeAssistantText(msgs, 'a1', 'Answer one');
     expect(msgs.find(m => m.id === 'a1')!.content).toBe('Answer one');
     expect(msgs.find(m => m.id === 'u2')!.content).toBe('Q2');
-  });
-
-  it("a second item's fallback never lands in the first item's bubble", () => {
-    let msgs: Message[] = [];
-    msgs = addAssistantMessage(msgs, 'a1', T);
-    msgs = addAssistantMessage(msgs, 'a2', T);
-    let buffers = bufferText({}, 'a1', 'Answer ');
-    buffers = bufferText(buffers, 'a1', 'one');
-    buffers = bufferText(buffers, 'a2', 'Answer two');
-
-    const one = takeText(buffers, 'a1');
-    msgs = finalizeAssistantText(msgs, 'a1', one.text);
-    const two = takeText(one.rest, 'a2');
-    msgs = finalizeAssistantText(msgs, 'a2', two.text);
-
-    expect(msgs.map(m => m.content)).toEqual(['Answer one', 'Answer two']);
-    expect(two.rest).toEqual({});
   });
 
   it('uses the fallback only for a placeholder with no text', () => {
@@ -98,11 +78,6 @@ describe('C-25 keyed assistant text', () => {
     const msgs = [user('u1', 'a'), user('u2', 'b')];
     expect(removeMessage(msgs, 'u1').map(m => m.id)).toEqual(['u2']);
   });
-
-  it('takeText of an unknown id is empty and leaves the buffers alone', () => {
-    const buffers = { a1: 'x' };
-    expect(takeText(buffers, 'zz')).toEqual({ text: '', rest: { a1: 'x' } });
-  });
 });
 
 describe('C-23 transcripts', () => {
@@ -119,12 +94,6 @@ describe('C-23 transcripts', () => {
 });
 
 describe('T10 contract and C-59 socket guard', () => {
-  it('ctx_ items are the server-injected reference data', () => {
-    expect(isContextItem({ id: 'ctx_0123456789abcdef01234567', role: 'user' })).toBe(true);
-    expect(isContextItem({ id: 'item_abc', role: 'user' })).toBe(false);
-    expect(isContextItem(undefined)).toBe(false);
-  });
-
   it('only an OPEN socket can be sent to', () => {
     expect(isSocketOpen({ readyState: 1 } as any)).toBe(true);
     expect(isSocketOpen({ readyState: 0 } as any)).toBe(false); // CONNECTING

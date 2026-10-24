@@ -1,16 +1,9 @@
-// C-24: playback switches the iOS audio session out of record mode (speaker, not earpiece).
-// C-26: assistant audio deltas are decoded one by one and joined as bytes.
-jest.mock('expo-av', () => ({
-  Audio: {
-    setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
-    requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
-  },
-}));
+// C-26: assistant audio deltas are decoded one by one, never joined as base64 text.
+// H2-5.5: replies are PCM16 at 24 kHz, turned into float samples for the buffer queue.
+// configureAudioRecording still imports expo-av until Task 8 removes it
+jest.mock('expo-av', () => ({ Audio: {} }));
 
-import { Audio } from 'expo-av';
-import { AudioProcessor, configureAudioPlayback, configureAudioRecording } from '../audioProcessor';
-
-beforeEach(() => jest.clearAllMocks());
+import { AudioProcessor, floatTo16BitPCM, pcm16ToFloat32 } from '../audioProcessor';
 
 describe('C-26 audio chunks', () => {
   // Two deltas whose byte lengths aren't multiples of 3, so each ends in '=' padding.
@@ -20,13 +13,8 @@ describe('C-26 audio chunks', () => {
     expect(() => AudioProcessor.base64ToArrayBuffer(chunks.join(''))).toThrow();
   });
 
-  it('decodes each chunk and concatenates the bytes', () => {
-    const bytes = AudioProcessor.concatChunks(chunks.map(c => AudioProcessor.base64ToArrayBuffer(c)));
-    expect(Array.from(bytes)).toEqual([1, 2, 3]);
-  });
-
-  it('concatChunks of nothing is empty', () => {
-    expect(AudioProcessor.concatChunks([]).length).toBe(0);
+  it('decodes each padded chunk on its own', () => {
+    expect(chunks.map(c => Array.from(AudioProcessor.base64ToArrayBuffer(c)))).toEqual([[1], [2, 3]]);
   });
 
   it('bytesToBase64 round-trips through base64ToArrayBuffer, including large buffers', () => {
@@ -38,18 +26,18 @@ describe('C-26 audio chunks', () => {
   });
 });
 
-describe('C-24 audio session mode', () => {
-  it('playback mode turns iOS recording off and plays in silent mode', async () => {
-    await configureAudioPlayback();
-    expect(Audio.setAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecordingIOS: false, playsInSilentModeIOS: true })
-    );
+describe('H2-5.5 PCM16 helpers', () => {
+  it('pcm16ToFloat32 decodes little-endian samples', () => {
+    expect(Array.from(pcm16ToFloat32(new Uint8Array([0x00, 0x80, 0xff, 0x7f, 0, 0, 9]))))
+      .toEqual([-1, 32767 / 32768, 0]);
   });
 
-  it('recording mode turns iOS recording back on', async () => {
-    await configureAudioRecording();
-    expect(Audio.setAudioModeAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ allowsRecordingIOS: true, playsInSilentModeIOS: true })
-    );
+  it('floatTo16BitPCM clamps and encodes little-endian', () => {
+    expect(Array.from(floatTo16BitPCM(new Float32Array([-1.5, 1.5, 0])))).toEqual([0x00, 0x80, 0xff, 0x7f, 0, 0]);
+  });
+
+  it('a PCM16 round trip is lossless for in-range samples', () => {
+    const bytes = floatTo16BitPCM(new Float32Array([-1, -0.5, -0.25, 0, 0.25, 0.5]));
+    expect(Array.from(floatTo16BitPCM(pcm16ToFloat32(bytes)))).toEqual(Array.from(bytes));
   });
 });

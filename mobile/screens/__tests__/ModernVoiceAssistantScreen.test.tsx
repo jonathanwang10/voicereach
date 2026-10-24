@@ -1,11 +1,11 @@
 // T11: voice assistant client.
 // C-23: a failed or empty transcription sends nothing and says so.
-// C-24: replies play with iOS recording mode off (speaker, not earpiece).
 // C-25: answer text lands in its own bubble, even after a follow-up question.
-// C-26: audio deltas are decoded one by one and joined as bytes.
-// C-59: playback is unloaded on mute/unmount/error, no GPS, sends need an OPEN socket.
+// C-26: audio deltas are decoded one by one and pushed as they arrive.
+// C-59: playback stops on mute/unmount, no GPS, sends need an OPEN socket.
 // C-63: icon-only controls carry accessibility labels.
-// T10 contract: only allowlisted events, ctx_ items hidden, error events toasted, close codes explained.
+// H2-5.5: replies stream through the reply player once audioSession grants playback.
+// T10 contract: only allowlisted events, tool items hidden, error events toasted, close codes explained.
 import React from 'react';
 import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 
@@ -43,6 +43,47 @@ jest.mock('expo-file-system', () => ({
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   EncodingType: { Base64: 'base64' },
 }));
+// The reply player: a fake that tracks the current item and its onDone like the real one.
+const mockPlayer: any = {
+  currentItem: null as string | null,
+  onDone: null as null | (() => void),
+  begin: jest.fn((id: string) => {
+    if (mockPlayer.currentItem && mockPlayer.currentItem !== id) mockPlayer.stop();
+    mockPlayer.currentItem = id;
+  }),
+  push: jest.fn(),
+  play: jest.fn(),
+  end: jest.fn((id: string, onDone: () => void) => {
+    if (mockPlayer.currentItem !== id) onDone();
+    else mockPlayer.onDone = onDone;
+  }),
+  stop: jest.fn(() => {
+    const itemId = mockPlayer.currentItem;
+    const done = mockPlayer.onDone;
+    mockPlayer.currentItem = null;
+    mockPlayer.onDone = null;
+    done?.();
+    return { itemId, playedMs: 0 };
+  }),
+  current: jest.fn(() => mockPlayer.currentItem),
+  close: jest.fn(async () => {}),
+  // test hook: the last buffer of the current item has played
+  finish: () => {
+    const done = mockPlayer.onDone;
+    mockPlayer.currentItem = null;
+    mockPlayer.onDone = null;
+    done?.();
+  },
+};
+jest.mock('../../services/replyPlayer', () => ({ createReplyPlayer: () => mockPlayer }));
+const mockRelease = jest.fn(async () => {});
+jest.mock('../../services/audioSession', () => ({
+  acquirePlayback: jest.fn(async () => mockRelease),
+  acquireConversation: jest.fn(async () => mockRelease),
+  acquireRecording: jest.fn(),
+  isRecordingActive: jest.fn(() => false),
+  onChange: jest.fn(() => () => {}),
+}));
 // Test hooks for the recorder: hold prepareToRecordAsync, or make stopAndUnloadAsync fail.
 let mockPrepare: () => Promise<void> = () => Promise.resolve();
 let mockStop: () => Promise<void> = () => Promise.resolve();
@@ -62,7 +103,6 @@ jest.mock('expo-av', () => {
       Recording,
       setAudioModeAsync: jest.fn().mockResolvedValue(undefined),
       requestPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
-      Sound: { createAsync: jest.fn() },
       AndroidOutputFormat: { MPEG_4: 2 },
       AndroidAudioEncoder: { AAC: 3 },
       IOSOutputFormat: { MPEG4AAC: 'aac' },
@@ -76,6 +116,7 @@ import Toast from 'react-native-toast-message';
 import { Audio } from 'expo-av';
 import * as Location from 'expo-location';
 import { api } from '../../services/api';
+import { acquirePlayback } from '../../services/audioSession';
 import { ModernVoiceAssistantScreen } from '../ModernVoiceAssistantScreen';
 
 class MockWebSocket {
@@ -122,6 +163,8 @@ beforeEach(() => {
   mockRecordings.length = 0;
   mockPrepare = () => Promise.resolve();
   mockStop = () => Promise.resolve();
+  mockPlayer.currentItem = null;
+  mockPlayer.onDone = null;
 });
 
 const ALLOWED = new Set([
@@ -156,22 +199,12 @@ describe('C-63 accessibility labels', () => {
 
 // --- helpers ---------------------------------------------------------------
 
-const sound = () => {
-  let onStatus: any = null;
-  const s: any = {
-    setOnPlaybackStatusUpdate: jest.fn((cb: any) => { onStatus = cb; }),
-    playAsync: jest.fn().mockResolvedValue(undefined),
-    unloadAsync: jest.fn().mockResolvedValue(undefined),
-    finish: () => onStatus?.({ isLoaded: true, didJustFinish: true }),
-  };
-  return s;
-};
-
 // base64 of `n` bytes of value `v` (n not a multiple of 3 gives '=' padding).
 const b64 = (n: number, v = 7) => Buffer.from(new Uint8Array(n).fill(v)).toString('base64');
-// Chunks whose sizes are multiples of 3 have no '=' padding, so tests using them don't
-// depend on the C-26 per-chunk decoding (they would pass with text joining too).
-const UNPADDED = [b64(4800), b64(99)];
+// Let the playback session request resolve
+const settle = () => act(async () => { await new Promise(r => setTimeout(r, 0)); });
+const pushedBytes = (id: string) =>
+  (mockPlayer.push as jest.Mock).mock.calls.filter(c => c[0] === id).map(c => Array.from(c[1] as Uint8Array));
 
 async function askByVoice(screen: any) {
   await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
@@ -188,13 +221,13 @@ const focusScreen = () => act(() => { mockFocus.callbacks.forEach(cb => mockFocu
 const sentTypes = (ws: MockWebSocket) => ws.sent.map(e => e.type);
 const toastTexts = () => (Toast.show as jest.Mock).mock.calls.map(c => `${c[0].text1} ${c[0].text2 ?? ''}`);
 
-// Stream one spoken answer for item `id`: placeholder, transcript, audio.
-function streamAnswer(ws: MockWebSocket, id: string, text: string, chunks = [b64(4801), b64(100)]) {
+// Stream one spoken answer for item `id`: placeholder, transcript, audio (and its end, unless done=false).
+function streamAnswer(ws: MockWebSocket, id: string, text: string, chunks = [b64(4801), b64(100)], done = true) {
   act(() => {
     ws.receive({ type: 'conversation.item.created', item: { id, type: 'message', role: 'assistant' } });
     ws.receive({ type: 'response.output_audio_transcript.delta', item_id: id, delta: text });
     for (const delta of chunks) ws.receive({ type: 'response.output_audio.delta', item_id: id, delta });
-    ws.receive({ type: 'response.output_audio.done', item_id: id });
+    if (done) ws.receive({ type: 'response.output_audio.done', item_id: id });
   });
 }
 
@@ -260,19 +293,15 @@ describe('T10 WebSocket contract', () => {
     expect(ws.sent[1]).toEqual({ type: 'response.create' });
   });
 
-  it('does not render the injected ctx_ reference-data item', async () => {
+  it('does not render function_call or function_call_output items', async () => {
     const { screen, ws } = await renderConnected();
     act(() => {
       for (const type of ['conversation.item.created', 'conversation.item.added']) {
-        ws.receive({
-          type,
-          item: {
-            id: 'ctx_0123456789abcdef01234567', type: 'message', role: 'user',
-            content: [{ type: 'input_text', text: 'REFERENCE DATA (from the case database) <<<{}>>>' }],
-          },
-        });
+        ws.receive({ type, item: { id: 'fc1', type: 'function_call', name: 'search_people', arguments: '{"query":"Ann"}' } });
+        ws.receive({ type, item: { id: 'fo1', type: 'function_call_output', call_id: 'c1', output: 'REFERENCE DATA <<<[]>>>' } });
       }
     });
+    expect(screen.queryByText(/search_people/)).toBeNull();
     expect(screen.queryByText(/REFERENCE DATA/)).toBeNull();
     expect(screen.queryByText('[Speaking...]')).toBeNull();
   });
@@ -311,57 +340,150 @@ describe('T10 WebSocket contract', () => {
   });
 });
 
-// --- C-24, C-25, C-26 ----------------------------------------------------------
+// --- H2-5.5, C-25, C-26: streamed replies -------------------------------------------
 
-describe('spoken answers', () => {
-  it('C-26: padded audio deltas still play, as one WAV of the joined bytes', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
+describe('streamed replies', () => {
+  it('shows the transcript as it streams, before the audio is done', async () => {
+    const { screen, ws } = await renderConnected();
+    act(() => {
+      ws.receive({ type: 'conversation.item.created', item: { id: 'a1', type: 'message', role: 'assistant' } });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a1', delta: 'Stay ' });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a1', delta: 'back.' });
+    });
+    expect(screen.getByText('Stay back.')).toBeTruthy();
+    expect(mockPlayer.end).not.toHaveBeenCalled();
+  });
+
+  it('C-26: each audio delta, padded or not, is decoded on its own and pushed as it arrives', async () => {
+    const { ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Stay back.', [b64(4801), b64(100)]);
+    expect(pushedBytes('a1').map(b => b.length)).toEqual([4801, 100]);
+    const pushOrder = (mockPlayer.push as jest.Mock).mock.invocationCallOrder;
+    expect(Math.max(...pushOrder)).toBeLessThan((mockPlayer.end as jest.Mock).mock.invocationCallOrder[0]);
+  });
+
+  it('plays only after the playback session is acquired', async () => {
+    let grant: (r: any) => void = () => {};
+    (acquirePlayback as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
+    const { ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Stay back.', [b64(4800)], false);
+    expect(mockPlayer.begin).toHaveBeenCalledWith('a1');
+    expect(acquirePlayback).toHaveBeenCalledWith('assistant');
+    expect(mockPlayer.play).not.toHaveBeenCalled();
+    await act(async () => { grant(mockRelease); });
+    expect(mockPlayer.play).toHaveBeenCalledWith('a1');
+  });
+
+  it('a reply while the Record tab holds the session is text only', async () => {
+    (acquirePlayback as jest.Mock).mockResolvedValueOnce(null);
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Stay back.', [b64(4800)], false);
+    await settle();
+    act(() => ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) }));
+    expect(mockPlayer.play).not.toHaveBeenCalled();
+    expect(mockPlayer.push).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Stay back.')).toBeTruthy();
+  });
+
+  it('a playback session that arrives after the reply was muted is released, not used', async () => {
+    let grant: (r: any) => void = () => {};
+    (acquirePlayback as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Stay back.', [b64(4800)], false);
+    await act(async () => { fireEvent.press(screen.getByLabelText('Mute assistant voice')); });
+    await act(async () => { grant(mockRelease); });
+    expect(mockRelease).toHaveBeenCalled();
+    expect(mockPlayer.play).not.toHaveBeenCalled();
+  });
+
+  it('releases the playback session when the reply has played', async () => {
+    const { ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Stay back.');
+    await settle();
+    expect(mockPlayer.play).toHaveBeenCalledWith('a1');
+    expect(mockPlayer.end).toHaveBeenCalledWith('a1', expect.any(Function));
+    expect(mockRelease).not.toHaveBeenCalled();
+    act(() => mockPlayer.finish());
+    expect(mockRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['completed', '[Speech response delivered]'],
+    ['cancelled', '[Response interrupted]'],
+  ])('response.done (%s) ends an item still playing and fills an empty bubble', async (status, fallback) => {
+    const { screen, ws } = await renderConnected();
+    act(() => {
+      ws.receive({ type: 'conversation.item.created', item: { id: 'a1', type: 'message', role: 'assistant' } });
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) });
+    });
+    await settle();
+    act(() => ws.receive({ type: 'response.done', response: { status, output: [{ id: 'a1' }] } }));
+    expect(mockPlayer.end).toHaveBeenCalledWith('a1', expect.any(Function));
+    expect(screen.getByText(fallback)).toBeTruthy();
+  });
+
+  it('muting stops the reply, keeps its text, and later deltas are not pushed', async () => {
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Mute assistant voice')); });
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+    act(() => {
+      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) });
+      ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a1', delta: ' more' });
+    });
+    expect(mockPlayer.push).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Answer one more')).toBeTruthy();
+  });
+
+  it('unmount stops and closes the player', async () => {
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
+    screen.unmount();
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockPlayer.close).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('a new answer stops the one still playing', async () => {
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
+    streamAnswer(ws, 'a2', 'Answer two', [b64(4800)], false);
+    await settle();
+    expect((mockPlayer.begin as jest.Mock).mock.calls.map(c => c[0])).toEqual(['a1', 'a2']);
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalledTimes(1);          // a1's session
+    expect(screen.getByText('Answer one')).toBeTruthy();
+  });
+
+  it('writes no audio file', async () => {
     const FileSystem = require('expo-file-system');
     const { ws } = await renderConnected();
     streamAnswer(ws, 'a1', 'Stay back.');
-
-    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalledTimes(1));
-    const wavB64 = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0][1];
-    expect(Buffer.from(wavB64, 'base64').length).toBe(44 + 4801 + 100);
-  });
-
-  it('C-24: switches iOS recording mode off before playing the reply', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
-    const { ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Stay back.', UNPADDED);
-    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalled());
-
-    const modeCalls = (Audio.setAudioModeAsync as jest.Mock).mock;
-    const idx = modeCalls.calls.findIndex(c => c[0].allowsRecordingIOS === false && c[0].playsInSilentModeIOS === true);
-    expect(idx).toBeGreaterThanOrEqual(0);
-    expect(modeCalls.invocationCallOrder[idx]).toBeLessThan(
-      (Audio.Sound.createAsync as jest.Mock).mock.invocationCallOrder[0]
-    );
+    await settle();
+    expect(FileSystem.writeAsStringAsync).not.toHaveBeenCalled();
   });
 
   it('C-25: answer 1 text lands in its own bubble after a follow-up question', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
     const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one', UNPADDED);
-    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalled());
+    streamAnswer(ws, 'a1', 'Answer one');
+    await settle();
 
     // The worker asks again while answer 1 is still playing.
     fireEvent.changeText(screen.getByPlaceholderText('Type your question here...'), 'Follow up');
     fireEvent.press(screen.getByLabelText('Send question'));
-    await act(async () => { s.finish(); });
+    act(() => mockPlayer.finish());
 
-    await waitFor(() => expect(screen.getByText('Answer one')).toBeTruthy());
+    expect(screen.getByText('Answer one')).toBeTruthy();
+    expect(screen.getByText('Follow up')).toBeTruthy();
     expect(screen.queryByText('[Speaking...]')).toBeNull();
   });
 
   it('two interleaved answers keep their own text and their own audio', async () => {
-    const s1 = sound();
-    const s2 = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValueOnce({ sound: s1 }).mockResolvedValueOnce({ sound: s2 });
-    const FileSystem = require('expo-file-system');
     const { screen, ws } = await renderConnected();
     act(() => {
       for (const id of ['a1', 'a2']) {
@@ -375,19 +497,15 @@ describe('spoken answers', () => {
       ws.receive({ type: 'response.output_audio_transcript.delta', item_id: 'a2', delta: 'answer' });
       ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(2400, 1) });
       ws.receive({ type: 'response.output_audio.done', item_id: 'a1' });
+      ws.receive({ type: 'response.output_audio.done', item_id: 'a2' });
     });
-    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalledTimes(1));
-    act(() => ws.receive({ type: 'response.output_audio.done', item_id: 'a2' }));
-    await waitFor(() => expect(Audio.Sound.createAsync).toHaveBeenCalledTimes(2));
-    await act(async () => { s2.finish(); });
+    await settle();
 
-    // Each WAV holds only its own item's bytes (unpadded chunks; 4800 bytes is the playable minimum)
-    const wavs = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls.map(c => Buffer.from(c[1], 'base64'));
-    expect(wavs.map(w => w.length)).toEqual([44 + 4800, 44 + 6000]);
-    expect([...new Set(wavs[0].subarray(44))]).toEqual([1]);
-    expect([...new Set(wavs[1].subarray(44))]).toEqual([2]);
+    // Each item's pushes hold only its own bytes; a1 stopped once a2 began
+    expect(pushedBytes('a1').map(b => [...new Set(b)])).toEqual([[1]]);
+    expect(pushedBytes('a2').map(b => [...new Set(b)])).toEqual([[2]]);
     // ...and each text its own bubble
-    await waitFor(() => expect(screen.getByText('First answer')).toBeTruthy());
+    expect(screen.getByText('First answer')).toBeTruthy();
     expect(screen.getByText('Second answer')).toBeTruthy();
     expect(screen.queryByText(/First Second|Second First/)).toBeNull();
   });
@@ -426,54 +544,6 @@ describe('C-59 lifecycle', () => {
     expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
   });
 
-  it('muting stops and unloads the reply, keeping its text', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
-    const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
-    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
-
-    await act(async () => { fireEvent.press(screen.getByLabelText('Mute assistant voice')); });
-    expect(s.unloadAsync).toHaveBeenCalled();
-    expect(screen.getByText('Answer one')).toBeTruthy();
-  });
-
-  it('unmount unloads the playing reply', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
-    const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
-    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
-
-    screen.unmount();
-    expect(s.unloadAsync).toHaveBeenCalled();
-  });
-
-  it('a playback error deletes the WAV and still shows the text', async () => {
-    (Audio.Sound.createAsync as jest.Mock).mockRejectedValue(new Error('decoder'));
-    const FileSystem = require('expo-file-system');
-    const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
-
-    await waitFor(() => expect(screen.getByText('Answer one')).toBeTruthy());
-    const written = (FileSystem.writeAsStringAsync as jest.Mock).mock.calls[0][0];
-    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(written, { idempotent: true });
-  });
-
-  it('a new answer stops the one still playing', async () => {
-    const s1 = sound();
-    const s2 = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValueOnce({ sound: s1 }).mockResolvedValueOnce({ sound: s2 });
-    const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
-    await waitFor(() => expect(s1.playAsync).toHaveBeenCalled());
-    streamAnswer(ws, 'a2', 'Answer two');
-    await waitFor(() => expect(s2.playAsync).toHaveBeenCalled());
-
-    expect(s1.unloadAsync).toHaveBeenCalled();
-    expect(screen.getByText('Answer one')).toBeTruthy();
-  });
-
   it('does not send on a socket that is still connecting', async () => {
     const screen = render(<ModernVoiceAssistantScreen />);
     await waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
@@ -492,43 +562,30 @@ describe('C-59 lifecycle', () => {
     await waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
     expect(ws.close).toHaveBeenCalled();
   });
+
+  it('Clear stops the reply that is playing and releases its session', async () => {
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Clear conversation')); });
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('starting a voice question stops the reply and releases its session', async () => {
+    (api.transcribeForAssistant as jest.Mock).mockResolvedValue('OK');
+    const { screen, ws } = await renderConnected();
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+  });
 });
 
 // --- T14 carried items ----------------------------------------------------------
 
-describe('T14: recording start, interrupted replies, late transcripts, cached files', () => {
-  it('a reply that finishes while recording is starting does not switch the audio mode to playback', async () => {
-    let grant: (v: any) => void = () => {};
-    (Audio.requestPermissionsAsync as jest.Mock).mockImplementationOnce(() => new Promise(r => { grant = r; }));
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: sound() });
-    const { screen, ws } = await renderConnected();
-
-    await act(async () => { fireEvent.press(screen.getByLabelText('Start recording question')); });
-    streamAnswer(ws, 'a1', 'Stay back.');          // arrives while recording mode is being set up
-    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
-
-    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
-    expect((Audio.setAudioModeAsync as jest.Mock).mock.calls.some(c => c[0].allowsRecordingIOS === false)).toBe(false);
-    expect(screen.getByText('Stay back.')).toBeTruthy(); // its text still shows
-
-    await act(async () => { grant({ status: 'granted' }); });
-    await waitFor(() => expect(screen.getByLabelText('Stop recording question')).toBeTruthy());
-  });
-
-  it("response.done drops the audio of an interrupted item, so it can't play later", async () => {
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: sound() });
-    const { ws } = await renderConnected();
-    act(() => {
-      ws.receive({ type: 'conversation.item.created', item: { id: 'a1', type: 'message', role: 'assistant' } });
-      ws.receive({ type: 'response.output_audio.delta', item_id: 'a1', delta: b64(4800) });
-      ws.receive({ type: 'response.done', response: { status: 'cancelled', output: [{ id: 'a1' }] } });
-      // A stray late done for the same item finds nothing buffered.
-      ws.receive({ type: 'response.output_audio.done', item_id: 'a1' });
-    });
-    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
-    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
-  });
-
+describe('T14: late transcripts, cached files', () => {
   it('a transcript that arrives after the screen closed changes nothing and sends nothing', async () => {
     let resolve: (t: string) => void = () => {};
     (api.transcribeForAssistant as jest.Mock).mockImplementation(() => new Promise(r => { resolve = r; }));
@@ -623,41 +680,36 @@ describe('T14 fix round 1: the microphone never outlives the screen', () => {
 // --- I-2: the Assistant tab stays mounted; it must not touch the audio session when blurred ---
 
 describe('I-2 not focused', () => {
-  it('a reply that arrives while another tab is focused shows text only: no audio mode change, no playback', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
+  it('a reply while another tab is focused shows text only: no session request, no playback', async () => {
     const { screen, ws } = await renderConnected();
     blurScreen();
-    (Audio.setAudioModeAsync as jest.Mock).mockClear();
+    streamAnswer(ws, 'a1', 'Answer while away');
+    await settle();
 
-    streamAnswer(ws, 'a1', 'Answer while away', UNPADDED);
-
-    await waitFor(() => expect(screen.getByText('Answer while away')).toBeTruthy());
-    expect(Audio.setAudioModeAsync).not.toHaveBeenCalled();
-    expect(Audio.Sound.createAsync).not.toHaveBeenCalled();
-    expect(s.playAsync).not.toHaveBeenCalled();
+    expect(screen.getByText('Answer while away')).toBeTruthy();
+    expect(acquirePlayback).not.toHaveBeenCalled();
+    expect(mockPlayer.begin).not.toHaveBeenCalled();
+    expect(mockPlayer.play).not.toHaveBeenCalled();
   });
 
   it('leaving the tab stops the reply that is playing, keeping its text', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
     const { screen, ws } = await renderConnected();
-    streamAnswer(ws, 'a1', 'Answer one');
-    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
+    streamAnswer(ws, 'a1', 'Answer one', [b64(4800)], false);
+    await settle();
 
     blurScreen();
-    await waitFor(() => expect(s.unloadAsync).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getByText('Answer one')).toBeTruthy());
+    expect(mockPlayer.stop).toHaveBeenCalled();
+    expect(mockRelease).toHaveBeenCalled();
+    expect(screen.getByText('Answer one')).toBeTruthy();
   });
 
   it('plays replies again once the tab is focused again', async () => {
-    const s = sound();
-    (Audio.Sound.createAsync as jest.Mock).mockResolvedValue({ sound: s });
     const { ws } = await renderConnected();
     blurScreen();
     focusScreen();
 
-    streamAnswer(ws, 'a2', 'Back again', UNPADDED);
-    await waitFor(() => expect(s.playAsync).toHaveBeenCalled());
+    streamAnswer(ws, 'a2', 'Back again');
+    await settle();
+    expect(mockPlayer.play).toHaveBeenCalledWith('a2');
   });
 });

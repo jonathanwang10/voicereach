@@ -17,11 +17,12 @@ import { Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import { api, getAuthToken } from '../services/api';
-import { AudioProcessor, configureAudioPlayback, configureAudioRecording } from '../utils/audioProcessor';
+import { createReplyPlayer, ReplyPlayer } from '../services/replyPlayer';
+import { acquirePlayback } from '../services/audioSession';
+import { AudioProcessor, configureAudioRecording } from '../utils/audioProcessor';
 import { errorMessage, showApiError } from '../utils/errorHandler';
 import {
   Message,
-  TextBuffers,
   SPEAKING_PLACEHOLDER,
   RECORDING_PLACEHOLDER,
   PROCESSING_PLACEHOLDER,
@@ -33,10 +34,7 @@ import {
   finalizeAssistantText,
   setMessageContent,
   removeMessage,
-  bufferText,
-  takeText,
   cleanTranscript,
-  isContextItem,
   isSocketOpen,
   userTextEvents,
   closeMessage,
@@ -250,12 +248,13 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
   // Streaming state lives in refs, keyed by the Realtime item id (C-25), so a socket
   // handler bound at connect time never reads stale state and chunks don't re-render.
-  const textBuffersRef = useRef<TextBuffers>({}); // text held until that item's audio has played
-  const audioChunksRef = useRef<Record<string, Uint8Array[]>>({}); // decoded audio per item (C-26)
-  const awaitingPlaybackRef = useRef<Set<string>>(new Set());
+  const playerRef = useRef<ReplyPlayer | null>(null);
+  if (!playerRef.current) playerRef.current = createReplyPlayer();
+  // The playback session held for the item that is playing (H2-5.5)
+  const releaseRef = useRef<{ itemId: string; release: () => Promise<void> } | null>(null);
+  // Items whose audio is no longer played: text only (muted, blurred, stopped, no session)
+  const playbackSkippedRef = useRef<Set<string>>(new Set());
   const lastAssistantIdRef = useRef<string | null>(null); // for events that arrive without item_id
-  const playbackRef = useRef<{ sound: Audio.Sound; fileUri: string; onDone: () => void } | null>(null);
-  const playbackGenRef = useRef(0); // bumped by stopPlayback to cancel a playback still being set up
   const pendingUserIdRef = useRef<string | null>(null); // the bubble of the question being recorded
   const idCounterRef = useRef(0);
   const isMutedRef = useRef(false);
@@ -264,11 +263,11 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
   const scrollViewRef = useRef<ScrollView>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
   // True while startRecording sets up the recorder (before recordingRef is set), so a reply
-  // that arrives then can't switch the audio mode to playback mid-start.
+  // that arrives then isn't played over the recording being started.
   const startingRecordingRef = useRef(false);
   // I-2: bottom tabs keep this screen mounted with its socket open. While another tab is
-  // focused (e.g. Record is recording a field note), a reply must not switch the shared iOS
-  // audio session out of record mode, which pauses that recording: show the text only.
+  // focused (e.g. Record is recording a field note), a reply shows as text only: it doesn't
+  // even ask audioSession for playback, so it can't touch the shared iOS audio session.
   const isFocusedRef = useRef(true);
 
   const nextId = (prefix: string) => `${prefix}_${Date.now()}_${++idCounterRef.current}`;
@@ -277,86 +276,56 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  // Show an item's buffered text in that item's own bubble (C-25).
-  const flushItem = (id: string, fallback: string = SPEECH_DELIVERED) => {
-    const { text, rest } = takeText(textBuffersRef.current, id);
-    textBuffersRef.current = rest;
-    if (!isMountedRef.current) return;
-    setMessages(prev => finalizeAssistantText(prev, id, text, fallback));
+  // Hand back the playback session of `itemId` (any item when omitted)
+  const releasePlayback = (itemId?: string) => {
+    const held = releaseRef.current;
+    if (!held || (itemId && held.itemId !== itemId)) return;
+    releaseRef.current = null;
+    held.release().catch(() => {});
   };
 
-  const flushAllText = () => {
-    Object.keys(textBuffersRef.current).forEach(id => flushItem(id));
+  // Stop the reply that is playing (C-59); its text stays. Later audio for it is skipped.
+  const stopReply = () => {
+    const { itemId } = playerRef.current!.stop();
+    if (itemId) playbackSkippedRef.current.add(itemId);
+    releasePlayback();
   };
 
-  // Stop and unload the reply that is playing (C-59). Its completion callback runs, so its
-  // text still shows; unmount passes notify=false.
-  const stopPlayback = async (notify: boolean = true) => {
-    playbackGenRef.current += 1;
-    const current = playbackRef.current;
-    playbackRef.current = null;
-    if (!current) return;
-    current.sound.setOnPlaybackStatusUpdate(null);
-    await current.sound.unloadAsync().catch(() => {});
-    FileSystem.deleteAsync(current.fileUri, { idempotent: true }).catch(() => {});
-    if (notify) current.onDone();
-  };
-
-  // Play one reply. Any reply already playing is stopped first; onDone runs exactly once,
-  // whether the reply finished, failed, or was cancelled by mute, recording or unmount.
-  const playReply = async (pcm: Uint8Array, onDone: () => void) => {
-    let finished = false;
-    const done = () => {
-      if (!finished) {
-        finished = true;
-        onDone();
+  // The first audio delta of an item: start it, and ask audioSession for playback (H2-5.5)
+  const startReply = (id: string) => {
+    const player = playerRef.current!;
+    stopReply();                    // a new answer stops the one still playing
+    player.begin(id);
+    acquirePlayback('assistant').then(release => {
+      if (!release) {
+        // The Record tab holds the session: this reply is text only
+        playbackSkippedRef.current.add(id);
+        if (player.current() === id) player.stop();
+        return;
       }
-    };
-    await stopPlayback();
-    const gen = ++playbackGenRef.current;
-    const cancelled = () =>
-      gen !== playbackGenRef.current || !isMountedRef.current || isMutedRef.current ||
-      !isFocusedRef.current || !!recordingRef.current || startingRecordingRef.current;
-    let fileUri: string | null = null;
-    try {
-      if (!AudioProcessor.validatePCMData(pcm)) throw new Error('Invalid PCM data');
-      const wav = new Uint8Array(AudioProcessor.createWavFile(pcm));
-      fileUri = `${FileSystem.cacheDirectory}gpt_audio_${Date.now()}.wav`;
-      await FileSystem.writeAsStringAsync(fileUri, AudioProcessor.bytesToBase64(wav), {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      if (cancelled()) throw new Error('cancelled');
-      // C-24 (R-7): leave record mode so iOS plays through the speaker, not the earpiece.
-      await configureAudioPlayback();
-      const { sound } = await Audio.Sound.createAsync({ uri: fileUri });
-      if (cancelled()) {
-        await sound.unloadAsync().catch(() => {});
-        throw new Error('cancelled');
+      // Muted, blurred, a newer reply, a recording or unmount came first: don't play
+      if (player.current() !== id || !isMountedRef.current) {
+        release().catch(() => {});
+        return;
       }
-      playbackRef.current = { sound, fileUri, onDone: done };
-      sound.setOnPlaybackStatusUpdate(status => {
-        if (playbackRef.current?.sound !== sound) return;
-        if (status.isLoaded ? status.didJustFinish : !!status.error) stopPlayback();
-      });
-      await sound.playAsync();
-    } catch (e) {
-      if (__DEV__ && (e as Error)?.message !== 'cancelled') console.warn('Assistant playback failed:', e);
-      if (fileUri && playbackRef.current?.fileUri === fileUri) {
-        await stopPlayback();
-      } else if (fileUri) {
-        FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
-      }
-      done(); // the transcript text still shows
-    }
+      releaseRef.current = { itemId: id, release };
+      player.play(id);
+    }).catch(() => {
+      playbackSkippedRef.current.add(id);
+      if (player.current() === id) player.stop();
+    });
   };
 
-  // Forget everything streamed on the old socket, showing any text it already held.
-  const resetStreams = (notify: boolean) => {
-    if (notify) flushAllText();
-    stopPlayback(notify);
-    textBuffersRef.current = {};
-    audioChunksRef.current = {};
-    awaitingPlaybackRef.current = new Set();
+  // No more audio for this item: release its session once the last buffer has played
+  const endReply = (id: string) => {
+    playbackSkippedRef.current.add(id);
+    if (playerRef.current!.current() === id) playerRef.current!.end(id, () => releasePlayback(id));
+  };
+
+  // Forget everything streamed on the old socket; text already shown stays.
+  const resetStreams = () => {
+    stopReply();
+    playbackSkippedRef.current = new Set();
     lastAssistantIdRef.current = null;
   };
 
@@ -367,7 +336,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       isFocusedRef.current = true;
       return () => {
         isFocusedRef.current = false;
-        stopPlayback();
+        stopReply();
       };
     }, [])
   );
@@ -380,7 +349,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       detachAndClose(wsRef.current);
       wsRef.current = null;
       recordingRef.current?.stopAndUnloadAsync().catch(() => {});
-      resetStreams(false);
+      resetStreams();
+      playerRef.current?.close();
     };
   }, []);
 
@@ -395,8 +365,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
       case 'conversation.item.created':
       case 'conversation.item.added': {
         const item = event.item;
-        // The backend's ctx_ item is case-database reference data, not something the worker said.
-        if (isContextItem(item)) break;
+        // Only the assistant's spoken messages get a bubble; tool calls and their
+        // outputs never show.
         if (item?.type === 'message' && item.role === 'assistant' && item.id) {
           lastAssistantIdRef.current = item.id;
           setMessages(prev => addAssistantMessage(prev, item.id));
@@ -410,23 +380,26 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       case 'response.output_audio_transcript.delta':
       case 'response.output_text.delta': {
+        // The text streams into the item's own bubble as it arrives (C-25)
         const id = itemIdOf(event);
         if (!id || !event.delta) break;
-        if (isMutedRef.current) {
-          setMessages(prev => appendAssistantText(prev, id, event.delta));
-        } else {
-          textBuffersRef.current = bufferText(textBuffersRef.current, id, event.delta);
-        }
+        setMessages(prev => appendAssistantText(prev, id, event.delta));
         break;
       }
 
       case 'response.output_audio.delta': {
         const id = itemIdOf(event);
-        if (!id || !event.delta || isMutedRef.current) break;
+        if (!id || !event.delta || playbackSkippedRef.current.has(id)) break;
+        if (playerRef.current!.current() !== id) {
+          if (isMutedRef.current || !isFocusedRef.current || recordingRef.current || startingRecordingRef.current) {
+            playbackSkippedRef.current.add(id);
+            break;
+          }
+          startReply(id);
+        }
         try {
           // C-26: decode each delta on its own; padded chunks can't be joined as text.
-          const chunks = audioChunksRef.current[id] || (audioChunksRef.current[id] = []);
-          chunks.push(AudioProcessor.base64ToArrayBuffer(event.delta));
+          playerRef.current!.push(id, AudioProcessor.base64ToArrayBuffer(event.delta));
         } catch {
           // Skip a corrupt chunk; the rest of the reply still plays.
         }
@@ -435,20 +408,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
 
       case 'response.output_audio.done': {
         const id = itemIdOf(event);
-        if (!id) break;
-        const chunks = audioChunksRef.current[id] || [];
-        delete audioChunksRef.current[id];
-        if (chunks.length && !isMutedRef.current && isFocusedRef.current &&
-            !recordingRef.current && !startingRecordingRef.current) {
-          awaitingPlaybackRef.current.add(id);
-          playReply(AudioProcessor.concatChunks(chunks), () => {
-            awaitingPlaybackRef.current.delete(id);
-            flushItem(id);
-            scrollToEnd();
-          });
-        } else {
-          flushItem(id);
-        }
+        if (id) endReply(id);
         break;
       }
 
@@ -456,12 +416,10 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
         const status = event.response?.status;
         const fallback = !status || status === 'completed' ? SPEECH_DELIVERED : RESPONSE_INTERRUPTED;
         const outputIds: string[] = (event.response?.output || []).map((o: any) => o?.id).filter(Boolean);
-        const ids = new Set([...outputIds, ...Object.keys(textBuffersRef.current)]);
-        ids.forEach(id => {
-          // An interrupted item never gets output_audio.done: drop its buffered audio.
-          delete audioChunksRef.current[id];
-          if (!awaitingPlaybackRef.current.has(id)) flushItem(id, fallback);
-        });
+        outputIds.forEach(endReply);
+        // A bubble that got no text says the answer was spoken (or interrupted)
+        setMessages(prev => outputIds.reduce((msgs, id) => finalizeAssistantText(msgs, id, '', fallback), prev));
+        scrollToEnd();
         break;
       }
 
@@ -479,12 +437,8 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     const next = !isMutedRef.current;
     isMutedRef.current = next;
     setIsMuted(next);
-    if (next) {
-      // C-59: muting stops the reply that is playing, and keeps the text already received.
-      audioChunksRef.current = {};
-      flushAllText();
-      stopPlayback();
-    }
+    // C-59: muting stops the reply that is playing, and keeps the text already received.
+    if (next) stopReply();
   };
 
   const initializeVoiceAssistant = async () => {
@@ -492,7 +446,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     detachAndClose(wsRef.current);
     wsRef.current = null;
     setIsConnected(false);
-    resetStreams(true);
+    resetStreams();
     try {
       setIsLoading(true);
       setError(null);
@@ -584,7 +538,7 @@ export const ModernVoiceAssistantScreen: React.FC = () => {
     startingRecordingRef.current = true;
     let recording: Audio.Recording | null = null;
     try {
-      await stopPlayback(); // don't record over a reply
+      stopReply(); // don't record over a reply
       await configureAudioRecording(); // R-7: recording mode back on
       // Left the screen during the permission prompt: never turn the mic on.
       if (!isMountedRef.current) return;

@@ -458,11 +458,13 @@ The realtime proxy is not an open relay: the server sets the session (instructio
 voice, tools) once, and a client may send only `input_audio_buffer.append` /
 `commit` / `clear`, `conversation.item.create` (a `user` message with `input_text`
 or `input_audio` parts), `response.create` (any `response` overrides are
-stripped) and `response.cancel`. Anything else, `session.update` included, is
+stripped), `response.cancel` and a typed `conversation.item.truncate` (barge-in).
+Anything else, `session.update` and `function_call_output` included, is
 dropped and answered with `{"type": "error", "error": {"code":
 "event_not_allowed", ...}}` (`services/realtime_guard.py`). Database records reach
-the model only as a `user` item with id `ctx_...`, fenced as REFERENCE DATA that
-the session instructions say never to obey.
+the model only as the output of the server's read-only tools
+(`services/assistant_tools.py`), fenced as REFERENCE DATA that the session
+instructions say never to obey.
 
 Interactive docs are at `/docs` when the server runs with `ENABLE_API_DOCS=1` (off by default). Endpoint detail and
 request bodies are in [`backend/README.md`](backend/README.md).
