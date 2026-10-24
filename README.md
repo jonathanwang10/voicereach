@@ -885,6 +885,25 @@ gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq '.object.type + " " + .objec
 gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha    # only if the type is "tag"
 ```
 
+**App builds** (`mobile/eas.json`, H2-8.7). There are three EAS profiles:
+
+- `development`: a Debug build for the iOS simulator. It doesn't need expo-dev-client.
+- `preview`: an internal-distribution Release build to install on phones.
+- `production`: a store build. Its build number auto-increments from EAS
+  (`appVersionSource: remote`).
+
+```bash
+cd mobile && npx eas-cli build --profile development|preview|production --platform ios
+```
+
+EAS builds the committed `ios/` as it is and doesn't run prebuild. So an `app.json`
+change still needs `npx expo prebuild --platform ios` locally, committed, before it
+reaches a build. `ios/` stays committed on purpose, for local builds that reproduce
+without Continuous Native Generation; revisit that at the next Expo SDK upgrade.
+In an EAS build, the `EXPO_PUBLIC_*` values come from the profile's EAS environment
+(`npx eas-cli env:create`), not from `mobile/.env`. The bundle id
+(`com.anonymous.sf-homeless-outreach`) is a placeholder until the owner picks one.
+
 ## Documentation
 
 | File | Contents |

@@ -47,3 +47,23 @@ describe('Maestro flows', () => {
     expect(sourceHasTestId('no-such-test-id')).toBe(false);
   });
 });
+
+describe('EAS build profiles (H2-8.7)', () => {
+  const easPath = path.join(ROOT, 'eas.json');
+  const eas = () => JSON.parse(fs.readFileSync(easPath, 'utf8'));
+
+  it('has development, preview and production profiles', () =>
+    expect(Object.keys(eas().build).sort()).toEqual(['development', 'preview', 'production']));
+
+  it('development is a simulator debug build and needs no expo-dev-client', () => {
+    expect(eas().build.development).toMatchObject({
+      distribution: 'internal', ios: { simulator: true, buildConfiguration: 'Debug' } });
+    expect(eas().build.development.developmentClient).toBeUndefined();
+  });
+
+  it('preview is an internal release build; production auto-increments', () => {
+    expect(eas().build.preview).toMatchObject({ distribution: 'internal', ios: { buildConfiguration: 'Release' } });
+    expect(eas().build.production).toMatchObject({ autoIncrement: true });
+    expect(eas().cli).toMatchObject({ appVersionSource: 'remote' });
+  });
+});
