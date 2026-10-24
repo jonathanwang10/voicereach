@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      VOICEREACH_TEST_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,12 +92,12 @@ jobs:
           supabase db start --workdir "$RUNNER_TEMP/sb"
       - name: Fresh database - schema.sql, then every migration twice, then seed
         run: |
-          supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
+          supabase/check_migrations.sh "$VOICEREACH_TEST_DB_URL" supabase/schema.sql
+          psql "$VOICEREACH_TEST_DB_URL" -v ON_ERROR_STOP=1 -q -f supabase/seed.sql
       - run: python -m pytest -m db -q
       - name: Upgrade path - the pre-hardening schema.sql, then every migration twice
         run: |
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+          psql "$VOICEREACH_TEST_DB_URL" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
           git show ce238db:supabase/schema.sql > "$RUNNER_TEMP/base_schema.sql"
-          supabase/check_migrations.sh "$SUPABASE_DB_URL" "$RUNNER_TEMP/base_schema.sql"
+          supabase/check_migrations.sh "$VOICEREACH_TEST_DB_URL" "$RUNNER_TEMP/base_schema.sql"
       - run: python -m pytest -m db -q

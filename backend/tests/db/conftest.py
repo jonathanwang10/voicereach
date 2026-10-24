@@ -1,7 +1,11 @@
 """tests/db/ calls the real SQL functions on a local Postgres with the schema applied
-(H2-8.4). Everything here is skipped unless SUPABASE_DB_URL is set; README Testing
-has the commands (a local Supabase in Docker, schema.sql, then the migrations twice).
-Never point it at the hosted database: the `db` fixture truncates the tables."""
+(H2-8.4). Everything here is skipped unless VOICEREACH_TEST_DB_URL is set; README
+Testing has the commands (a local Supabase in Docker, schema.sql, then the
+migrations twice).
+
+The `db` fixture truncates the tables, so the variable is the tests' own (never
+SUPABASE_DB_URL, which the owner uses for the hosted project) and any host but
+this machine stops the run (review C-1)."""
 import os
 import random
 from pathlib import Path
@@ -11,13 +15,30 @@ from uuid import uuid4
 import pytest
 
 HERE = Path(__file__).resolve().parent
-DB_URL = os.getenv("SUPABASE_DB_URL", "")
+DB_URL_VAR = "VOICEREACH_TEST_DB_URL"
+DB_URL = os.getenv(DB_URL_VAR, "")
+LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def require_local_db_url(url: str) -> None:
+    """Raise pytest.UsageError unless every host in the connection string is this
+    machine (a Unix socket directory counts)."""
+    from psycopg.conninfo import conninfo_to_dict
+    params = conninfo_to_dict(url)
+    hosts = [h.strip() for h in str(params.get("host") or "").split(",")]
+    hosts += [h.strip() for h in str(params.get("hostaddr") or "").split(",") if h.strip()]
+    remote = [h for h in hosts if h not in LOCAL_HOSTS and not h.startswith("/")]
+    if remote:
+        raise pytest.UsageError(
+            f"{DB_URL_VAR} must point at a local database (localhost, 127.0.0.1, ::1): "
+            "the db tests truncate tables")
 
 
 def pytest_collection_modifyitems(config, items):
     if DB_URL:
+        require_local_db_url(DB_URL)
         return
-    skip = pytest.mark.skip(reason="db tests: set SUPABASE_DB_URL (see README Testing)")
+    skip = pytest.mark.skip(reason=f"db tests: set {DB_URL_VAR} (see README Testing)")
     for item in items:
         # this hook runs for the whole session, so only touch our own directory
         if HERE in Path(str(item.fspath)).resolve().parents:
@@ -26,6 +47,7 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture
 def db():
+    require_local_db_url(DB_URL)
     import psycopg
     from psycopg.rows import dict_row
     with psycopg.connect(DB_URL, autocommit=True, row_factory=dict_row) as conn:

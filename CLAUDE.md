@@ -28,7 +28,7 @@ python -m pytest                                # from the repo root; runs offli
 ruff check backend --select F,E9                # the lint CI runs
 cd mobile && npx jest && npx tsc --noEmit
 cd backend && python -m evals.eval_extraction   # offline eval vs backend/evals/baseline.json
-supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql && python -m pytest -m db   # local Postgres only (README Testing)
+supabase/check_migrations.sh "$VOICEREACH_TEST_DB_URL" supabase/schema.sql && python -m pytest -m db   # local Postgres only (README Testing)
 maestro test mobile/.maestro/                   # iOS simulator, backend on 8001 with seed.sql
 # load test: README Testing "Load test" (VOICEREACH_FAKE_OPENAI=1, never production)
 # database: fresh = supabase/schema.sql then supabase/seed.sql (demo only); upgrade = supabase/migrations/ in order
@@ -38,7 +38,7 @@ Backend needs `backend/.env` (see `backend/.env.example`); the app needs
 `mobile/.env` (see `mobile/.env.example`). The one live test,
 `backend/tests/integration/test_live_smoke.py`, is skipped unless both
 `VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN` are set; `backend/tests/db/` is
-skipped unless `SUPABASE_DB_URL` is set (it truncates tables: local only). The app is iOS-only and
+skipped unless `VOICEREACH_TEST_DB_URL` is set (it truncates tables: local only). The app is iOS-only and
 `mobile/ios/` is committed (prebuilt), so an `app.json` change reaches the build
 only after `npx expo prebuild --platform ios`.
 

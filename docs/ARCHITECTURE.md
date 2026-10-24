@@ -480,7 +480,7 @@ Match-confidence colours mean the same on every screen (`confidenceColor` in
   test, `backend/tests/integration/test_live_smoke.py`, is read-only and runs only
   when `VOICEREACH_API_URL` and `VOICEREACH_LIVE_TOKEN` are set.
 - **Database:** `backend/tests/db/` (marker `db`) calls the real SQL functions on a
-  local Postgres. They are skipped unless `SUPABASE_DB_URL` is set, and CI runs
+  local Postgres. They are skipped unless `VOICEREACH_TEST_DB_URL` is set, and CI runs
   them. `supabase/check_migrations.sh` applies a schema and then every migration
   twice: CI does it from `schema.sql` and from the pre-hardening schema (ce238db).
 - **App:** `npx jest` (component and service tests with mocked native modules)

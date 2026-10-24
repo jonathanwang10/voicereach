@@ -741,14 +741,15 @@ It writes nothing and calls no OpenAI endpoint.
 (`save_individual`, `find_duplicate_candidates`, `search_individuals_hybrid`,
 `match_interactions`, `most_urgent_individuals`, `rescore_batch`,
 `coarsen_old_locations`, `claim_recording_job`, `purge_old_recordings`) on a local
-Postgres. They are skipped unless `SUPABASE_DB_URL` is set, and CI runs them. They
-truncate the tables, so point them only at a throwaway local database. With Docker
+Postgres. They are skipped unless `VOICEREACH_TEST_DB_URL` is set, and CI runs them. They
+truncate the tables, so they have their own variable (never `SUPABASE_DB_URL`), and
+they and `check_migrations.sh` refuse any host but `localhost`, `127.0.0.1` or `::1`. With Docker
 running, from the repo root:
 
 ```bash
 SB="$TMPDIR/vr-sb"; mkdir -p "$SB" && npx --yes supabase@2.122.0 init --workdir "$SB" && npx supabase@2.122.0 db start --workdir "$SB"
-export SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
-supabase/check_migrations.sh "$SUPABASE_DB_URL" supabase/schema.sql   # schema, then every migration twice
+export VOICEREACH_TEST_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
+supabase/check_migrations.sh "$VOICEREACH_TEST_DB_URL" supabase/schema.sql   # schema, then every migration twice
 python -m pytest -m db -q
 npx supabase@2.122.0 stop --workdir "$SB" --no-backup
 ```
