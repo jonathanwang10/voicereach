@@ -298,6 +298,7 @@ cd backend && python -m uvicorn main:app --reload --port 8001
 | `RATE_LIMIT_*_PER_MIN` | Optional. Per-account limits on the endpoints that cost OpenAI money; see [Limits](#limits) for the names and defaults. |
 | `REALTIME_MAX_SESSION_SECONDS` | Optional. How long one voice-assistant connection may stay open (default 600). |
 | `RECORDING_WORKER_CONCURRENCY` | Optional. How many uploaded recordings the in-process worker runs at once (default 2). |
+| `DUPLICATE_SEMANTIC_MIN_SIMILARITY` | Optional. The cosine-similarity floor for the duplicate check's meaning search (default 0.6, between 0 and 1); see Duplicate detection. |
 | `RECORDING_WORKER_ENABLED` | Optional. `0` pauses processing uploaded recordings (they stay queued); default on. |
 | `LOG_LEVEL` | Optional. The backend's own log level (default `INFO`). HTTP-client and SDK loggers stay at `WARNING` regardless; see [Data leaving the system](#data-leaving-the-system). |
 | `SENTRY_DSN` | Optional. Sends backend errors to Sentry (errors only, scrubbed: see [Data leaving the system](#data-leaving-the-system)). Unset means off. |
@@ -565,12 +566,22 @@ gathers candidates with one call to the SQL function `find_duplicate_candidates`
 a trigram or name-token match (words of 3+ characters, so "John Doe" finds
 "John" and "Jon Smith" finds "John Smith"), plus a data value that starts a word
 with the name (an "aka") among the 200 most recently updated people (values
-only, never field names), ranks them by tokens matched (with sound-alikes and
-close spellings: metaphone and Jaro-Winkler) and height/weight closeness, asks
+only, never field names), and ranks them by tokens matched (with sound-alikes and
+close spellings: metaphone and Jaro-Winkler) and height/weight closeness. It also
+looks by meaning: the new record is embedded from the same text a saved person's
+vector comes from, and the SQL function `find_similar_individuals` returns up to 5
+people whose vector is at cosine similarity 0.6 or more
+(`DUPLICATE_SEMANTIC_MIN_SIMILARITY`), so a record of "Mike" can find "Big Red"
+when the rest of the record matches. People only that search found keep up to 3
+of the 8 places (more when the name search finds fewer than 8); if it fails (an
+embedding or database error), the name candidates are used alone. It then asks
 `DUPLICATE_MODEL` (default `gpt-4o-mini`, temperature 0) to score the top 8
-0–100 from name, aka, age, height, weight, gender and the last-seen street area
-only (never medical or other sensitive fields), drops anything below 60, and
-returns the top 3, best first (`services/duplicate_detection_service.py`). Voice review adds the match from
+0–100 from every recorded field that isn't sensitive (identifying fields first, at
+most 20, each clipped to 100 characters) and the last-seen street area (never
+medical or other sensitive fields), drops anything below 60, and returns the top
+3, best first (`services/duplicate_detection_service.py`). The 0.6 floor is a
+first guess: too low only sends GPT more lookalikes to reject, too high finds
+nobody new; recording the duplicate eval live (owner actions) is how to tune it. Voice review adds the match from
 its own re-check to the server's (`topMatches`: de-duplicated, best first, at
 most 3 shown). The merge screen opens on the best match; "Other possible matches
 (n)" switches to one of the others. If GPT-4o fails, a name comparison
@@ -631,8 +642,8 @@ is logged.
 |---|---|---|---|
 | A recording: M4A audio (16 kHz mono AAC) of the worker describing the person | The backend, then OpenAI transcription (`TRANSCRIBE_MODEL`, default `gpt-transcribe`), with a fixed prompt of SF place and street names (no person names) | Each recording (`POST /api/recordings`) | Phone: in `documentDirectory/recordings/` (and SQLite holds its path, location and upload state) until the server answers 202; then the file and Expo's multipart copy are deleted. Backend: in the private `recordings` bucket until the transcription is saved, then deleted; the transcript and extracted result stay in the `recordings` table until the draft is saved or discarded, or at most 7 days (the worker purges hourly). OpenAI: under its API data policy and your account's retention settings. |
 | The transcript, with every category's name, type and options | OpenAI GPT-4o | Each recording, to extract the fields | Supabase: the transcript is saved with the interaction. |
-| The new person's name, aka, age, height, weight, gender and the street part of the last location, with the same for up to 8 existing candidates; never medical or sensitive fields | OpenAI `DUPLICATE_MODEL` (default `gpt-4o-mini`) | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
-| A person's name and labelled fields (`build_embedding_text`); never a sensitive (`is_sensitive`) field | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script | Supabase: the vector and that text, in `individual_embeddings`. |
+| The new person's name, their other recorded fields (at most 20, clipped) and the street part of the last location, with the same for up to 8 existing candidates; never medical or sensitive fields | OpenAI `DUPLICATE_MODEL` (default `gpt-4o-mini`) | Each duplicate check: after a recording, on a manual entry, and when an edited voice record is re-checked. Never the GPS location of the encounter. | Not stored. |
+| A person's name and labelled fields (`build_embedding_text`); never a sensitive (`is_sensitive`) field | OpenAI embeddings (`text-embedding-3-large`) | After each save, `POST /api/embeddings/generate` or `generate-all`, and the backfill script; and the new, unsaved record at each duplicate check (when it has more than a name) | Supabase: the vector and that text, in `individual_embeddings`. |
 | Each visit's transcript | OpenAI embeddings (`EMBEDDING_MODEL`) | After a save that carried a transcript | Supabase: the vector only, in `interaction_embeddings` (the transcript is already stored with the interaction). It was already sent to OpenAI to be transcribed, so this sends nothing new. |
 | A Search-tab query | The backend; OpenAI embeddings for the semantic half (`POST /api/embeddings/search`) | Each search | Not stored. The list search sends it in the URL (`GET /api/individuals?search=`), see logging below. |
 | An assistant question: the worker's speech as a PCM16 stream (or the typed text) | The OpenAI Realtime API (`REALTIME_MODEL`, default `gpt-realtime-2.1`), through the backend proxy; it also transcribes the speech (`TRANSCRIBE_MODEL`) for the worker's bubble | Each question | Phone: nothing is stored; the stream stops when listening stops, the tab is left, the app goes to the background or the socket closes. OpenAI: as above. |
@@ -740,7 +751,7 @@ python -m pytest backend/tests/integration
 It writes nothing and calls no OpenAI endpoint.
 
 **Database tests** (`backend/tests/db/`, marker `db`). These call the real SQL functions
-(`save_individual`, `find_duplicate_candidates`, `search_individuals_hybrid`,
+(`save_individual`, `find_duplicate_candidates`, `find_similar_individuals`, `search_individuals_hybrid`,
 `match_interactions`, `most_urgent_individuals`, `rescore_batch`,
 `coarsen_old_locations`, `claim_recording_job`, `purge_old_recordings`) on a local
 Postgres. They are skipped unless `VOICEREACH_TEST_DB_URL` is set, and CI runs them. They

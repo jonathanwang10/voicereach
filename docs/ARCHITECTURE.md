@@ -175,7 +175,8 @@ duplicate_decisions (        -- labels for the duplicate eval: one row per merge
   transaction; idempotent by key, and a stale `version` is P0409 (409).
 - `rescore_batch`: writes re-computed scores, skipping a row saved since the read.
 - `coarsen_old_locations`: rounds visits older than 30 days to about 110 m.
-- `find_duplicate_candidates`: the duplicate candidates.
+- `find_duplicate_candidates` and `find_similar_individuals`: the duplicate candidates,
+  by name and by meaning.
 - `search_individuals_hybrid`: the Search tab.
 - `match_interactions` and `most_urgent_individuals`: assistant tools.
 - `claim_recording_job` and `purge_old_recordings`: the worker.
@@ -257,9 +258,13 @@ it was removed on purpose and must not come back.
    the 200 most recently updated people
    (`backend/services/duplicate_detection_service.py`). They are pre-ranked by
    name tokens, sound-alikes and close spellings, then height/weight closeness.
-2. `DUPLICATE_MODEL` (default `gpt-4o-mini`) scores the top 8 0-100 from name,
-   aka, age, height, weight, gender and the last-seen area only (no sensitive or
-   medical fields). Matches below 60 are dropped; the top 3 are returned, best
+   A meaning leg adds people whose stored vector is near the new record's
+   (`find_similar_individuals`, cosine similarity 0.6 or more, at most 5); those
+   keep up to 3 of the 8 places. It's best effort: a failure keeps the name
+   candidates.
+2. `DUPLICATE_MODEL` (default `gpt-4o-mini`) scores the top 8 0-100 from every
+   recorded field that isn't sensitive (at most 20, clipped) and the last-seen
+   area (no sensitive or medical fields). Matches below 60 are dropped; the top 3 are returned, best
    first. If the LLM fails or its reply can't be read, a whole-word name
    comparison stands in (at most 80, names only). If the candidate search fails,
    `check-duplicates` returns 500 and the recording's result sets

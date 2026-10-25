@@ -40,6 +40,7 @@ Environment variables (`backend/.env`):
 | `REALTIME_MAX_SESSION_SECONDS` | Optional cap on one realtime assistant connection (default 600) |
 | `REALTIME_MAX_SESSIONS_PER_USER`, `REALTIME_MAX_SESSIONS_TOTAL` | Optional caps on open realtime sessions per phone (default 2) and per process (default 20) |
 | `ENABLE_API_DOCS` | Optional: `1` serves `/docs`, `/redoc` and `/openapi.json` (unset = off) |
+| `DUPLICATE_SEMANTIC_MIN_SIMILARITY` | Optional cosine-similarity floor for the duplicate check's meaning search (default 0.6) |
 | `CHAT_MODEL`, `TRANSCRIBE_MODEL`, `REALTIME_MODEL`, `EMBEDDING_MODEL`, `DUPLICATE_MODEL` | Optional OpenAI model names (defaults `gpt-4o`, `gpt-transcribe`, `gpt-realtime-2.1`, `text-embedding-3-large`, `gpt-4o-mini`; `services/model_config.py`) |
 
 Then: API at `http://localhost:8001`, health check at `/health`. The interactive

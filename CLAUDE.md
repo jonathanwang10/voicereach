@@ -86,11 +86,16 @@ only after `npx expo prebuild --platform ios`.
   vocabulary prompt in `services/transcribe_vocab.py` (places and terms, never person names).
 - **Duplicates:** candidates come from the SQL function `find_duplicate_candidates`
   (trigram or token name match, plus a data-value match over the 200 most recent
-  people), are pre-ranked (name tokens, sound-alikes and close spellings, then
-  height/weight closeness) and GPT (`DUPLICATE_MODEL`, default gpt-4o-mini) scores the
-  top 8 (`MAX_LLM_CANDIDATES`) from name, aka, age, height, weight, gender and last-seen
-  area only (no sensitive or medical fields); matches below 60 are dropped and the
-  backend returns the top 3, best first. Voice review may add a
+  people), pre-ranked (name tokens, sound-alikes and close spellings, then
+  height/weight closeness), plus a meaning leg: the new record is embedded
+  (`embed_record`, the same text as a saved person's vector) and
+  `find_similar_individuals` returns up to 5 people at cosine similarity 0.6 or more
+  (`DUPLICATE_SEMANTIC_MIN_SIMILARITY`); people only it found keep up to 3 of the 8
+  places, and a failure of that leg keeps the name candidates. GPT (`DUPLICATE_MODEL`,
+  default gpt-4o-mini) scores the top 8 (`MAX_LLM_CANDIDATES`) from every non-empty field
+  that isn't sensitive (`compare_view`: a sensitive category or a key matching
+  `SENSITIVE_KEY_PATTERN` never goes; at most 20 fields, clipped) and the last-seen area;
+  matches below 60 are dropped and the backend returns the top 3, best first. Voice review may add a
   re-check's matches to the server's (`topMatches`, at most 3 shown); the merge
   screen opens on the best match, and "Other possible matches (n)" switches to another. There is no 95% auto-merge:
   every match opens the merge UI. A merge replaces the whole `data` JSONB with

@@ -27,6 +27,7 @@ Each file is idempotent.
     Then (after the Phase 4 migrations) run `cd backend && python scripts/backfill_embeddings.py --stale` once. It embeds every visit transcript, plus each person whose text changed now that sensitive fields are left out.
 15. `supabase/migrations/20261107000001_recordings.sql` (Phase 7, Task 1). Check: `select count(*) from recordings;` returns 0.
 16. `supabase/migrations/20261107000002_recording_jobs.sql` (Phase 7, Task 1). Check: `select * from claim_recording_job();` returns no rows.
+17. `supabase/migrations/20261109000001_find_similar_individuals.sql` (H2-9.1, after the Phase 4 migrations). Check: `select count(*) from find_similar_individuals(null);` returns 0. Until it is applied the duplicate check logs a warning and uses name candidates only.
 
 ## Environment variables
 
@@ -43,6 +44,7 @@ Each file is idempotent.
 | `REALTIME_MAX_SESSIONS_PER_USER` | 2 (per user + `X-Device-Id`) | backend | 1 |
 | `REALTIME_MAX_SESSIONS_TOTAL` | 20 (per process) | backend | 1 |
 | `DUPLICATE_MODEL` | `gpt-4o-mini` | backend | 3 |
+| `DUPLICATE_SEMANTIC_MIN_SIMILARITY` | 0.6 (cosine-similarity floor for the duplicate check's meaning search) | backend | 9 |
 | `ENABLE_API_DOCS` | unset (off; `1` serves `/docs`, `/redoc`, `/openapi.json`) | backend | 1 |
 | `RECORDING_WORKER_CONCURRENCY` | 2 (how many recording jobs run at once in the one process) | backend (Railway) | 7 |
 | `RECORDING_WORKER_ENABLED` | 1 (set to 0 only to pause processing) | backend (Railway) | 7 |
@@ -122,3 +124,4 @@ native rebuild (`npx expo prebuild --platform ios && npx expo run:ios --device`)
 23. (Phase 8, Task 10) `cd mobile && npx eas-cli init`. It writes `extra.eas.projectId` and `owner` into `app.json`; commit that (and prebuild again if `ios/` changes).
 24. (Phase 8, Task 10) `npx eas-cli env:create` for `EXPO_PUBLIC_API_BASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `EXPO_PUBLIC_SENTRY_DSN`, once per environment (`development`, `preview`, `production`, as named in `eas.json`).
 25. (Phase 8, Task 10) Run `npx eas-cli build --profile preview --platform ios`, install it on a phone, and record one field note end to end.
+26. (H2-9.1, H2-9.2) Tune the duplicate check's meaning search. Record live duplicate replies (owner action 9; the eval now has 44 pairs, 4 of them linked or told apart by description only), then run a few real duplicate checks on a staging copy and look at which people `find_similar_individuals` returns and at what `similarity`. If GPT is sent many lookalikes, raise `DUPLICATE_SEMANTIC_MIN_SIMILARITY`; if a known nickname-only duplicate is missed, lower it. GPT now sees every non-sensitive field of up to 8 candidates: check that every health-like category is flagged `is_sensitive` (a free-text field can still hold what a worker said).
