@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / "supabase" / "migrations"
 FILES = sorted(MIGRATIONS.glob("*.sql"))
 SCHEMA_FLAT = re.sub(r"\s+", " ", re.sub(r"--[^\n]*", "", (ROOT / "supabase" / "schema.sql").read_text())).strip()
-NAME = re.compile(r"^2026110[1-8]0000\d\d_[a-z0-9_]+\.sql$")
+NAME = re.compile(r"^2026110[1-9]0000\d\d_[a-z0-9_]+\.sql$")
 
 
 def _sql(path: Path) -> str:

@@ -291,7 +291,7 @@ def test_every_function_pins_its_search_path():
         assert re.search(r"SET search_path = (''|public, extensions|public) ", _function(m.group(1))), m.group(1)
 
 @pytest.mark.parametrize("fn", ["save_individual", "rescore_batch", "coarsen_old_locations", "find_duplicate_candidates",
-                                "claim_recording_job", "purge_old_recordings"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
+                                "claim_recording_job", "purge_old_recordings", "find_similar_individuals"])   # Tasks 13/15 append rescore_batch, coarsen_old_locations; P3 find_duplicate_candidates; P7 claim_recording_job, purge_old_recordings
 def test_rpc_functions_are_not_callable_with_the_anon_key(fn):
     assert re.search(rf"REVOKE EXECUTE ON FUNCTION {fn}\([^)]*\) FROM PUBLIC, anon, authenticated;", FLAT)
     assert re.search(rf"GRANT EXECUTE ON FUNCTION {fn}\([^)]*\) TO service_role;", FLAT)
@@ -536,6 +536,20 @@ def test_match_interactions_signature():
     assert ("match_interactions( p_query_embedding halfvec(3072), p_individual_id uuid DEFAULT NULL, "
             "p_limit int DEFAULT 5 )") in fn
     assert "ORDER BY e.embedding <=> p_query_embedding LIMIT" in fn and "SET hnsw.ef_search = 100" in fn
+
+
+def test_find_similar_individuals_signature_and_floor():                          # H2-9.1
+    fn = _function_sql(SQL, "find_similar_individuals")
+    assert ("find_similar_individuals( p_embedding halfvec(3072), p_limit int DEFAULT 5, "
+            "p_min_similarity double precision DEFAULT 0.6 )") in fn
+    assert "SET search_path = public, extensions" in fn and "SET hnsw.ef_search = 100" in fn
+    assert "ORDER BY e.embedding <=> p_embedding LIMIT" in fn
+    assert "WHERE 1 - nn.dist >= coalesce(p_min_similarity, 0.6)" in fn
+
+def test_find_similar_individuals_matches_its_migration():
+    migration = MIGRATIONS / "20261109000001_find_similar_individuals.sql"
+    assert _function_sql(SQL, "find_similar_individuals") == \
+        _function_sql(re.sub(r"--[^\n]*", "", migration.read_text()), "find_similar_individuals")
 
 
 # --- most_urgent_individuals (H2-4.7) -------------------------------------------------
