@@ -58,6 +58,21 @@ def _no_query_embeddings(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_record_embeddings(request, monkeypatch):
+    """The duplicate check would embed the new record through OpenAI (H2-9.1); never let
+    tests do that. By default there is nothing to embed (no meaning leg), unless a test is
+    marked real_record_embedding (and mocks OpenAI itself) or passes its own service."""
+    if request.node.get_closest_marker("real_record_embedding"):
+        return
+    from services.embedding_service import EmbeddingService
+
+    async def _nothing(self, individual, categories):
+        return None
+
+    monkeypatch.setattr(EmbeddingService, "embed_record", _nothing)
+
+
+@pytest.fixture(autouse=True)
 def _reset_process_state():
     """Reset every piece of process-global state before AND after each test.
 

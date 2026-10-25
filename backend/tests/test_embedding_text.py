@@ -402,3 +402,30 @@ def test_save_route_passes_the_visit_to_the_background_task(transcription, visit
                                "transcription": "Seen at 16th"}
     else:
         assert interaction is None
+
+
+# --- embed_record: a not-yet-saved record for the duplicate check (H2-9.1) --------------------------
+
+@pytest.mark.real_record_embedding
+def test_embed_record_embeds_the_saved_person_text():
+    from services.embedding_service import EmbeddingService
+    svc = EmbeddingService()
+    svc.generate_embedding = AsyncMock(return_value=[0.5] * 3072)
+    categories = [{"name": "clothing", "display_name": "Clothing", "type": "text"},
+                  {"name": "hiv_status", "display_name": "HIV status", "type": "text", "is_sensitive": True}]
+    record = {"name": "Mike", "data": {"name": "Mike", "clothing": "red parka", "hiv_status": "Positive"}}
+    assert asyncio.run(svc.embed_record(record, categories)) == [0.5] * 3072
+    text = svc.generate_embedding.await_args.args[0]
+    assert text == build_embedding_text(record, categories)
+    assert "red parka" in text and "Positive" not in text
+
+
+@pytest.mark.real_record_embedding
+@pytest.mark.parametrize("data", [{"name": "Mike"}, {"name": "Mike", "hiv_status": "Positive"}, {}])
+def test_embed_record_skips_a_record_that_is_only_a_name(data):
+    from services.embedding_service import EmbeddingService
+    svc = EmbeddingService()
+    svc.generate_embedding = AsyncMock()
+    categories = [{"name": "hiv_status", "display_name": "HIV status", "type": "text", "is_sensitive": True}]
+    assert asyncio.run(svc.embed_record({"name": "Mike", "data": data}, categories)) is None
+    svc.generate_embedding.assert_not_awaited()

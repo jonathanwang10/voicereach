@@ -430,3 +430,101 @@ def test_check_duplicates_passes_the_categories():
         response = TestClient(app).post("/api/individuals/check-duplicates", json={"name": "Ann Lee"})
     assert response.status_code == 200, response.text
     assert dup.return_value.find_duplicates.await_args.kwargs["categories"] == cats
+
+
+# --- the meaning leg (H2-9.1) ----------------------------------------------------------------------
+
+VECTOR = [0.01] * 3072
+
+
+def _semantic_service(people, similar, reply=None, *, vector=VECTOR, embed_error=None, similar_fail=False):
+    from services.duplicate_detection_service import DuplicateDetectionService
+    openai = Mock()
+    openai.compare_individuals = AsyncMock(return_value=reply if reply is not None else {})
+    embedder = Mock()
+    embedder.embed_record = AsyncMock(return_value=vector, side_effect=embed_error)
+    sb = FakePeopleDB(people, similar=similar, similar_fail=similar_fail)
+    return DuplicateDetectionService(sb, openai, embedding_service=embedder), openai, sb, embedder
+
+
+def _similar_params(sb):
+    return [q[2] for q in sb.queries if q[:2] == ("rpc", "find_similar_individuals")]
+
+
+async def test_a_person_found_only_by_meaning_reaches_the_llm():
+    red = _person("Big Red", {"aka": "Red", "clothing": "red parka, Giants cap"})
+    svc, openai, _, _ = _semantic_service([], [red], reply={red["id"]: 84})
+    matches = await svc.find_duplicates({"name": "Mike", "clothing": "red parka, Giants cap"})
+    assert matches == [{"id": red["id"], "name": "Big Red", "confidence": 84}]
+    assert "Big Red" in _prompt(openai)
+
+
+async def test_the_new_record_is_embedded_and_searched_with_the_floor():
+    categories = [{"name": "clothing", "display_name": "Clothing", "type": "text"}]
+    svc, _, sb, embedder = _semantic_service([], [])
+    new = {"name": "Mike", "clothing": "red parka"}
+    await svc.find_duplicates(new, categories=categories)
+    embedder.embed_record.assert_awaited_once_with({"name": "Mike", "data": new}, categories)
+    assert _similar_params(sb) == [{"p_embedding": VECTOR, "p_limit": 5, "p_min_similarity": 0.6}]
+
+
+@pytest.mark.parametrize("value,floor", [("0.75", 0.75), ("", 0.6), ("lots", 0.6), ("1.5", 0.6)])
+async def test_the_floor_comes_from_the_environment(monkeypatch, value, floor):
+    monkeypatch.setenv("DUPLICATE_SEMANTIC_MIN_SIMILARITY", value)
+    svc, _, sb, _ = _semantic_service([], [])
+    await svc.find_duplicates({"name": "Mike", "clothing": "red parka"})
+    assert _similar_params(sb)[0]["p_min_similarity"] == floor
+
+
+async def test_nothing_to_embed_means_no_meaning_search():
+    svc, _, sb, _ = _semantic_service([], [_person("Big Red")], vector=None)
+    assert await svc.find_duplicates({"name": "Mike"}) == []
+    assert _similar_params(sb) == []
+
+
+async def test_meaning_only_people_keep_three_of_the_eight_places():
+    names = [_person(f"Mike Test{i}") for i in range(10)]
+    similar = [_person(f"Other {i}") for i in range(4)]
+    svc, openai, _, _ = _semantic_service(names, similar)
+    await svc.find_duplicates({"name": "Mike", "clothing": "red parka"})
+    prompt = _prompt(openai)
+    assert sum(p["id"] in prompt for p in names) == 5
+    assert [p["id"] in prompt for p in similar] == [True, True, True, False]
+
+
+async def test_meaning_only_people_fill_places_the_name_leg_leaves_empty():
+    names = [_person("Mike Test0"), _person("Mike Test1")]
+    similar = [_person(f"Other {i}") for i in range(5)]
+    svc, openai, _, _ = _semantic_service(names, similar)
+    await svc.find_duplicates({"name": "Mike", "clothing": "red parka"})
+    prompt = _prompt(openai)
+    assert all(p["id"] in prompt for p in names + similar)
+
+
+async def test_a_person_found_both_ways_is_compared_once():
+    mike = _person("Mike Jones")
+    svc, openai, _, _ = _semantic_service([mike], [dict(mike, similarity=0.9)])
+    await svc.find_duplicates({"name": "Mike", "clothing": "red parka"})
+    assert _prompt(openai).count(f"(ID: {mike['id']})") == 1
+
+
+@pytest.mark.parametrize("failure", ["embedding", "database"])
+async def test_a_meaning_leg_failure_keeps_the_name_candidates(caplog, failure):
+    mike = _person("Mike Jones")
+    svc, openai, _, _ = _semantic_service(
+        [mike], [_person("Big Red")], reply={mike["id"]: 90},
+        embed_error=RuntimeError("bad Mike Jones") if failure == "embedding" else None,
+        similar_fail=failure == "database")
+    matches = await svc.find_duplicates({"name": "Mike Jones", "clothing": "red parka"})
+    assert [m["id"] for m in matches] == [mike["id"]]
+    assert "Big Red" not in _prompt(openai)
+    assert "RuntimeError" in caplog.text and "Mike" not in caplog.text
+
+
+async def test_a_name_leg_failure_still_raises_with_the_meaning_leg_on():
+    from services.duplicate_detection_service import DuplicateDetectionService
+    embedder = Mock()
+    embedder.embed_record = AsyncMock(return_value=VECTOR)
+    svc = DuplicateDetectionService(FakePeopleDB([], fail=True), Mock(), embedding_service=embedder)
+    with pytest.raises(RuntimeError):
+        await svc.find_duplicates({"name": "Mike", "clothing": "red parka"})

@@ -334,12 +334,15 @@ class FakePeopleDB:
     case-insensitive equal names. Rows come back in the given order (treat it as "most
     recently updated first"). With fail=True every execute() raises, like a database
     outage. table("categories") returns `categories` (default none); with
-    categories_fail=True only that table raises.
+    categories_fail=True only that table raises. rpc("find_similar_individuals") returns
+    `similar` as given (the meaning leg, H2-9.1); with similar_fail=True only it raises.
     """
 
-    def __init__(self, individuals, fail=False, categories=None, categories_fail=False):
+    def __init__(self, individuals, fail=False, categories=None, categories_fail=False,
+                 similar=None, similar_fail=False):
         self.individuals, self.fail, self.queries = list(individuals), fail, []
         self.categories, self.categories_fail = list(categories or []), categories_fail
+        self.similar, self.similar_fail = list(similar or []), similar_fail
 
     def table(self, name):
         assert name in ("individuals", "categories"), f"FakePeopleDB has no table {name!r}"
@@ -350,7 +353,8 @@ class FakePeopleDB:
         tested against Postgres in Phase 8): a name containing any _name_tokens token,
         then a data value matching the whole name at a word start (match_individual) among
         the first 200 rows; name matches first, no repeats, at most p_limit."""
-        assert name == "find_duplicate_candidates", f"FakePeopleDB has no function {name!r}"
+        assert name in ("find_duplicate_candidates", "find_similar_individuals"), \
+            f"FakePeopleDB has no function {name!r}"
         return _PeopleRpc(self, name, params)
 
 
@@ -363,8 +367,10 @@ class _PeopleRpc:
         from services.search_matching import match_individual
         assert_off_event_loop(f"FakePeopleDB: rpc({self.name!r}).execute()")
         self.sb.queries.append(("rpc", self.name, dict(self.params)))
-        if self.sb.fail:
+        if self.sb.fail or (self.name == "find_similar_individuals" and self.sb.similar_fail):
             raise RuntimeError("database unavailable")
+        if self.name == "find_similar_individuals":
+            return MagicMock(data=list(self.sb.similar))
         p_name, limit = self.params["p_name"], self.params.get("p_limit", 50)
         tokens = DuplicateDetectionService._name_tokens(p_name)
         by_name = [r for r in self.sb.individuals if any(t in (r.get("name") or "").lower() for t in tokens)]

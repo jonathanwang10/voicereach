@@ -97,6 +97,15 @@ class EmbeddingService:
             _query_cache.popitem(last=False)
         return vector
     
+    async def embed_record(self, individual: Dict[str, Any], categories: List[Dict[str, Any]]) -> Optional[List[float]]:
+        """A not-yet-saved record's vector, from the same text a saved person's has
+        (build_embedding_text), so the two compare like for like (H2-9.1); None when the
+        text is the name alone, which the name leg already covers. Not cached; a failure raises."""
+        text = build_embedding_text(individual, categories)
+        if text == build_embedding_text({"name": individual.get("name"), "data": {}}, categories):
+            return None
+        return await self.generate_embedding(text)
+
     async def generate_individual_embedding(
         self, individual: Dict[str, Any], categories: List[Dict[str, Any]]
     ) -> Tuple[List[float], str]:

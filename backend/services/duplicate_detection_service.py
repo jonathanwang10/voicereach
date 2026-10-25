@@ -4,6 +4,7 @@ Uses smart search strategy and LLM-based comparison
 """
 import json
 import logging
+import os
 import re
 import uuid
 from typing import Dict, List, Optional
@@ -12,6 +13,7 @@ import jellyfish
 from supabase import Client
 
 from db.client import run_db
+from services.embedding_service import get_embedding_service
 from services.field_registry import sensitive_keys
 from services.search_matching import match_individual
 
@@ -25,6 +27,22 @@ MAX_LLM_CANDIDATES = 8
 FALLBACK_MAX_CONFIDENCE = 80
 # Matches of 60 or more returned, best first (H2-3.5; the name-only fallback still gives one)
 MAX_MATCHES = 3
+# The meaning leg (H2-9.1): at most this many people whose stored vector is nearest the
+# new record's, at or above the floor; up to SEMANTIC_SLOTS of the MAX_LLM_CANDIDATES
+# places go to people it finds that no name matched (more when the name leg leaves places)
+SEMANTIC_LIMIT = 5
+SEMANTIC_SLOTS = 3
+DEFAULT_SEMANTIC_MIN_SIMILARITY = 0.6
+
+
+def semantic_min_similarity() -> float:
+    """DUPLICATE_SEMANTIC_MIN_SIMILARITY, a cosine similarity in [0, 1]; anything else
+    (unset, blank, not a number, out of range) is DEFAULT_SEMANTIC_MIN_SIMILARITY."""
+    try:
+        value = float(os.getenv("DUPLICATE_SEMANTIC_MIN_SIMILARITY") or "")
+    except ValueError:
+        return DEFAULT_SEMANTIC_MIN_SIMILARITY
+    return value if 0 <= value <= 1 else DEFAULT_SEMANTIC_MIN_SIMILARITY
 # The only fields the compare prompt carries besides the name and last-seen area:
 # identifying, never medical or other sensitive information (H2-3.5, H2-3.8)
 COMPARE_FIELDS = ("aka", "age", "height", "weight", "gender")
@@ -63,16 +81,19 @@ def _fence_safe(text: str) -> str:
 class DuplicateDetectionService:
     """Service for detecting duplicate individuals using database search and LLM comparison"""
 
-    def __init__(self, supabase_client: Client, openai_service):
+    def __init__(self, supabase_client: Client, openai_service, embedding_service=None):
         """
         Initialize the duplicate detection service
 
         Args:
             supabase_client: Supabase client for database operations
             openai_service: OpenAI service for LLM comparison
+            embedding_service: embeds the new record for the meaning leg; default the
+                process's get_embedding_service()
         """
         self.supabase = supabase_client
         self.openai_service = openai_service
+        self.embedding_service = embedding_service
 
     def _is_valid_uuid(self, value: str) -> bool:
         """
@@ -121,6 +142,9 @@ class DuplicateDetectionService:
         # A database error propagates: the routes report it, not "no match" (C-08).
         candidates = await self._find_candidates(name, max_candidates)
         candidates = self._rank_candidates(categorized_data, candidates)
+        # Plus people whose whole record means the same, whatever their name (H2-9.1)
+        similar = await self._find_similar(name, categorized_data, categories or [])
+        candidates = self._with_similar(candidates, similar)
 
         # Step 3: If we have candidates, use LLM to compare attributes
         if candidates:
@@ -163,6 +187,40 @@ class DuplicateDetectionService:
         rows = await run_db(lambda: self.supabase.rpc(
             "find_duplicate_candidates", {"p_name": name, "p_limit": limit}).execute())
         return rows.data or []
+
+    async def _find_similar(self, name: str, data: dict, categories: list) -> List[Dict]:
+        """
+        The meaning leg (H2-9.1): the new record is embedded from the same text a saved
+        person's vector comes from, and `find_similar_individuals` returns the people
+        nearest it (at most SEMANTIC_LIMIT, at or above semantic_min_similarity()),
+        closest first. It finds "Big Red" for a record of "Mike" when the rest matches.
+
+        Best effort, unlike the name leg: an embedding or database failure (or the
+        migration not yet applied) logs its type and leaves the name candidates.
+        """
+        try:
+            service = self.embedding_service or get_embedding_service()
+            vector = await service.embed_record({"name": name, "data": data}, categories)
+            if vector is None:
+                return []
+            params = {"p_embedding": vector, "p_limit": SEMANTIC_LIMIT,
+                      "p_min_similarity": semantic_min_similarity()}
+            rows = await run_db(lambda: self.supabase.rpc("find_similar_individuals", params).execute())
+            return rows.data or []
+        except Exception as e:
+            logger.warning("Duplicate meaning search failed (%s); using name candidates only", type(e).__name__)
+            return []
+
+    @staticmethod
+    def _with_similar(ranked: List[Dict], similar: List[Dict]) -> List[Dict]:
+        """The name candidates, best first, then the people only the meaning leg found,
+        closest first. Those keep up to SEMANTIC_SLOTS of the MAX_LLM_CANDIDATES places,
+        and any place the name leg leaves empty; a person found both ways stays where
+        the name leg put them."""
+        seen = {c.get("id") for c in ranked}
+        extra = [c for c in similar if c.get("id") not in seen]
+        slots = min(len(extra), max(MAX_LLM_CANDIDATES - len(ranked), SEMANTIC_SLOTS))
+        return ranked[:MAX_LLM_CANDIDATES - slots] + extra[:slots]
 
     @staticmethod
     def _number(data: dict, key: str) -> Optional[float]:
