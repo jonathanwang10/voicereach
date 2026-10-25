@@ -59,7 +59,7 @@ def test_live_mode_needs_eval_live_and_a_key(monkeypatch, capsys):
 
 def test_duplicate_eval_meets_baseline():
     m = eval_duplicates.run(live=False)
-    assert m["pairs"] == 40 and baseline.compare_to_baseline("duplicates", m) == []
+    assert m["pairs"] == 44 and baseline.compare_to_baseline("duplicates", m) == []
 
 
 def test_duplicate_prompts_leak_no_sensitive_values():
@@ -68,8 +68,8 @@ def test_duplicate_prompts_leak_no_sensitive_values():
 
 def test_the_leak_check_would_catch_a_leak(monkeypatch):
     from services import duplicate_detection_service as dds
-    # Break both guards (field list and sensitive filter): the check must notice
-    monkeypatch.setattr(dds, "COMPARE_FIELDS", dds.COMPARE_FIELDS + ("medical_conditions", "hiv_status"))
+    # Break both guards (the key pattern and the sensitive filter): the check must notice
+    monkeypatch.setattr(dds, "looks_sensitive", lambda key: False)
     real_view = dds.compare_view
     monkeypatch.setattr(dds, "compare_view", lambda data, **kw: real_view(data, **{**kw, "sensitive": frozenset()}))
     assert eval_duplicates.run(live=False)["sensitive_leaks"] > 0
@@ -77,7 +77,7 @@ def test_the_leak_check_would_catch_a_leak(monkeypatch):
 
 def test_duplicate_fixtures_are_balanced_and_cached():
     pairs = _load("duplicate_pairs.json")["pairs"]
-    assert sum(p["same_person"] for p in pairs) == 20 and len(pairs) == 40
+    assert sum(p["same_person"] for p in pairs) == 22 and len(pairs) == 44
     assert set(_load("duplicate_responses.json")["responses"]) == {p["id"] for p in pairs}
     assert sum(1 for p in pairs if {"medical_conditions", "hiv_status", "substance_abuse_history"}
                & set(p["existing"]["data"])) >= 10
@@ -87,3 +87,9 @@ def test_no_fixture_name_is_in_the_transcription_prompt():
     prompt = build_transcribe_prompt().lower()
     names = {p[s]["name"] for p in _load("duplicate_pairs.json")["pairs"] for s in ("new", "existing")}
     assert not any(n.lower() in prompt for n in names)
+
+
+def test_description_pairs_show_gpt_the_details_that_link_them():                # H2-9.2
+    prompts = {pair["id"]: prompt for pair, prompt, _ in eval_duplicates._prompts()}
+    assert "gold front tooth" in prompts["dup-041"] and "Giants flag" in prompts["dup-041"]
+    assert "rose tattoo" in prompts["dup-042"] and "Tank" in prompts["dup-042"]

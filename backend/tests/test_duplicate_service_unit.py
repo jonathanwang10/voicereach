@@ -367,15 +367,43 @@ async def test_at_most_three_matches_best_first():
     assert [m["confidence"] for m in await svc.find_duplicates({"name": "John Doe"})] == [99, 88, 75]
 
 
-def test_prompt_sends_only_the_compare_fields():
+def test_prompt_sends_every_field_but_the_sensitive_ones():                    # H2-9.2
     new = {"name": "Ann", "age": 40, "height": 64, "weight": 130, "gender": "Female", "aka": "Annie",
            "medical_conditions": ["Diabetes"], "hiv_status": "Positive", "substance_abuse_history": ["Severe"],
-           "veteran_status": "Yes", "behavior": "Physical", "additional_information": "sleeps at the library"}
+           "veteran_status": "Yes", "behavior": "Physical", "additional_information": "sleeps at the library",
+           "clothing": "red parka"}
     prompt = DuplicateDetectionService(MagicMock(), MagicMock())._build_comparison_prompt(new, [_person("Ann B", new)])
-    for shown in ("Annie", "64", "130", "Female"):
+    for shown in ("Annie", "64", "130", "Female", "veteran_status", "Physical", "library", "red parka"):
         assert shown in prompt
-    for hidden in ("Diabetes", "Positive", "Severe", "veteran", "Physical", "library"):
+    # sensitive by key pattern, even with no categories to flag them
+    for hidden in ("Diabetes", "Positive", "Severe"):
         assert hidden not in prompt
+
+
+def test_a_sensitive_category_is_left_out_whatever_its_key():
+    prompt = DuplicateDetectionService(MagicMock(), MagicMock())._build_comparison_prompt(
+        {"name": "Ann", "notes": "on PrEP"}, [_person("Ann B", {"notes": "on PrEP"})], sensitive={"notes"})
+    assert "PrEP" not in prompt
+
+
+def test_identifying_fields_come_first_then_the_rest_by_key():
+    from services.duplicate_detection_service import compare_view
+    view = compare_view({"name": "Ann", "zone": "Mission", "age": 40, "clothing": "red", "aka": "Annie"})
+    assert list(view) == ["name", "aka", "age", "clothing", "zone"]
+
+
+def test_a_view_has_at_most_twenty_fields_each_clipped():
+    from services.duplicate_detection_service import MAX_COMPARE_FIELDS, compare_view
+    view = compare_view({f"field_{i:02d}": "x" * 500 for i in range(30)}, name="Ann")
+    assert MAX_COMPARE_FIELDS == 20 and len(view) == 1 + MAX_COMPARE_FIELDS
+    assert all(len(v) == 100 for k, v in view.items() if k != "name")
+
+
+def test_a_location_value_is_left_out_of_the_view():
+    from services.duplicate_detection_service import compare_view
+    view = compare_view({"name": "Ann", "spot": {"latitude": 37.78, "longitude": -122.41, "address": "123 Turk St"},
+                         "empty": "", "none": None, "items": []})
+    assert view == {"name": "Ann"}
 
 
 def test_a_sensitive_compare_field_is_left_out():

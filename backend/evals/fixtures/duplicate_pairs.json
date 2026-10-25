@@ -1078,6 +1078,127 @@
           "address": "Turk St & Taylor St, San Francisco, CA"
         }
       }
+    },
+    {
+      "id": "dup-041",
+      "same_person": true,
+      "kind": "description",
+      "new": {
+        "name": "Mike",
+        "age": 50,
+        "height": 74,
+        "weight": 230,
+        "gender": "Male",
+        "additional_information": "red beard, gold front tooth, wheelchair with a Giants flag"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000041",
+        "name": "Big Red",
+        "data": {
+          "name": "Big Red",
+          "aka": "Red",
+          "age": 52,
+          "height": 74,
+          "weight": 225,
+          "gender": "Male",
+          "additional_information": "wheelchair with a Giants flag, gold front tooth, sleeps by 16th St BART"
+        },
+        "last_location": {
+          "latitude": 37.7648,
+          "longitude": -122.4194,
+          "address": "Mission St & 16th St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-042",
+      "same_person": true,
+      "kind": "description",
+      "new": {
+        "name": "Rosa",
+        "age": 35,
+        "height": 61,
+        "gender": "Female",
+        "additional_information": "rose tattoo on her neck, walks with a grey pit bull named Tank"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000042",
+        "name": "Marisol Vega",
+        "data": {
+          "name": "Marisol Vega",
+          "age": 34,
+          "height": 62,
+          "gender": "Female",
+          "additional_information": "has a grey pit bull, Tank; rose tattoo on the left side of her neck"
+        },
+        "last_location": {
+          "latitude": 37.7648,
+          "longitude": -122.4194,
+          "address": "Mission St & 16th St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-043",
+      "same_person": false,
+      "kind": "lookalike",
+      "new": {
+        "name": "Mike",
+        "age": 50,
+        "height": 74,
+        "weight": 230,
+        "gender": "Male",
+        "additional_information": "red beard, wheelchair with a Giants flag"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000043",
+        "name": "Terrence Hall",
+        "data": {
+          "name": "Terrence Hall",
+          "age": 49,
+          "height": 74,
+          "weight": 228,
+          "gender": "Male",
+          "additional_information": "clean shaven, walks with a cane, plays guitar outside Walgreens"
+        },
+        "last_location": {
+          "latitude": 37.7648,
+          "longitude": -122.4194,
+          "address": "Mission St & 16th St, San Francisco, CA"
+        }
+      }
+    },
+    {
+      "id": "dup-044",
+      "same_person": false,
+      "kind": "lookalike",
+      "new": {
+        "name": "Rosa",
+        "age": 35,
+        "height": 61,
+        "gender": "Female",
+        "additional_information": "rose tattoo on her neck, grey pit bull"
+      },
+      "new_location": null,
+      "existing": {
+        "id": "00000000-0000-4000-8000-000000000044",
+        "name": "Dana Kim",
+        "data": {
+          "name": "Dana Kim",
+          "age": 36,
+          "height": 61,
+          "gender": "Female",
+          "additional_information": "no tattoos, pushes a shopping cart, no pets"
+        },
+        "last_location": {
+          "latitude": 37.7648,
+          "longitude": -122.4194,
+          "address": "Mission St & 16th St, San Francisco, CA"
+        }
+      }
     }
   ]
 }

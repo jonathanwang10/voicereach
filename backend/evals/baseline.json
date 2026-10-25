@@ -1,22 +1,22 @@
 {
   "duplicates": {
     "at_50": {
-      "precision": 0.8696,
+      "precision": 0.88,
       "recall": 1.0
     },
     "at_60": {
-      "precision": 0.8636,
-      "recall": 0.95
+      "precision": 0.875,
+      "recall": 0.9545
     },
     "at_70": {
-      "precision": 0.9444,
-      "recall": 0.85
+      "precision": 0.95,
+      "recall": 0.8636
     },
     "at_80": {
       "precision": 1.0,
-      "recall": 0.7
+      "recall": 0.7273
     },
-    "pairs": 40,
+    "pairs": 44,
     "sensitive_leaks": 0
   },
   "extraction": {

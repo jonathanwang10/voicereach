@@ -14,7 +14,7 @@ from supabase import Client
 
 from db.client import run_db
 from services.embedding_service import get_embedding_service
-from services.field_registry import sensitive_keys
+from services.field_registry import clip_value, looks_sensitive, sensitive_keys
 from services.search_matching import match_individual
 
 logger = logging.getLogger(__name__)
@@ -43,9 +43,12 @@ def semantic_min_similarity() -> float:
     except ValueError:
         return DEFAULT_SEMANTIC_MIN_SIMILARITY
     return value if 0 <= value <= 1 else DEFAULT_SEMANTIC_MIN_SIMILARITY
-# The only fields the compare prompt carries besides the name and last-seen area:
-# identifying, never medical or other sensitive information (H2-3.5, H2-3.8)
+# Shown first in the compare prompt (identifying); every other field that isn't sensitive
+# follows by key, so a match the meaning leg found can be judged on what made it similar.
+# Never medical or other sensitive information (H2-3.5, H2-3.8, H2-9.2).
 COMPARE_FIELDS = ("aka", "age", "height", "weight", "gender")
+# At most this many fields per person besides the name and area, each clipped to 100 characters
+MAX_COMPARE_FIELDS = 20
 
 
 def location_area(location: Optional[dict]) -> Optional[str]:
@@ -59,14 +62,23 @@ def location_area(location: Optional[dict]) -> Optional[str]:
 
 def compare_view(data: dict, *, name: Optional[str] = None, location: Optional[dict] = None,
                  sensitive: frozenset = frozenset()) -> dict:
-    """What the compare prompt may see of one person: the name, the non-empty
-    COMPARE_FIELDS that aren't sensitive, and the last-seen area."""
+    """What the compare prompt may see of one person: the name; every non-empty field
+    that isn't sensitive (a category in `sensitive`, or a key matching
+    SENSITIVE_KEY_PATTERN whatever the categories say), COMPARE_FIELDS first, then the
+    rest by key, at most MAX_COMPARE_FIELDS, each clip_value'd; and the last-seen area.
+    A location value is left out: only the area, without a house number, is sent."""
     data = data if isinstance(data, dict) else {}
     view: Dict = {"name": name if name is not None else data.get("name")}
-    for key in COMPARE_FIELDS:
-        value = data.get(key)
-        if key not in sensitive and value not in (None, "", []):
-            view[key] = value
+    rest = sorted(k for k in data if isinstance(k, str) and k not in COMPARE_FIELDS)
+    for key in [k for k in COMPARE_FIELDS if k in data] + rest:
+        value = data[key]
+        if key == "name" or key in sensitive or looks_sensitive(key):
+            continue
+        if value in (None, "", []) or isinstance(value, dict):
+            continue
+        if len(view) > MAX_COMPARE_FIELDS:
+            break
+        view[key] = clip_value(value)
     area = location_area(location)
     if area:
         view["last_seen_area"] = area
@@ -352,8 +364,9 @@ class DuplicateDetectionService:
                                  new_location: Optional[dict] = None) -> str:
         """
         The compare prompt: each person as compare_view (name, aka, age, height,
-        weight, gender, last-seen area; never medical or sensitive fields), all
-        inside one <<<RECORDS ... >>> block of data (H2-3.5, H2-3.8).
+        weight, gender, the other recorded fields, last-seen area; never medical or
+        sensitive fields), all inside one <<<RECORDS ... >>> block of data (H2-3.5,
+        H2-3.8, H2-9.2).
         """
         new_view = compare_view(new_data, name=new_data.get("name") or new_data.get("Name"),
                                 location=new_location, sensitive=sensitive)
@@ -374,6 +387,8 @@ Analyze similarity based on:
 - Age, height and weight if available
 - Gender if available
 - The last-seen area if available
+- Other recorded details (appearance, clothing, marks, belongings, usual places) if available:
+  a different name or nickname can be the same person when several distinctive details match
 
 For each existing record, return a confidence score 0-100 where:
 - 95-100: Almost certainly the same person (same/very similar name + multiple matching attributes)
